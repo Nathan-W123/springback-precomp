@@ -145,7 +145,8 @@ Mesh build_mesh(const Configuration& config);
 FemModel build_model(const Configuration& config);
 
 /// Parse a region specification (used by tests and by the config parser).
-/// \param dim mesh dimension (2 or 3), which decides how many entries the
+/// \param dim mesh dimension (3: sparlab_form meshes are Hex8; the 2-D form
+///        is kept but unreachable), which decides how many entries the
 ///        vector-valued fields must carry; 0 accepts either form.
 SelectorGroup parse_region(const ConfigNode& node, const std::string& default_name,
                            int dim = 0);

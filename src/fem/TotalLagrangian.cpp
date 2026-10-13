@@ -1,7 +1,6 @@
 #include "sparlab/fem/TotalLagrangian.hpp"
 
 #include "IncompatibleModes.hpp"
-#include "sparlab/core/Exceptions.hpp"
 
 #include <Eigen/Dense>
 

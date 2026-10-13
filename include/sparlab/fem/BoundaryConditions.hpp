@@ -63,10 +63,11 @@ std::vector<Mesh::BoundaryFace> faces_in_region(const Mesh& mesh,
 
 /// Apply every constraint to `dofs`.
 /// \return the number of distinct DOFs constrained.
-/// \throws ConfigError when a region selects no nodes (almost always an
-///         authoring mistake, and silently ignoring it produces a singular
-///         system later), when a 2-D model is asked to fix z, or when a
-///         model without rotational DOFs is asked to fix a rotation.
+/// \throws ConfigError when a constraint fixes no component, when a region
+///         selects no nodes (almost always an authoring mistake, and
+///         silently ignoring it produces a singular system later), or when
+///         a 2-D model is asked to fix z (a check kept for the 2-D code
+///         path, which sparlab_form's Hex8 meshes never reach).
 Index apply_constraints(const Mesh& mesh,
                         const std::vector<DisplacementConstraint>& constraints,
                         DofManager& dofs);

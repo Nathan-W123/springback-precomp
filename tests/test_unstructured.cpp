@@ -7,7 +7,6 @@
 /// that says what to change.
 #include "TestSupport.hpp"
 
-#include "sparlab/core/Exceptions.hpp"
 #include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/io/MeshReader.hpp"
 

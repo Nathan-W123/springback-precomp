@@ -31,10 +31,8 @@ using Index = int;
 
 using Vector = Eigen::VectorXd;
 using Matrix = Eigen::MatrixXd;
-using Vector2 = Eigen::Vector2d;
 using Vector3 = Eigen::Vector3d;
 using Vector6 = Eigen::Matrix<Scalar, 6, 1>;
-using Matrix2 = Eigen::Matrix2d;
 using Matrix3 = Eigen::Matrix3d;
 using Matrix6 = Eigen::Matrix<Scalar, 6, 6>;
 

@@ -56,7 +56,6 @@ struct MeshReadOptions {
 struct MeshReadReport {
   std::string path;
   std::string format;               ///< "abaqus"
-  std::string version;              ///< empty for .inp
   int dimension = 0;
   ElementType element_type = ElementType::Hex8;
   Scalar scale = 1.0;

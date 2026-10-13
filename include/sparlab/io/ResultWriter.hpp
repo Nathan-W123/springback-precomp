@@ -11,7 +11,6 @@
 /// Every file is plain text.
 #pragma once
 
-#include "sparlab/core/Types.hpp"
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/Json.hpp"
 

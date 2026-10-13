@@ -139,9 +139,9 @@ void FemModel::assign_material(const IsotropicMaterial& material,
   for (Index e : elements) element_material_[static_cast<std::size_t>(e)] = id;
 }
 
-void FemModel::finalize(bool require_load_cases) {
+void FemModel::finalize() {
   if (finalized_) return;
-  if (load_case_specs_.empty() && require_load_cases) {
+  if (load_case_specs_.empty()) {
     throw ConfigError("model has no load cases; define at least one");
   }
   const Index constrained = apply_constraints(mesh_, constraints_, dofs_);

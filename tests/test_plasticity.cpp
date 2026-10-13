@@ -14,7 +14,6 @@
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
 #include "sparlab/io/Config.hpp"
-#include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
 #include <catch2/catch_approx.hpp>

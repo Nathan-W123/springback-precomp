@@ -25,7 +25,8 @@ namespace sparlab {
 class DofManager {
  public:
   DofManager() = default;
-  /// \param dofs_per_node translational components per node (2 or 3).
+  /// \param dofs_per_node translational components per node (3: sparlab_form
+  ///        meshes are Hex8; 2 is accepted but unreachable).
   explicit DofManager(Index num_nodes, int dofs_per_node = 3);
 
   int dofs_per_node() const { return dofs_per_node_; }

@@ -1,21 +1,16 @@
 /// \file test_solid.cpp
-/// \brief Three-dimensional verification: the Hex8 element, structured hex
-///        meshes, the 3-D patch test, tractions, reactions, diagnostics,
-///        modal analysis, beam-theory validation and the 3-D configuration
-///        path.
+/// \brief Three-dimensional verification: the Hex8 element and its
+///        quadrature, the 3-D constitutive matrix, structured hex meshes,
+///        3-D selectors and the 3-D configuration path.
 ///
-/// The 2-D suite is the regression net for the shared code; this file checks
-/// that everything the dimension-generic core does for a solid mesh is exact
-/// where it has to be (patch test, rigid modes, mass, tractions, gradients)
-/// and lands where beam theory says it should where it is a model comparison.
+/// The element checks are exact where they have to be: rigid modes, the
+/// stiffness of a box, a linear field on a distorted cell, volume and mass.
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/elements/Hex8.hpp"
 #include "sparlab/elements/Quadrature.hpp"
 #include "sparlab/io/Config.hpp"
-#include "sparlab/io/CsvWriter.hpp"
-#include "sparlab/io/ResultWriter.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

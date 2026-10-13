@@ -3,11 +3,9 @@
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/core/Timer.hpp"
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/io/Json.hpp"
-#include "sparlab/io/ResultWriter.hpp"
 #include "sparlab/io/VtkWriter.hpp"
 
 #include <catch2/catch_approx.hpp>

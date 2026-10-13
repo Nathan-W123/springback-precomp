@@ -533,9 +533,8 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
     report.warnings.push_back(os.str());
   }
   for (const std::string& w : report.warnings) log::warn(src, ": ", w);
-  log::info("read ", src, " (", report.format, (report.version.empty() ? "" : " "),
-            report.version, "): ", mesh.num_nodes(), " nodes, ", mesh.num_elements(), " ",
-            to_string(type), " cells, ", report.boundary_elements,
+  log::info("read ", src, " (", report.format, "): ", mesh.num_nodes(), " nodes, ",
+            mesh.num_elements(), " ", to_string(type), " cells, ", report.boundary_elements,
             " boundary element(s), ", report.node_sets.size(), " node set(s), ",
             report.element_sets.size(), " element set(s); quality min ",
             report.quality.min, ", mean ", report.quality.mean);

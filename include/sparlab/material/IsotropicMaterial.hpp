@@ -254,7 +254,8 @@ class IsotropicMaterial {
   /// Temperature at which the material carries no thermal strain [K, or
   /// deg C when every temperature of the deck is in deg C].
   Scalar reference_temperature() const { return t_ref_; }
-  /// Thermal conductivity k [W/(m K)], used by the conduction solve.
+  /// Thermal conductivity k [W/(m K)]: read and validated, but no analysis
+  /// of sparlab_form uses it.
   Scalar conductivity() const { return k_; }
   /// Set the thermal properties.
   /// \throws ConfigError for a negative conductivity or non-finite input.

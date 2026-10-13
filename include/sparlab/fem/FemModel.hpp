@@ -40,10 +40,10 @@ class FemModel {
            StressState stress_state, IntegrationOptions integration);
 
   const Mesh& mesh() const { return mesh_; }
-  /// Spatial dimension of the model (2 or 3): the translations per node.
+  /// Spatial dimension of the model: the translations per node (3:
+  /// sparlab_form meshes are Hex8).
   int dim() const { return mesh_.dim(); }
-  /// Degrees of freedom per node: `dim()` for a continuum model, six (three
-  /// translations, three rotations) for a shell or beam model.
+  /// Degrees of freedom per node: the `dim()` translations.
   int dofs_per_node() const { return element_->dofs_per_node(); }
   /// The primary material (the deck's `material`); every element uses it
   /// unless `assign_material` gave it another.
@@ -87,9 +87,9 @@ class FemModel {
 
   /// Apply `constraints()` to the DOF manager. Must be called after the
   /// constraints and load cases are set and before any assembly. Idempotent.
-  /// \param require_load_cases when false, a model with no load case is
-  ///        accepted.
-  void finalize(bool require_load_cases = true);
+  /// \throws ConfigError for a model with no load case, or a constraint
+  ///         that `apply_constraints` refuses.
+  void finalize();
 
   bool finalized() const { return finalized_; }
 

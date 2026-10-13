@@ -102,7 +102,8 @@ class Element {
   virtual ~Element() = default;
 
   virtual ElementType type() const = 0;
-  /// Spatial dimension (2 or 3): the translational DOFs per node.
+  /// Spatial dimension (3: sparlab_form meshes are Hex8): the translational
+  /// DOFs per node.
   virtual int dim() const = 0;
   virtual int num_nodes() const = 0;
 

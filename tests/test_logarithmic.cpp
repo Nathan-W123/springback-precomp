@@ -10,7 +10,6 @@
 
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
-#include "sparlab/io/Config.hpp"
 #include "sparlab/material/LogarithmicStrain.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
