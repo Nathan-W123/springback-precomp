@@ -1,8 +1,8 @@
 """precomp - springback pre-compensation for robotic incremental sheet forming.
 
 The Python layer around the SparLab forming solver: part geometry, tool paths,
-the forming deck and its results, metrology, displacement-adjustment
-compensation and robot compliance. Machine-learned surrogates live
+the forming deck and its results, metrology and displacement-adjustment
+compensation. Machine-learned surrogates live
 in `precomp.ml`, which is built on the public API of the modules below.
 
 Units are strict SI everywhere (m, N, Pa, s), as in SparLab
@@ -23,7 +23,6 @@ fea           FormingSetup, the sparlab_form deck, a content-addressed run
 metrology     robust point-to-plane ICP, signed normal and vertical
               deviation, error metrics and masks
 compensation  displacement adjustment over any predictor, predictor adapters
-robot         Cartesian compliance of the robot (the physics audit's bound)
 
 Where this fits: the package root; the workflow stages live in the modules above and precomp.ml.
 Called from: every `import precomp...`; __version__ is read by fea/deck.py:build_deck,

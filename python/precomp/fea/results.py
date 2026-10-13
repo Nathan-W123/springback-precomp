@@ -20,7 +20,7 @@ The contract is `docs/forming.md`, section 3 ("Output contract"):
 
 **Force sign.** `fx, fy, fz` are the force the sheet exerts ON THE TOOL:
 fz > 0 while the tool pushes down into the sheet. That is the load the
-robot carries (`precomp.robot.forces_on_path` takes it as it is).
+robot carries.
 
 Every table is validated (columns present, no missing values, unique node
 ids, the same nodes and reference coordinates in every step, a node table

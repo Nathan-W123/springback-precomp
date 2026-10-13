@@ -116,7 +116,7 @@ flow-stress level (cone: 942-1052 N across the variants; x0.9 stresses ->
 ~1 N/um Cartesian stiffness (inference, a typical order) turns a 10 %
 force error on ~1 kN into ~0.1 mm of tool-position error - more than any
 material effect on the FE shape. The absolute flow stress must be right for
-the robot-compliance correction (`precomp.robot`), not for the FE shape.
+the robot-compliance correction (`precomp.robot`, removed in the cleanup; at commit fe29724), not for the FE shape.
 
 ## Recommendations
 

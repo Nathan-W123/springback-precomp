@@ -11,7 +11,7 @@ Files in this directory:
 | `analyze_challenge.py` | measures the reruns and recomputes the 2 mm deltas from the lenses' raw `output/` dirs, using the convergence lens' own metric code (`convergence/analyze.py: case_row`) |
 | `results.csv` | output of the above |
 | `make_cases.py`, `run_case.sh`, `cases/` | the two reruns: TC on the 0.833 mm 1-layer IM5 mesh (`convergence/cases/h0.833_L1_im_tp5`) with the material lens' `kin_shutov` card (`kin_h0833`) and with the process lens' DSIF support tool (`dsif_h0833`) |
-| `robot_fixedpoint.py/.json` | fixed-point residual of the process lens' robot-compliance iteration |
+| `robot_fixedpoint.json` | fixed-point residual of the process lens' robot-compliance iteration (made by `robot_fixedpoint.py`, removed in the cleanup; at commit fe29724) |
 | `bauschinger_check.py/.json` | uniaxial tension→compression response of the `kin_shutov` card vs the library card |
 
 Parts: TC = truncated_cone-s2026-0000. Unless said otherwise, "effect" means the RMS (max) of the change in the released

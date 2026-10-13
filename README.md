@@ -202,7 +202,7 @@ From [`benchmarks/physics_audit`](benchmarks/physics_audit/README.md)
 
 | Document | Contents |
 |----------|----------|
-| [`docs/precomp.md`](docs/precomp.md) | the Python package: conventions, geometry, materials, tool paths, the forming deck and run cache, metrology, compensation, supports, robot compliance, verification |
+| [`docs/precomp.md`](docs/precomp.md) | the Python package: conventions, geometry, materials, tool paths, the forming deck and run cache, metrology, compensation, supports, verification |
 | [`docs/precomp_ml.md`](docs/precomp_ml.md) | the learning problem, features, data, the MLP ensemble, transfer, conformal intervals, the training envelope, bundles, surrogate compensation and optimisation, results |
 | [`docs/forming.md`](docs/forming.md) | the forming analysis `sparlab_form`: tools, contact and friction, steps, release, linear algebra, deck and output contract, verification, cost |
 

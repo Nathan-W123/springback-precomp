@@ -18,8 +18,7 @@ from precomp.geometry.heightmap import HeightMap  # noqa: E402
 
 PART = "truncated_cone-s2026-0000"
 VARS = [("base", "benchmark (one tool, rigid path)"), ("dsif_ng", "second robot as support (DSIF)"),
-        ("dsif_ng_gap02", "DSIF support 0.2 mm clear"), ("rob_iso1_it5", "compliant robot 1 um/N (converged)"),
-        ("rob_irb_horiz", "IRB7600, horizontal sheet"), ("clamp8", "backing plate 12 mm (clamp 8)"),
+        ("dsif_ng_gap02", "DSIF support 0.2 mm clear"), ("clamp8", "backing plate 12 mm (clamp 8)"),
         ("blank60", "wider frame (blank 60)"), ("scale2", "part x2 (shown /2)"),
         ("stepdown05", "step-down 0.5 mm"), ("tool6", "tool R 6 mm")]
 

@@ -201,7 +201,8 @@ shows the sensitivity (0.48 instead of 0.70 mm).
 
 ### 2. Robot and stylus compliance
 
-`robot_stiffness.py`: C = J K^-1 J^T at the tool (precomp.robot) for an ABB
+`robot_stiffness.py` (removed in the cleanup; at commit fe29724, with precomp.robot and `robot_deflection.py`; the
+results below are the committed record): C = J K^-1 J^T at the tool for an ABB
 IRB 7600-500/2.55-class arm with the joint stiffnesses identified by Bharti
 et al. [L1] (approximate public DH dimensions; rigid links - real robots are
 softer); tool 0.2-0.45 m, reach 1.4-2.2 m (`robot_compliance.json`):
@@ -259,7 +260,7 @@ Stylus (`stylus.py`, steel cantilever): 16 mm x 100 mm - 0.07 mm at the mean
 lateral force (136 N), 0.16 mm at the peak (321 N); 10 mm x 100 mm - 0.44 /
 1.04 mm. Bharti et al. measured 0.14-0.19 mm for a 10 mm tool [L1].
 
-Pre-compensating the path (precomp.robot.precompensate_path) removes the
+Pre-compensating the path (precomp.robot.precompensate_path, removed in the cleanup; at commit fe29724) removes the
 deflection to the accuracy of the force and compliance models: the forces of
 this 2 mm mesh are 7 % (mean) to 23 % (peak) above the mesh-converged ones
 (convergence lens, `h0.625_L1_im_tp7`: 528 / 747 N against 566 / 968 N), which
@@ -372,7 +373,7 @@ engine has no body loads.
    hold for a two-sided cell: a support removes most of it.
 2. **Put the robot compliance into the forming loop** (0.1-0.4 mm RMS, up to
    0.5 mm in depth). Cheapest now: under-relaxed outer iteration with
-   precomp.robot (3-5 runs per part, this lens's `rob_iso1_it3..5`: input and
+   precomp.robot (removed in the cleanup; at commit fe29724; 3-5 runs per part, this lens's `rob_iso1_it3..5`: input and
    output forces within 2-3 % in the mean). Better: a compliant tool in sparlab_form (the
    tool centre = command + C f, solved with the contact; ~1 week). Data:
    the Cartesian compliance of each robot over the frame (laser tracker and
@@ -415,12 +416,12 @@ scanner (0.5 mm per point) are larger than that.
 
 | file | content |
 |---|---|
-| `proclens.py` | deck building (robot deflection, DSIF support, offsets, scaling, material), running, measurement |
+| `proclens.py` | deck building (DSIF support, offsets, scaling, material; the robot-deflection option is removed in the cleanup; at commit fe29724), running, measurement |
 | `variants.py`, `run_queue.py`, `run_queue2.py` | the variant queue and its workers (at most two runs at a time, one thread) |
 | `results.jsonl` -> `summarize.py` -> `results.csv` | every run: deviation from target (form / unload / release; part, rim band, deep part), change vs the benchmark run, forces, cost |
 | `runs/<part>/<variant>/` | decks, tool paths (`toolpath.csv`, `support.csv`), `variant.json` (spec, deflection statistics), outputs, `surfaces.npz`; `runs/<part>/base/output` links the benchmark cache |
-| `robot_stiffness.py` -> `robot_compliance.json` | IRB 7600 VJM compliance at 42 poses |
-| `robot_deflection.py` -> `robot_deflection.csv` | path deflection of the 8 test parts for four compliance models |
+| `robot_compliance.json` | IRB 7600 VJM compliance at 42 poses (made by `robot_stiffness.py`, removed in the cleanup; at commit fe29724) |
+| `robot_deflection.csv` | path deflection of the 8 test parts for four compliance models (made by `robot_deflection.py`, removed in the cleanup; at commit fe29724) |
 | `measure_states.py` -> `measure_states.csv` | loaded / in-frame / released / best-fit deviations, springback, forces of the 8 test parts |
 | `stylus.py` -> `stylus.json` | stylus bending |
 | `gravity.py` -> `gravity/gravity.json` | CalculiX self-weight sag |
@@ -433,7 +434,7 @@ links to the benchmark cache; decks, paths, summaries, tool forces and the
 evaluated surfaces are kept.
 
 Reproduce: `python3 run_queue2.py A` (and a second worker) runs the queue (delete `runs/*/*.claim2` first; finished variants are skipped);
-`python3 summarize.py measure_states.py robot_deflection.py plot_profiles.py`
+`python3 summarize.py measure_states.py plot_profiles.py`
 (one at a time) rebuild the tables.
 
 ## Sources
