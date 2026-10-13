@@ -468,7 +468,9 @@ Configuration parse_configuration(const json::Value& document, const std::string
   // --- mesh ---------------------------------------------------------------
   {
     const ConfigNode mesh = root.require("mesh");
-    const std::string type = mesh.string_or("type", "structured_hex");
+    // Required: before the 2-D meshes went, a missing type meant structured_quad,
+    // so a default of structured_hex would silently run decks that used to fail.
+    const std::string type = mesh.require("type").string();
     if (type == "structured_hex") {
       config.mesh_kind = MeshKind::StructuredHex;
     } else if (type == "file") {

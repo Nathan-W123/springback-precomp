@@ -12,6 +12,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstdio>
 #include <fstream>
@@ -22,6 +23,7 @@
 using namespace sparlab;
 using namespace sparlab::testing;
 using Catch::Approx;
+using Catch::Matchers::ContainsSubstring;
 
 namespace {
 
@@ -223,7 +225,8 @@ TEST_CASE("configuration errors are specific and actionable",
 
   // Missing mesh entries.
   REQUIRE_THROWS_AS(
-      parse_modified(R"({"mesh": {"nx": 2, "ny": 2, "nz": 1, "ly": 1.0, "lz": 0.1},)" +
+      parse_modified(R"({"mesh": {"type": "structured_hex", "nx": 2, "ny": 2, "nz": 1,
+                                  "ly": 1.0, "lz": 0.1},)" +
                      material + R"("boundary_conditions": [
                          {"fix": ["x"], "region": {"all": true}}]})"),
       ConfigError);
@@ -267,6 +270,20 @@ TEST_CASE("configuration errors are specific and actionable",
             {"name": "nowhere", "fix": ["x","y","z"], "region": {"box": {"xmin": 100.0}}}]})");
     REQUIRE_THROWS_AS(build_model(config), ConfigError);
   }
+}
+
+TEST_CASE("a deck without mesh.type is refused", "[io][config][diagnostics]") {
+  // There is no default mesh type: before the 2-D meshes were removed a
+  // missing type meant structured_quad, so a structured_hex default would
+  // silently run a deck that used to be refused.
+  std::string deck = minimal_deck();
+  const std::string type = R"("type": "structured_hex", )";
+  REQUIRE(deck.find(type) != std::string::npos);
+  REQUIRE_NOTHROW(parse_configuration(json::parse(deck, "deck"), "deck"));
+  deck.erase(deck.find(type), type.size());
+  REQUIRE_THROWS_AS(parse_configuration(json::parse(deck, "deck"), "deck"), ConfigError);
+  REQUIRE_THROWS_WITH(parse_configuration(json::parse(deck, "deck"), "deck"),
+                      ContainsSubstring("mesh.type"));
 }
 
 TEST_CASE("unknown configuration keys are reported", "[io][config][diagnostics]") {
