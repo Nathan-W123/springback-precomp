@@ -1,7 +1,0 @@
-case,n_samples,flagged_share,part_score_median,fraction_points_out_median,top_reasons,model,data_source
-test parts (in distribution),36,0.1111,0.8179,0,perimeter_over_area;area;depth_gyration_major,GBMEnsemble,proxy - not physics
-held-out family freeform,30,0.9,1.741,0.927,mean_wall_angle;volume;depth_gyration_minor,GBMEnsemble,proxy - not physics
-"test targets, material DC04 (not trained)",12,1,2.147e+06,1,youngs_modulus;r90;r0,GBMEnsemble,proxy - not physics
-"test targets, thickness 2.5 mm (trained 0.6-1.5 mm)",12,1,2.347,1,thickness;elastic_curvature;max_wall_angle,GBMEnsemble,proxy - not physics
-"test targets, release clamped_only (trained 3-2-1)",12,1,0.8228,0,setup.release;max_wall_angle;mean_wall_angle,GBMEnsemble,proxy - not physics
-"test targets, spiral tool path (trained contour)",10,1,0.8532,0,setup.toolpath_style;max_wall_angle;mean_wall_angle,GBMEnsemble,proxy - not physics

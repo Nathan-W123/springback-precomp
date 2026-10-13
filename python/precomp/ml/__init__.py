@@ -12,7 +12,7 @@ features     the versioned per-node feature schema (FEATURE_SCHEMA_VERSION,
 dataset      Sample, the on-disk Dataset, feature tables, grouped splits
 generate     design of experiments, commanded-shape variants, SparlabSimulator,
              ProxySimulator (analytic, NOT physics), data generation
-models       GBMEnsemble, MLPEnsemble, FieldUNet, ResidualModel, TransferModel
+models       GBMEnsemble, MLPEnsemble, ResidualModel, TransferModel
 uncertainty  grouped split-conformal calibration, intervals, coverage reports
 ood          the training envelope (Mahalanobis + kNN, point and part level)
 surrogate    DeviationSurrogate (model + features + calibration + envelope),
@@ -24,7 +24,7 @@ active       ranking of candidate parts for the next simulations
 cli          `precomp dataset|train|evaluate|active`
 
 Every metric states its data source: "SparLab simulation", "proxy - not
-physics" or "scan". torch is needed only for MLPEnsemble and FieldUNet.
+physics" or "scan". torch is needed only for MLPEnsemble.
 """
 
 from .active import Candidate, rank_candidates
@@ -38,8 +38,8 @@ from .features import (FEATURE_SCHEMA_VERSION, FeatureConfig, FeatureSpec, featu
                        global_features, point_features, region_labels)
 from .generate import (DesignPoint, DesignSpace, PerturbationSpec, ProxyParams, ProxySimulator,
                        SparlabSimulator, design_points, generate, simulate_samples)
-from .models import (FEAPrior, FieldUNet, GBMEnsemble, MLPEnsemble, ResidualModel,
-                     TransferModel, model_from_state)
+from .models import (FEAPrior, GBMEnsemble, MLPEnsemble, ResidualModel, TransferModel,
+                     model_from_state)
 from .ood import OODEnvelope
 from .registry import load_model, read_manifest, save_model
 from .surrogate import DeviationSurrogate, train_surrogate, transfer_surrogate
@@ -52,7 +52,7 @@ __all__ = [
     "family_split", "source_label", "SOURCE_LABELS",
     "DesignSpace", "DesignPoint", "design_points", "PerturbationSpec", "ProxyParams",
     "ProxySimulator", "SparlabSimulator", "generate", "simulate_samples",
-    "GBMEnsemble", "MLPEnsemble", "FieldUNet", "ResidualModel", "TransferModel", "FEAPrior",
+    "GBMEnsemble", "MLPEnsemble", "ResidualModel", "TransferModel", "FEAPrior",
     "model_from_state",
     "ConformalCalibrator", "intervals", "coverage_report", "OODEnvelope",
     "DeviationSurrogate", "train_surrogate", "transfer_surrogate",

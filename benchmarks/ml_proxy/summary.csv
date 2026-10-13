@@ -1,7 +1,0 @@
-model,split,n_parts,n_samples,dz_rms_mean_mm,err_rms_mean_mm,err_rms_median_mm,err_max_abs_mean_mm,rel_rms_mean,calibration_parts,coverage90_part_mean,share_parts_covered90,part_coverage90_min,width90_mm,baseline_width90_mm,width_ratio90,expected_coverage90,expected_coverage90_sd,expected_share_parts_covered90,expected_width_ratio90,ood_flagged_share,train_parts,data_source
-GBMEnsemble,test,12,36,0.7339,0.04946,0.0384,0.1564,0.06711,12,0.9933,1,0.9622,0.3001,0.4165,0.7206,0.9697,0.03099,0.9158,0.801,0.08333,36,proxy - not physics
-GBMEnsemble,held_out_family,10,30,0.6405,0.0586,0.06049,0.1618,0.09269,12,0.9729,0.9,0.8563,0.2547,0.4165,0.6116,,,,,0,36,proxy - not physics
-MLPEnsemble,test,12,36,0.7339,0.02251,0.02381,0.1072,0.03139,12,0.9982,1,0.9825,0.1253,0.1882,0.6656,0.9708,0.02451,0.885,0.738,0.08333,36,proxy - not physics
-MLPEnsemble,held_out_family,10,30,0.6405,0.02392,0.02223,0.09956,0.03906,12,0.9891,1,0.9374,0.1166,0.1882,0.6194,,,,,0,36,proxy - not physics
-FieldUNet,test,12,36,0.7339,0.07058,0.05785,0.1764,0.09476,12,0.9981,1,0.9769,0.4664,0.5749,0.8112,0.9672,0.03144,0.8771,0.8709,0.08333,36,proxy - not physics
-FieldUNet,held_out_family,10,30,0.6405,0.06359,0.0619,0.1745,0.1019,12,0.9972,1,0.9722,0.4656,0.5749,0.8098,,,,,0,36,proxy - not physics

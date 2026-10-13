@@ -1,7 +1,0 @@
-case,n_samples,flagged_share,part_score_median,fraction_points_out_median,top_reasons,model,data_source
-test parts (in distribution),36,0.08333,0.8538,0,area;depth_gyration_major;tool_radius,GBMEnsemble,proxy - not physics
-held-out family saddle,30,0,0.759,0,,GBMEnsemble,proxy - not physics
-"test targets, material DC04 (not trained)",12,1,1.764e+06,1,youngs_modulus;r90;r0,GBMEnsemble,proxy - not physics
-"test targets, thickness 2.5 mm (trained 0.6-1.5 mm)",12,1,2.074,0.4723,thickness;elastic_curvature;tool_radius,GBMEnsemble,proxy - not physics
-"test targets, release clamped_only (trained 3-2-1)",12,1,0.8539,0,setup.release;area;depth_gyration_major,GBMEnsemble,proxy - not physics
-"test targets, spiral tool path (trained contour)",12,1,0.8539,0,setup.toolpath_style;area;depth_gyration_major,GBMEnsemble,proxy - not physics

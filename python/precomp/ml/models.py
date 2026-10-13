@@ -1,19 +1,12 @@
 """Deviation models: dz [m] from features, with an uncertainty.
 
-Two protocols:
+The protocol, `DeviationModel` (a point model): ``fit(X, y, groups)`` on a
+feature table (rows = grid nodes, `groups` = sample ids), ``predict(X) ->
+(mean, std)`` in metres, ``feature_names``, ``to_state()`` /
+``from_state(state)``. The implementations are `GBMEnsemble`, `MLPEnsemble`,
+`ResidualModel` and `TransferModel`.
 
-* `DeviationModel` (a point model) - ``fit(X, y, groups)`` on a feature table
-  (rows = grid nodes, `groups` = sample ids), ``predict(X) -> (mean, std)`` in
-  metres, ``feature_names``, ``to_state()`` / ``from_state(state)``. The
-  implementations are `GBMEnsemble`, `MLPEnsemble`, `ResidualModel` and
-  `TransferModel`.
-* `FieldDeviationModel` - trained on whole parts, ``fit_samples(samples)``
-  and ``predict_field(commanded, setup) -> (mean, std)`` on the commanded grid:
-  `FieldUNet`, which sees the whole part at once and so can represent the
-  non-local unclamping springback that a point model only reaches through its
-  global descriptors.
-
-`precomp.ml.surrogate.DeviationSurrogate` turns either into what the
+`precomp.ml.surrogate.DeviationSurrogate` turns a model into what the
 compensation code consumes (``predict_deviation(commanded, setup)``).
 
 Determinism: every model takes a `seed`; bootstrap draws, initialisations,
@@ -44,9 +37,8 @@ import numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
 
 from .._util import PrecompError
-from ..geometry.heightmap import Grid, HeightMap
-from .features import (DEFAULT_CONFIG, PRIOR_FEATURE, FeatureConfig, as_setup,
-                       global_features)
+from ..geometry.heightmap import HeightMap
+from .features import PRIOR_FEATURE, as_setup
 
 THREADS_ENV = "PRECOMP_ML_THREADS"
 
@@ -65,20 +57,6 @@ class DeviationModel(Protocol):
             feature_names: Optional[Sequence[str]] = None) -> "DeviationModel": ...
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]: ...
-
-    def to_state(self) -> Dict[str, Any]: ...
-
-
-@runtime_checkable
-class FieldDeviationModel(Protocol):
-    """A field model: a whole commanded surface -> dz map [m] and its std [m]."""
-
-    kind: str
-
-    def fit_samples(self, samples: Sequence[Any]) -> "FieldDeviationModel": ...
-
-    def predict_field(self, commanded: HeightMap, setup: Any
-                      ) -> Tuple[np.ndarray, np.ndarray]: ...
 
     def to_state(self) -> Dict[str, Any]: ...
 
@@ -536,288 +514,6 @@ class MLPEnsemble:
 
 
 # ---------------------------------------------------------------------------
-# Field U-Net (torch)
-# ---------------------------------------------------------------------------
-#: Height scale [m] of the commanded-surface channel of the U-Net.
-UNET_Z_SCALE = 0.03
-
-
-def _build_unet(c_in: int, chans: Sequence[int], dropout: float):
-    import torch
-    import torch.nn as nn
-    import torch.nn.functional as F
-
-    def block(a: int, b: int) -> nn.Module:
-        g = 4 if b % 4 == 0 else 1
-        return nn.Sequential(
-            nn.Conv2d(a, b, 3, padding=1, padding_mode="replicate"), nn.GroupNorm(g, b),
-            nn.SiLU(),
-            nn.Conv2d(b, b, 3, padding=1, padding_mode="replicate"), nn.GroupNorm(g, b),
-            nn.SiLU())
-
-    class UNet(nn.Module):
-        def __init__(self) -> None:
-            super().__init__()
-            self.enc = nn.ModuleList()
-            prev = c_in
-            for c in chans:
-                self.enc.append(block(prev, c))
-                prev = c
-            self.dec = nn.ModuleList()
-            for k in range(len(chans) - 1, 0, -1):
-                self.dec.append(block(chans[k] + chans[k - 1], chans[k - 1]))
-            self.drop = nn.Dropout2d(dropout)
-            self.head = nn.Conv2d(chans[0], 2, 1)
-
-        def forward(self, x):
-            skips = []
-            for i, e in enumerate(self.enc):
-                if i > 0:
-                    x = F.avg_pool2d(x, 2, ceil_mode=True)
-                x = e(x)
-                skips.append(x)
-            x = self.drop(x)
-            for j, d in enumerate(self.dec):
-                skip = skips[-2 - j]
-                x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
-                x = d(torch.cat([x, skip], dim=1))
-                x = self.drop(x)
-            return self.head(x)
-
-    return UNet()
-
-
-class FieldUNet:
-    """A small U-Net from the commanded surface to the dz map (+ log-variance).
-
-    Inputs, resampled to a fixed training grid of `resolution`^2 nodes over
-    the square window [-W, W]^2 (W = `window`, default the largest half-width
-    covered by every training grid): the commanded height / 0.03 m, the depth
-    fraction, the wall angle at one tool radius, the distance to the clamped
-    frame / W, the part indicator, and the part-level descriptors (global,
-    process and material features, standardised) broadcast as constant
-    channels. Output: dz / scale and its log-variance, trained with a Gaussian
-    NLL weighted 1 on the part and `flange_weight` elsewhere; the scale is
-    the part's `target_scale` descriptor (as for `GBMEnsemble`) times a
-    constant fixed at fit. Uncertainty by
-    Monte-Carlo dropout (`mc_samples` passes, seeded): the variance is the mean
-    predicted variance plus the variance of the passes. The prediction is
-    resampled bilinearly back to the commanded grid; nodes outside the window
-    take the nearest window value.
-    """
-
-    kind = "field"
-
-    def __init__(self, *, resolution: int = 64, channels: Sequence[int] = (16, 32, 64),
-                 dropout: float = 0.1, epochs: int = 200, batch_size: int = 8,
-                 lr: float = 2e-3, weight_decay: float = 1e-5, mse_warmup: int = 20,
-                 mc_samples: int = 16, flange_weight: float = 0.2,
-                 window: Optional[float] = None, features: FeatureConfig = DEFAULT_CONFIG,
-                 target_scale: Optional[str] = DEFAULT_TARGET_SCALE,
-                 seed: int = 0, n_threads: Optional[int] = None):
-        if resolution < 8:
-            raise ValueError("resolution must be >= 8")
-        self.params = dict(resolution=int(resolution), channels=[int(c) for c in channels],
-                           dropout=float(dropout), epochs=int(epochs),
-                           batch_size=int(batch_size), lr=float(lr),
-                           weight_decay=float(weight_decay), mse_warmup=int(mse_warmup),
-                           mc_samples=int(mc_samples), flange_weight=float(flange_weight),
-                           window=None if window is None else float(window),
-                           target_scale=target_scale, seed=int(seed))
-        self.features = features
-        self.n_threads = n_threads
-        self.scalar_names: List[str] = []
-        self.s_mean = self.s_std = None
-        self.y_scale = 1.0
-        self.state: Optional[Dict[str, np.ndarray]] = None
-        self.history: List[Dict[str, float]] = []
-        self._net = None
-
-    @property
-    def feature_names(self) -> List[str]:
-        return ["z_norm", "depth_frac", "wall_angle_R", "clamp_dist_norm", "part"] + \
-            list(self.scalar_names)
-
-    # protocol guards
-    def fit(self, *args: Any, **kwargs: Any):
-        raise TypeError("FieldUNet trains on whole parts: use fit_samples(samples)")
-
-    def predict(self, *args: Any, **kwargs: Any):
-        raise TypeError("FieldUNet predicts whole fields: use predict_field(commanded, setup)")
-
-    @property
-    def grid(self) -> Grid:
-        W = self.params["window"]
-        if W is None:
-            raise PrecompError("FieldUNet is not fitted (no window)")
-        n = self.params["resolution"]
-        return Grid(-W, -W, n, n, 2.0 * W / (n - 1))
-
-    def _maps(self, commanded: HeightMap, setup: Any) -> Tuple[np.ndarray, np.ndarray,
-                                                               HeightMap]:
-        s = as_setup(setup)
-        grid = self.grid
-        cmd = commanded.resample(grid) if not commanded.grid.matches(grid) else commanded
-        eps = self.features.part_eps
-        depth = np.maximum(-cmd.z, 0.0)
-        part = depth > eps
-        dmax = float(depth[part].max()) if part.any() else 1.0
-        X, Y = grid.mesh()
-        W = self.params["window"]
-        maps = np.stack([cmd.z / UNET_Z_SCALE, depth / dmax, cmd.wall_angle(s.tool_radius),
-                         (s.free_half_width - np.maximum(np.abs(X), np.abs(Y))) / W,
-                         part.astype(float)])
-        scal, names = global_features(commanded, s, self.features)
-        return maps, scal, cmd
-
-    def _part_scale(self, scal: np.ndarray, names: Sequence[str]) -> float:
-        name = self.params.get("target_scale")
-        if name is None:
-            return 1.0
-        if name not in names:
-            raise ValueError(f"target_scale {name!r} is not a part descriptor; known: "
-                             f"{list(names)}")
-        v = float(scal[list(names).index(name)])
-        if not v > 0:
-            raise ValueError(f"target_scale {name!r} must be > 0, got {v}")
-        return v
-
-    def _input(self, maps: np.ndarray, scal: np.ndarray) -> np.ndarray:
-        s = (scal - self.s_mean) / self.s_std
-        n = self.params["resolution"]
-        return np.concatenate([maps, np.broadcast_to(s[:, None, None], (len(s), n, n))]
-                              ).astype(np.float32)
-
-    def fit_samples(self, samples: Sequence[Any]) -> "FieldUNet":
-        torch = _require_torch("FieldUNet")
-        samples = list(samples)
-        if not samples:
-            raise ValueError("FieldUNet.fit_samples: no samples")
-        p = self.params
-        if p["window"] is None:
-            p["window"] = float(min(min(-s.grid.x0, s.grid.xmax, -s.grid.y0, s.grid.ymax)
-                                    for s in samples))
-        grid = self.grid
-        maps, scals, targets, weights = [], [], [], []
-        for smp in samples:
-            m, sc, cmd = self._maps(smp.commanded, smp.setup)
-            dz = HeightMap(smp.grid, smp.dz, smp.valid).resample(grid)
-            maps.append(m)
-            scals.append(sc)
-            targets.append(dz.z)
-            w = np.where(m[4] > 0.5, 1.0, p["flange_weight"]) * dz.mask
-            weights.append(w)
-        S = np.stack(scals)
-        _, self.scalar_names = global_features(samples[0].commanded, samples[0].setup,
-                                               self.features)
-        self.s_mean, self.s_std = _standardiser(S)
-        Y = np.stack([t / self._part_scale(sc, self.scalar_names)
-                      for t, sc in zip(targets, scals)])
-        self.y_scale = float(np.sqrt(np.mean(Y ** 2))) or 1.0
-        Xin = np.stack([self._input(m, sc) for m, sc in zip(maps, scals)])
-        T = (Y / self.y_scale).astype(np.float32)
-        Wt = np.stack(weights).astype(np.float32)
-        seed = p["seed"]
-        with thread_limit(self.n_threads):
-            torch.manual_seed(seed)
-            net = _build_unet(Xin.shape[1], p["channels"], p["dropout"])
-            opt = torch.optim.Adam(net.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
-            sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, max(1, p["epochs"]))
-            gen = torch.Generator().manual_seed(seed)
-            Xt, Tt, Wtt = torch.from_numpy(Xin), torch.from_numpy(T), torch.from_numpy(Wt)
-            self.history = []
-            for epoch in range(p["epochs"]):
-                net.train()
-                perm = torch.randperm(len(Xt), generator=gen)
-                total = 0.0
-                for i in range(0, len(Xt), p["batch_size"]):
-                    b = perm[i:i + p["batch_size"]]
-                    out = net(Xt[b])
-                    mu, lv = out[:, 0], out[:, 1].clamp(*LOGVAR_RANGE)
-                    w = Wtt[b]
-                    if epoch < p["mse_warmup"]:
-                        per = (mu - Tt[b]) ** 2
-                    else:
-                        per = 0.5 * (lv + (Tt[b] - mu) ** 2 * torch.exp(-lv))
-                    loss = (per * w).sum() / w.sum().clamp_min(1.0)
-                    opt.zero_grad()
-                    loss.backward()
-                    opt.step()
-                    total += float(loss.detach()) * len(b)
-                sched.step()
-                self.history.append({"epoch": epoch, "loss": total / len(Xt)})
-        self.state = _state_to_numpy(net.state_dict())
-        self._net = None
-        return self
-
-    def _network(self):
-        if self.state is None:
-            raise PrecompError("FieldUNet is not fitted")
-        if self._net is None:
-            _require_torch("FieldUNet")
-            net = _build_unet(5 + len(self.scalar_names), self.params["channels"],
-                              self.params["dropout"])
-            net.load_state_dict(_state_from_numpy(self.state))
-            self._net = net
-        return self._net
-
-    def predict_window(self, commanded: HeightMap, setup: Any) -> Tuple[np.ndarray, np.ndarray]:
-        """(mean, std) [m] on the training grid (`grid`)."""
-        import torch
-        net = self._network()
-        maps, scal, _ = self._maps(commanded, setup)
-        x = torch.from_numpy(self._input(maps, scal)[None])
-        T = max(1, self.params["mc_samples"])
-        mus, vs = [], []
-        with thread_limit(self.n_threads), torch.random.fork_rng(), torch.no_grad():
-            torch.manual_seed(self.params["seed"] + 7919)
-            net.train(T > 1 and self.params["dropout"] > 0)   # MC dropout (no batch norm)
-            for _ in range(T):
-                out = net(x)[0]
-                mus.append(out[0].double().numpy())
-                vs.append(np.exp(out[1].clamp(*LOGVAR_RANGE).double().numpy()))
-            net.eval()
-        M, V = np.stack(mus), np.stack(vs)
-        mean = M.mean(axis=0)
-        var = V.mean(axis=0) + M.var(axis=0)
-        k = self.y_scale * self._part_scale(scal, self.scalar_names)
-        return k * mean, k * np.sqrt(var)
-
-    def predict_field(self, commanded: HeightMap, setup: Any) -> Tuple[np.ndarray, np.ndarray]:
-        mean, std = self.predict_window(commanded, setup)
-        grid = self.grid
-        if commanded.grid.matches(grid):
-            return mean, std
-        mu = HeightMap(grid, mean).resample(commanded.grid)
-        sd = HeightMap(grid, std).resample(commanded.grid)
-        return mu.z, sd.z
-
-    def fraction_outside_window(self, grid: Grid) -> float:
-        """Share of `grid`'s nodes outside the training window (extrapolated)."""
-        W = self.params["window"]
-        X, Y = grid.mesh()
-        return float(np.mean((np.abs(X) > W * (1 + 1e-9)) | (np.abs(Y) > W * (1 + 1e-9))))
-
-    def to_state(self) -> Dict[str, Any]:
-        if self.state is None:
-            raise PrecompError("FieldUNet is not fitted")
-        return {"class": "FieldUNet", "params": dict(self.params),
-                "features": self.features.to_dict(), "scalar_names": list(self.scalar_names),
-                "s_mean": self.s_mean, "s_std": self.s_std, "y_scale": self.y_scale,
-                "history": list(self.history), "torch_state_dicts": {"unet": self.state}}
-
-    @classmethod
-    def from_state(cls, state: Mapping[str, Any]) -> "FieldUNet":
-        m = cls(features=FeatureConfig.from_dict(state["features"]), **state["params"])
-        m.scalar_names = list(state["scalar_names"])
-        m.s_mean, m.s_std = np.asarray(state["s_mean"]), np.asarray(state["s_std"])
-        m.y_scale = float(state["y_scale"])
-        m.history = list(state.get("history", []))
-        m.state = dict(state["torch_state_dicts"]["unet"])
-        return m
-
-
-# ---------------------------------------------------------------------------
 # Hybrid physics + ML
 # ---------------------------------------------------------------------------
 @dataclass
@@ -1113,8 +809,7 @@ class TransferModel:
 
 
 MODEL_CLASSES = {"GBMEnsemble": GBMEnsemble, "MLPEnsemble": MLPEnsemble,
-                 "FieldUNet": FieldUNet, "ResidualModel": ResidualModel,
-                 "TransferModel": TransferModel}
+                 "ResidualModel": ResidualModel, "TransferModel": TransferModel}
 
 
 def model_from_state(state: Mapping[str, Any]):
@@ -1126,6 +821,5 @@ def model_from_state(state: Mapping[str, Any]):
     return cls.from_state(state)
 
 
-__all__ = ["DeviationModel", "FieldDeviationModel", "GBMEnsemble", "MLPEnsemble", "FieldUNet",
-           "ResidualModel", "TransferModel", "FEAPrior", "model_from_state", "thread_limit",
+__all__ = ["DeviationModel", "GBMEnsemble", "MLPEnsemble", "ResidualModel", "TransferModel", "FEAPrior", "model_from_state", "thread_limit",
            "MODEL_CLASSES", "THREADS_ENV"]

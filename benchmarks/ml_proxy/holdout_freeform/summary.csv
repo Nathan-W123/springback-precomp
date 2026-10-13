@@ -1,3 +1,0 @@
-model,split,n_parts,n_samples,dz_rms_mean_mm,err_rms_mean_mm,err_rms_median_mm,err_max_abs_mean_mm,rel_rms_mean,calibration_parts,coverage90_part_mean,share_parts_covered90,part_coverage90_min,width90_mm,baseline_width90_mm,width_ratio90,expected_coverage90,expected_coverage90_sd,expected_share_parts_covered90,expected_width_ratio90,ood_flagged_share,train_parts,data_source
-GBMEnsemble,test,12,36,0.7289,0.04715,0.04083,0.1351,0.06809,12,0.9976,1,0.9801,0.3636,0.3022,1.203,0.9664,0.03661,0.9342,1.065,0.1111,36,proxy - not physics
-GBMEnsemble,held_out_family,10,30,0.7548,0.1282,0.1193,0.3342,0.1759,12,0.9701,0.9,0.8579,0.619,0.3022,2.049,,,,,0.9,36,proxy - not physics

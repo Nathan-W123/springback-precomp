@@ -117,15 +117,13 @@ def cmd_info(args: argparse.Namespace) -> int:
 
 # -- train --------------------------------------------------------------------------
 def _make_model(kind: str, params: Dict[str, Any], args: argparse.Namespace):
-    from .models import FEAPrior, FieldUNet, GBMEnsemble, MLPEnsemble, ResidualModel
+    from .models import FEAPrior, GBMEnsemble, MLPEnsemble, ResidualModel
 
     seed = args.seed
     if kind == "gbm":
         return GBMEnsemble(**{"seed": seed, **params})
     if kind == "mlp":
         return MLPEnsemble(**{"seed": seed, **params})
-    if kind == "unet":
-        return FieldUNet(**{"seed": seed, "features": _features(args), **params})
     if kind == "residual":
         if args.prior == "proxy":
             from .generate import ProxySimulator
@@ -359,7 +357,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     t = sub.add_parser("train", help="train, calibrate and save a surrogate")
     t.add_argument("--data", required=True)
-    t.add_argument("--model", choices=["gbm", "mlp", "unet", "residual", "transfer"],
+    t.add_argument("--model", choices=["gbm", "mlp", "residual", "transfer"],
                    default="gbm")
     t.add_argument("--out", required=True, help="model bundle directory")
     t.add_argument("--param", nargs="*", metavar="KEY=VALUE", help="model hyper-parameters")

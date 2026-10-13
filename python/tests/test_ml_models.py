@@ -253,22 +253,3 @@ def test_mlp_ensemble_fits_and_is_reproducible(proxy_split, ml_features):
     assert err < 0.5 * np.sqrt(np.mean((te.y - tr.y.mean()) ** 2))
     m2 = MLPEnsemble(2, **kw).fit(tr.X, tr.y, tr.groups, feature_names=tr.feature_names)
     assert np.array_equal(m2.predict(te.X)[0], mu)
-
-
-def test_field_unet_overfits_one_sample(proxy_split):
-    pytest.importorskip("torch")
-    from precomp.ml import FieldUNet
-    from precomp.ml.features import FeatureConfig
-
-    s = proxy_split["train"][0]
-    net = FieldUNet(resolution=24, channels=(8, 16), dropout=0.0, epochs=150, mse_warmup=150,
-                    lr=5e-3, mc_samples=1, features=FeatureConfig(time_source="depth"), seed=0)
-    net.fit_samples([s])
-    mu, sd = net.predict_field(s.commanded, s.setup)
-    sel = s.commanded.z < -1e-6
-    err = np.sqrt(np.mean((mu - s.dz)[sel] ** 2))
-    assert mu.shape == s.grid.shape and np.all(np.isfinite(sd))
-    assert err < 0.2 * np.sqrt(np.mean(s.dz[sel] ** 2)), err
-    assert net.history[-1]["loss"] < 0.05 * net.history[0]["loss"]
-    with pytest.raises(TypeError, match="fit_samples"):
-        net.fit(np.zeros((2, 2)), np.zeros(2), np.zeros(2))

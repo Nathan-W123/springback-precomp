@@ -1,12 +1,12 @@
 """The deployable surrogate: features + model + conformal intervals + envelope.
 
-`DeviationSurrogate` wraps a trained point or field model with the feature
+`DeviationSurrogate` wraps a trained point model with the feature
 configuration it was trained under, its conformal calibrator and its OOD
 envelope, and states the data source it learned from. It implements what
 `precomp.compensation` and `precomp.api` expect of a model:
 
 * ``predict_deviation(commanded, setup) -> (mean, std)`` - dz [m] at every
-  node of the commanded grid (the `FieldModel` protocol);
+  node of the commanded grid;
 * ``predict_interval(commanded, setup, level) -> (lower, upper)`` - conformal
   bounds of dz [m];
 * ``assess(commanded, setup) -> dict`` - the envelope report, including the
@@ -218,7 +218,7 @@ def model_prior(model: Any) -> Any:
 class DeviationSurrogate:
     """A trained deviation model ready for prediction (see the module docstring).
 
-    model : a fitted point model (`models.DeviationModel`) or field model.
+    model : a fitted point model (`models.DeviationModel`).
     features : the FeatureConfig it was trained with.
     data_source : the label of its training data ("SparLab simulation",
         "proxy - not physics", "scan" or "mixed: ...").
@@ -235,8 +235,8 @@ class DeviationSurrogate:
                  data_source: str, training: Optional[Dict[str, Any]] = None,
                  calibrator: Optional[ConformalCalibrator] = None,
                  ood: Optional[OODEnvelope] = None, domain: str = "part"):
-        if getattr(model, "kind", None) not in ("point", "field"):
-            raise TypeError("model must be a point or field model of precomp.ml.models")
+        if getattr(model, "kind", None) != "point":
+            raise TypeError("model must be a point model of precomp.ml.models")
         self.model = model
         self.features = features
         self.data_source = data_source
@@ -331,9 +331,6 @@ class DeviationSurrogate:
         FE prior simulates with (`models.FEAPrior`; None: the commanded
         surface's outline)."""
         def make():
-            if self.kind == "field":
-                mu, sd = self.model.predict_field(commanded, setup)
-                return np.asarray(mu, float), np.asarray(sd, float)
             X = self._point_matrix(commanded, setup, target)
             mu, sd = self.model.predict(X)
             shape = commanded.grid.shape
@@ -383,9 +380,6 @@ class DeviationSurrogate:
                 rep["in_envelope"] = False
                 rep["reasons"] = [f"setup.{m['field']}" for m in mism] + rep["reasons"]
             rep["model_data_source"] = self.data_source
-            if self.kind == "field" and hasattr(self.model, "fraction_outside_window"):
-                rep["fraction_outside_window"] = self.model.fraction_outside_window(
-                    commanded.grid)
             return rep
         import copy
         return copy.deepcopy(self._cached(f"assess:{max_points}:" + _key(commanded, setup),
@@ -464,16 +458,15 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
                     group_by: str = "sample") -> DeviationSurrogate:
     """Fit `model` on `train`, then the envelope, then calibrate on `calibration`.
 
-    Point models get a stratified table (`points_per_sample` per sample, the
-    physics prior's column appended for residual models); field models are
-    fitted on the whole samples. `calibration` must hold parts that are not
+    The model gets a stratified table (`points_per_sample` per sample, the
+    physics prior's column appended for residual models). `calibration` must hold parts that are not
     in `train` (checked by part id); without it the surrogate has no
     intervals. The training provenance - sample and part ids (and a hash),
     families, sources, the data-source label, the setup fields seen
     (`setup_envelope`), the prior of a residual model, seed and sizes - is
     kept in `surrogate.training`.
 
-    group_by : the groups a point model's bootstrap (GBMEnsemble) or
+    group_by : the groups the model's bootstrap (GBMEnsemble) or
         early-stopping split (MLPEnsemble) draws: "sample" (default) or
         "part". The variants of a part are near duplicates, so with "sample"
         a bootstrap member sees about 95 % of the parts and the ensemble
@@ -512,19 +505,15 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
         "setup": setup_envelope([s.setup for s in train])}
     if model_prior(model) is not None:
         info["prior"] = describe_prior(model_prior(model))
-    table = None
-    if getattr(model, "kind", None) == "field":
-        model.fit_samples(train)
-    else:
-        table = build_table(train, features, points_per_sample=points_per_sample, mask=mask,
-                            rng=seed, stratify=True, prior=model_prior(model), n_jobs=n_jobs)
-        model.fit(table.X, table.y, table.groups if group_by == "sample" else table.part_id,
-                  feature_names=table.feature_names)
-        info["n_rows"] = len(table)
+    table = build_table(train, features, points_per_sample=points_per_sample, mask=mask,
+                        rng=seed, stratify=True, prior=model_prior(model), n_jobs=n_jobs)
+    model.fit(table.X, table.y, table.groups if group_by == "sample" else table.part_id,
+              feature_names=table.feature_names)
+    info["n_rows"] = len(table)
     sur = DeviationSurrogate(model, features, data_source=label, training=info, domain=mask)
     if envelope:
         reuse = None
-        if table is not None and mask == "part":
+        if mask == "part":
             # the training table's part nodes, without a prior column, thinned
             # to at most 400 per sample (the envelope keeps 5000 anyway)
             ncol = len(features.names)
