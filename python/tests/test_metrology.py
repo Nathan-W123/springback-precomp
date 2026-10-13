@@ -1,17 +1,12 @@
 """Metrology: robust ICP, signed normal deviation, point-cloud readers, metrics."""
 
-import struct
-import warnings
 
 import numpy as np
 import pytest
 
-from precomp import PrecompError
 from precomp.geometry import EllipticCone, Grid, HeightMap, TruncatedCone
-from precomp.metrology import (UnitsWarning, align, flange_mask, metrics, part_mask,
-                               read_point_cloud, region_masks, rotation_angle_deg,
-                               rotation_matrix, signed_deviation, vertical_deviation, wall_mask,
-                               write_xyz)
+from precomp.metrology import (align, flange_mask, metrics, rotation_angle_deg,
+                               rotation_matrix, signed_deviation, vertical_deviation, wall_mask)
 
 
 def _scan(part, rng, n=20000, half=0.06):
@@ -140,46 +135,3 @@ def test_vertical_deviation_and_metrics_are_exact():
     assert m["max_abs"] == pytest.approx(4e-4) and m["pct_within_tol"] == 50.0
     with pytest.raises(ValueError):
         metrics(np.array([np.nan]))
-
-
-def test_region_masks_partition_the_target(small_cone):
-    t = small_cone.heightmap(Grid.centered(0.08, 5e-4))
-    masks = region_masks(t)
-    assert np.array_equal(masks["part"] | masks["flange"], masks["all"])
-    assert not (masks["part"] & masks["flange"]).any()
-    assert not (masks["wall"] & ~masks["part"]).any()
-    assert part_mask(t).sum() > wall_mask(t).sum() > 0
-
-
-def test_point_cloud_readers_and_units(tmp_path):
-    pts = np.array([[1.0, 2.0, -3.0], [4.0, 5.0, -6.0], [7.5, -8.0, 9.25]])
-    (tmp_path / "a.xyz").write_text("# scanner export\n" + "\n".join(
-        " ".join(f"{v:.17g}" for v in p) for p in pts) + "\n")
-    (tmp_path / "b.csv").write_text("id,Z,X,Y\n" + "\n".join(
-        f"{i},{p[2]:.17g},{p[0]:.17g},{p[1]:.17g}" for i, p in enumerate(pts)) + "\n")
-    np.save(tmp_path / "c.npy", np.column_stack([pts, np.zeros(3)]))
-    ply_ascii = ("ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\n"
-                 "property float z\nelement face 0\nproperty list uchar int vertex_indices\n"
-                 "end_header\n" + "\n".join(" ".join(f"{v:.17g}" for v in p) for p in pts)
-                 + "\n")
-    (tmp_path / "d.ply").write_text(ply_ascii)
-    head = ("ply\nformat binary_little_endian 1.0\nelement vertex 3\nproperty double x\n"
-            "property double y\nproperty double z\nproperty uchar red\nend_header\n").encode()
-    body = b"".join(struct.pack("<dddB", *p, 7) for p in pts)
-    (tmp_path / "e.ply").write_bytes(head + body)
-    for name in ("a.xyz", "b.csv", "c.npy", "d.ply", "e.ply"):
-        got = read_point_cloud(tmp_path / name, scale=1e-3)
-        assert np.allclose(got, pts * 1e-3, rtol=1e-7), name
-    with pytest.warns(UnitsWarning, match="scale"):
-        read_point_cloud(tmp_path / "a.xyz", scale=100.0)
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        read_point_cloud(write_xyz(tmp_path / "f.csv", pts * 1e-3))
-    with pytest.raises(PrecompError, match="extension"):
-        (tmp_path / "g.obj").write_text("v 0 0 0\n")
-        read_point_cloud(tmp_path / "g.obj")
-    from precomp.geometry.stl import write_stl
-    write_stl(tmp_path / "h.stl", pts, np.array([[0, 1, 2]]))
-    with pytest.warns(UnitsWarning):                      # 21 m across at scale 1
-        got = read_point_cloud(tmp_path / "h.stl")
-    assert np.allclose(np.sort(got, axis=0), np.sort(pts, axis=0), rtol=1e-6)

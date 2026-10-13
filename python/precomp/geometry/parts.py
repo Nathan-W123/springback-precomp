@@ -341,9 +341,6 @@ class Part(abc.ABC):
             doc[f.name] = value
         return doc
 
-    @classmethod
-    def from_dict(cls, doc: Dict[str, Any]) -> "Part":
-        return part_from_dict(doc)
 
     @classmethod
     def _from_fields(cls, doc: Dict[str, Any]) -> "Part":

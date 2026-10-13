@@ -56,8 +56,7 @@ from scipy.interpolate import griddata
 from ._util import PathLike, PrecompError
 from .geometry.heightmap import HeightMap
 from .geometry.parts import MAX_WALL_ANGLE_DEG
-from .metrology import (align, flange_mask, metrics, part_mask, read_point_cloud,
-                        signed_deviation, vertical_deviation)
+from .metrology import (flange_mask, metrics, part_mask, signed_deviation, vertical_deviation)
 
 #: A predictor maps a commanded surface to the formed surface on the same grid.
 Predictor = Callable[[HeightMap], HeightMap]
@@ -352,66 +351,6 @@ def displacement_adjustment(target: HeightMap, predictor: Predictor, *, iteratio
     return DAResult(target, cbest, fbest, kbest, proposed, history, converged)
 
 
-def update_from_scan(commanded: HeightMap, scan: Union[PathLike, np.ndarray, HeightMap],
-                     target: HeightMap, *, alpha: float = 1.0, scale: float = 1.0,
-                     align_mode: str = "rigid", fixture: str = "flange",
-                     smoothing: Optional[float] = None, direction: str = "vertical",
-                     max_wall_angle_deg: Optional[float] = MAX_WALL_ANGLE_DEG,
-                     max_gap: Optional[float] = None,
-                     upper_bound: Optional[UpperBound] = None,
-                     hold_mask: Optional[np.ndarray] = None,
-                     adjust_mask: Optional[np.ndarray] = None,
-                     tool_radius: Optional[float] = None
-                     ) -> Tuple[HeightMap, Dict[str, Any]]:
-    """One shop-floor DA step from a measured part.
-
-    The part was formed with `commanded` and measured as `scan` (a point
-    cloud file read with `scale`, an (n, 3) array [m], or an already gridded
-    and aligned HeightMap). A cloud is aligned to the target (`align_mode`;
-    `fixture` "flange" aligns on the flange as the forming cell holds the
-    part, "all" on everything), gridded on the target grid (nodes farther
-    than `max_gap` [m], default 3 grid spacings, from any scan point are
-    left without data) and the DA update ``c - alpha (scan - target)`` is
-    applied where the scan has data, conditioned as in the module docstring
-    (`upper_bound`, `hold_mask`, `adjust_mask` and `tool_radius` as for
-    `displacement_adjustment`: by default the flange is held and the part
-    adjusted; a setup with a rim pass adjusts the flange strip it sweeps,
-    `precomp.fea.support.compensation_masks`).
-
-    Returns (new commanded surface, report) with the alignment summary, the
-    scan's error metrics over the part and the share of the part covered.
-    """
-    report: Dict[str, Any] = {}
-    if isinstance(scan, HeightMap):
-        measured = scan if scan.grid.matches(target.grid) else scan.resample(target.grid)
-    else:
-        pts = read_point_cloud(scan, scale=scale) if not isinstance(scan, np.ndarray) \
-            else np.asarray(scan, float)
-        fm = flange_mask(target) if fixture == "flange" else None
-        if fixture not in ("flange", "all"):
-            raise ValueError("fixture must be 'flange' or 'all'")
-        al = align(pts, target, align_mode, fixture_mask=fm)
-        report["alignment"] = al.summary()
-        aligned = al.apply(pts)
-        gap = 3.0 * target.grid.h if max_gap is None else max_gap
-        measured = HeightMap.from_points(aligned, target.grid, max_gap=gap)
-    adjust = part_mask(target) & ~flange_mask(target) if adjust_mask is None \
-        else np.asarray(adjust_mask, dtype=bool)
-    hold = flange_mask(target) if hold_mask is None else np.asarray(hold_mask, dtype=bool)
-    for name, m in (("hold_mask", hold), ("adjust_mask", adjust)):
-        if m.shape != target.grid.shape:
-            raise ValueError(f"{name} has shape {m.shape}, the target grid {target.grid.shape}")
-    err = error_field(measured, target, direction)
-    report["scan_error"] = metrics(err, adjust)
-    report["coverage"] = float(np.mean(err.mask[adjust]))
-    z_new = _apply_update(commanded, target, err, adjust, alpha, direction, smoothing)
-    new = _condition(commanded, z_new, hold, target, max_wall_angle_deg, upper_bound,
-                     tool_radius)
-    new.metadata["compensation"] = {"method": "update_from_scan", "alpha": alpha,
-                                    "direction": direction, "smoothing_m": smoothing}
-    return new, report
-
-
 # ---------------------------------------------------------------------------
 # Predictors
 # ---------------------------------------------------------------------------
@@ -487,15 +426,3 @@ class SurrogatePredictor:
 
     def __call__(self, commanded: HeightMap) -> HeightMap:
         return self.predict_with_uncertainty(commanded)[0]
-
-
-def linear_springback_predictor(factor: float, smoothing: float = 0.0) -> Predictor:
-    """A closed-form stand-in predictor: formed = c + (factor - 1) S(c), with
-    S Gaussian smoothing at `smoothing` [m] (identity when 0). For
-    0 < factor < 2 the operator G = (factor - 1) S has spectral radius
-    |factor - 1| < 1. Useful for testing and as a crude prior."""
-    def predict(c: HeightMap) -> HeightMap:
-        sc = ndimage.gaussian_filter(c.z, smoothing / c.grid.h, mode="nearest") \
-            if smoothing > 0 else c.z
-        return c.with_z(c.z + (factor - 1.0) * sc)
-    return predict

@@ -1,9 +1,7 @@
-"""Measured parts: point clouds, alignment, signed deviation and error metrics.
+"""Measured parts: alignment, signed deviation, error metrics and masks.
 
-Units. Every function works in metres. Scanners usually write millimetres, so
-`read_point_cloud` takes an explicit `scale` (0.001 for a file in mm) and
-warns when the scaled cloud is larger than 20 m or smaller than 0.1 mm - the
-same sanity bound SparLab applies to meshes.
+Units. Every function works in metres (a scan in millimetres is scaled by
+0.001 before it gets here).
 
 Alignment. `align` registers a scan to the target height field with
 point-to-plane ICP: each point's residual is its signed distance along the
@@ -26,20 +24,15 @@ formed surface lies on the tool side (+normal) of the target.
 from __future__ import annotations
 
 import math
-import warnings
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 from scipy.spatial import cKDTree
 
-from ._util import PathLike, PrecompError
+from ._util import PrecompError
 from .geometry.heightmap import HeightMap, _fill_nearest
-from .geometry.stl import read_stl
 
-#: Extent bounds [m] outside which a point cloud draws a UnitsWarning.
-UNIT_WARNING_BOUNDS = (1e-4, 20.0)
 
 #: Relative singular value of the ICP least-squares matrix (rotation columns
 #: scaled by the cloud size) below which a rigid direction counts as
@@ -48,180 +41,6 @@ UNIT_WARNING_BOUNDS = (1e-4, 20.0)
 #: symmetry only slightly), in-plane motion over a flat flange at 5e-5 to
 #: 8e-4, while an ellipse of axis ratio 1.06 still fixes its rotation at 5e-3.
 OBSERVABILITY_RCOND = 2e-3
-
-
-class UnitsWarning(UserWarning):
-    """A point cloud's size suggests the wrong `scale` (e.g. mm read as m)."""
-
-
-# ---------------------------------------------------------------------------
-# Reading
-# ---------------------------------------------------------------------------
-_PLY_TYPES = {"char": "i1", "int8": "i1", "uchar": "u1", "uint8": "u1", "short": "i2",
-              "int16": "i2", "ushort": "u2", "uint16": "u2", "int": "i4", "int32": "i4",
-              "uint": "u4", "uint32": "u4", "float": "f4", "float32": "f4",
-              "double": "f8", "float64": "f8"}
-
-
-def _read_ascii_table(path: Path, columns: Optional[Sequence[Union[int, str]]]) -> np.ndarray:
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    data_start = None
-    header: Optional[List[str]] = None
-    delim: Optional[str] = None
-    for i, line in enumerate(lines):
-        s = line.strip()
-        if not s or s.startswith("#") or s.startswith("//"):
-            continue
-        delim = "," if "," in s else (";" if ";" in s else None)
-        tokens = [t.strip() for t in (s.split(delim) if delim else s.split())]
-        try:
-            [float(t) for t in tokens]
-            data_start = i
-            break
-        except ValueError:
-            if header is None:
-                header = [t.lower() for t in tokens]
-                continue
-            raise PrecompError(f"{path}: line {i + 1} is neither a header nor numeric data")
-    if data_start is None:
-        raise PrecompError(f"{path}: no numeric data")
-    if columns is None:
-        if header is not None and all(k in header for k in ("x", "y", "z")):
-            use = [header.index("x"), header.index("y"), header.index("z")]
-        else:
-            use = [0, 1, 2]
-    else:
-        use = []
-        for c in columns:
-            if isinstance(c, str):
-                if header is None or c.lower() not in header:
-                    raise PrecompError(f"{path}: no column named {c!r} (header {header})")
-                use.append(header.index(c.lower()))
-            else:
-                use.append(int(c))
-        if len(use) != 3:
-            raise ValueError("columns must name exactly three columns (x, y, z)")
-    try:
-        arr = np.loadtxt(path, delimiter=delim, skiprows=data_start, usecols=use,
-                         comments=("#", "//"), ndmin=2)
-    except ValueError as exc:
-        raise PrecompError(f"{path}: malformed numeric data ({exc})") from exc
-    return arr
-
-
-def _read_ply(path: Path) -> np.ndarray:
-    raw = path.read_bytes()
-    end = raw.find(b"end_header")
-    if not raw.startswith(b"ply") or end < 0:
-        raise PrecompError(f"{path} is not a PLY file")
-    nl = raw.find(b"\n", end)
-    header = raw[:nl].decode("ascii", errors="replace").splitlines()
-    body = raw[nl + 1:]
-    fmt = None
-    elements: List[Dict[str, Any]] = []
-    for line in header:
-        parts = line.split()
-        if not parts:
-            continue
-        if parts[0] == "format":
-            fmt = parts[1]
-        elif parts[0] == "element":
-            elements.append({"name": parts[1], "count": int(parts[2]), "props": []})
-        elif parts[0] == "property":
-            if not elements:
-                raise PrecompError(f"{path}: property before any element")
-            if parts[1] == "list":
-                elements[-1]["props"].append(("list", parts[2], parts[3], parts[4]))
-            else:
-                if parts[1] not in _PLY_TYPES:
-                    raise PrecompError(f"{path}: unknown PLY type {parts[1]}")
-                elements[-1]["props"].append(("scalar", parts[1], parts[2]))
-    names = [e["name"] for e in elements]
-    if "vertex" not in names:
-        raise PrecompError(f"{path}: no vertex element")
-    vi = names.index("vertex")
-    vert = elements[vi]
-    pnames = [p[-1] for p in vert["props"]]
-    for axis in ("x", "y", "z"):
-        if axis not in pnames:
-            raise PrecompError(f"{path}: the vertex element has no '{axis}' property")
-    if fmt == "ascii":
-        rows = body.decode("ascii", errors="replace").splitlines()
-        skip = sum(e["count"] for e in elements[:vi])
-        lines = rows[skip:skip + vert["count"]]
-        if any(p[0] == "list" for p in vert["props"]):
-            raise PrecompError(f"{path}: list properties on vertices are not supported")
-        arr = np.array([l.split() for l in lines], dtype=float)
-        return arr[:, [pnames.index("x"), pnames.index("y"), pnames.index("z")]]
-    if fmt in ("binary_little_endian", "binary_big_endian"):
-        order = "<" if fmt == "binary_little_endian" else ">"
-        offset = 0
-        for e in elements[:vi]:
-            if any(p[0] == "list" for p in e["props"]):
-                raise PrecompError(f"{path}: a list element before the vertices is not "
-                                   "supported in binary PLY")
-            offset += e["count"] * sum(np.dtype(_PLY_TYPES[p[1]]).itemsize for p in e["props"])
-        if any(p[0] == "list" for p in vert["props"]):
-            raise PrecompError(f"{path}: list properties on vertices are not supported")
-        dt = np.dtype([(p[2], order + _PLY_TYPES[p[1]]) for p in vert["props"]])
-        need = offset + vert["count"] * dt.itemsize
-        if len(body) < need:
-            raise PrecompError(f"{path}: the file ends inside the vertex data")
-        rec = np.frombuffer(body, dtype=dt, count=vert["count"], offset=offset)
-        return np.column_stack([rec["x"], rec["y"], rec["z"]]).astype(float)
-    raise PrecompError(f"{path}: unsupported PLY format {fmt!r}")
-
-
-def read_point_cloud(path: PathLike, scale: float = 1.0,
-                     columns: Optional[Sequence[Union[int, str]]] = None) -> np.ndarray:
-    """Read a point cloud as an (n, 3) array in metres.
-
-    Formats by extension: .xyz / .txt / .csv / .asc (ASCII; comma, semicolon
-    or whitespace separated; an optional header naming x, y, z; `columns`
-    picks three columns by index or name), .ply (ASCII and binary vertex
-    x, y, z), .stl (the unique triangle corners), .npy (an (n, >= 3) array).
-    `scale` multiplies every coordinate (0.001 for a file in mm). Rows with
-    non-finite values are refused. A UnitsWarning is issued when the cloud's
-    bounding-box diagonal lies outside 0.1 mm - 20 m.
-    """
-    p = Path(path)
-    if not p.is_file():
-        raise PrecompError(f"{p} does not exist")
-    ext = p.suffix.lower()
-    if ext in (".xyz", ".txt", ".csv", ".asc", ".pts"):
-        pts = _read_ascii_table(p, columns)
-    elif ext == ".ply":
-        pts = _read_ply(p)
-    elif ext == ".stl":
-        pts = np.unique(read_stl(p).reshape(-1, 3), axis=0)
-    elif ext == ".npy":
-        arr = np.load(p, allow_pickle=False)
-        if arr.ndim != 2 or arr.shape[1] < 3:
-            raise PrecompError(f"{p}: expected an (n, >= 3) array, got {arr.shape}")
-        pts = arr[:, :3].astype(float)
-    else:
-        raise PrecompError(f"{p}: unknown point-cloud extension {ext!r}")
-    pts = np.asarray(pts, dtype=float) * float(scale)
-    if pts.ndim != 2 or pts.shape[1] != 3 or len(pts) == 0:
-        raise PrecompError(f"{p}: no points read")
-    if not np.all(np.isfinite(pts)):
-        raise PrecompError(f"{p}: the cloud contains NaN or infinite coordinates")
-    diag = float(np.linalg.norm(np.ptp(pts, axis=0)))
-    lo, hi = UNIT_WARNING_BOUNDS
-    if len(pts) > 1 and not (lo <= diag <= hi):
-        warnings.warn(f"{p}: the scaled cloud spans {diag:.3g} m; check `scale` "
-                      f"(it was {scale}; a file in millimetres needs 0.001)", UnitsWarning,
-                      stacklevel=2)
-    return pts
-
-
-def write_xyz(path: PathLike, points: np.ndarray) -> Path:
-    """Write an (n, 3) cloud as comma-separated `x,y,z` with a header [m]."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    np.savetxt(path, np.asarray(points, float), delimiter=",", header="x,y,z", comments="",
-               fmt="%.12g")
-    return path
 
 
 # ---------------------------------------------------------------------------
@@ -242,12 +61,6 @@ def rotation_angle_deg(R: np.ndarray) -> float:
     """Angle of the rotation matrix R [deg]."""
     c = (np.trace(R) - 1.0) / 2.0
     return float(math.degrees(math.acos(min(1.0, max(-1.0, c)))))
-
-
-def apply_transform(matrix: np.ndarray, points: np.ndarray) -> np.ndarray:
-    """Apply a 4x4 homogeneous transform to (n, 3) points."""
-    M = np.asarray(matrix, dtype=float)
-    return np.asarray(points, float) @ M[:3, :3].T + M[:3, 3]
 
 
 def make_transform(rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
@@ -687,10 +500,3 @@ def wall_mask(target: HeightMap, min_angle_deg: float = 5.0, eps: float = 1e-6,
     """Part nodes whose wall angle exceeds `min_angle_deg` [deg] (derivatives
     at length scale `sigma` [m], raw central differences by default)."""
     return part_mask(target, eps) & (target.wall_angle(sigma) > math.radians(min_angle_deg))
-
-
-def region_masks(target: HeightMap, eps: float = 1e-6,
-                 wall_angle_deg: float = 5.0) -> Dict[str, np.ndarray]:
-    """{"all", "part", "wall", "flange"} masks of `target` (see the functions)."""
-    return {"all": target.mask.copy(), "part": part_mask(target, eps),
-            "wall": wall_mask(target, wall_angle_deg, eps), "flange": flange_mask(target, eps)}

@@ -10,7 +10,7 @@ from precomp._util import PrecompError
 from precomp.fea import FormingSetup
 from precomp.geometry import Grid, TruncatedCone
 from precomp.materials import get_material
-from precomp.metrology import metrics, region_masks, vertical_deviation
+from precomp.metrology import metrics, part_mask, vertical_deviation
 from ml_support import ProxySimulator
 from precomp.ml import surrogate_compensate
 
@@ -35,7 +35,7 @@ def test_surrogate_compensation_cuts_the_verified_deviation_by_a_large_factor(
         assert all(h["in_envelope"] for h in res.history)
         pm = res.predicted_metrics()
         assert pm["interval_halfwidth_mean_m"] > 0 and pm["interval_level"] == 0.9
-        part = region_masks(s.target)["part"]
+        part = part_mask(s.target)
 
         def rms(commanded):    # vertical deviation of the proxy-formed part from the target
             dev = vertical_deviation(proxy.formed(commanded, s.setup), s.target)

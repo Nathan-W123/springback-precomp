@@ -117,10 +117,6 @@ class Material:
                 require_positive(key, r)
 
     # -- derived -----------------------------------------------------------
-    @property
-    def shear_modulus(self) -> float:
-        """G = E / (2 (1 + nu)) [Pa]."""
-        return self.youngs_modulus / (2.0 * (1.0 + self.poisson_ratio))
 
     @property
     def has_hill48(self) -> bool:

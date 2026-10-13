@@ -1,18 +1,11 @@
-"""Robot compliance: how far the tool is pushed off its path, and the pre-correction.
+"""Robot compliance: how far the forming force pushes the tool off its path.
 
 An industrial robot holding a forming tool is compliant: the forming force
 deflects the tool-centre point by ``delta = C f`` with C the 3 x 3 Cartesian
 compliance at the working pose [m/N] and f the force the sheet exerts on the
-tool [N] (the reaction of the forming force). The commanded path is then
-pre-deflected against the load:
-
-* `deflected_path(path, forces)` = path + C f(path) - where the tool
-  actually goes;
-* `precompensate_path(path, forces)` = path - C f, exact when f is the
-  force at the target positions (which is where the corrected tool is); with
-  a `force_model` giving the force as a function of the *commanded* path, a
-  fixed-point iteration solves ``p_cmd + C f(p_cmd) = p_target``,
-  converging when ||C df/dp|| < 1.
+tool [N] (the reaction of the forming force). The physics audit
+(benchmarks/physics_audit/process) uses it to bound the error the simulation
+leaves out by modelling the robot as rigid.
 
 Forces from a simulation: `forces_on_path` interpolates the tool force
 history of a sparlab_form result at the path's pseudo-time. sparlab_form's
@@ -30,7 +23,7 @@ for one pose; a pose-dependent map needs one C per path point (pass an
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -54,10 +47,6 @@ class CartesianCompliance:
             raise ValueError("compliance must be finite")
         self.C = C
 
-    @classmethod
-    def diagonal(cls, cx: float, cy: float, cz: float) -> "CartesianCompliance":
-        """Uncoupled compliance diag(cx, cy, cz) [m/N]."""
-        return cls(np.diag([cx, cy, cz]))
 
     @classmethod
     def from_joint_stiffness(cls, jacobian: np.ndarray,
@@ -84,49 +73,6 @@ class CartesianCompliance:
         if self.C.shape[0] != len(f):
             raise ValueError("one compliance matrix per force is required")
         return np.einsum("nij,nj->ni", self.C, f)
-
-    def deflected_path(self, path: np.ndarray, forces: np.ndarray) -> np.ndarray:
-        """Where the tool goes when commanded along `path` (n, 3) [m] under
-        `forces` (n, 3) [N] on the tool: path + C f."""
-        return np.asarray(path, float) + self.deflection(forces)
-
-    def precompensate_path(self, path: np.ndarray, forces: Optional[np.ndarray] = None, *,
-                           force_model: Optional[Callable[[np.ndarray], np.ndarray]] = None,
-                           iterations: int = 50, tolerance: float = 1e-12
-                           ) -> Tuple[np.ndarray, Dict[str, object]]:
-        """The commanded path that makes the tool follow `path` (n, 3) [m].
-
-        With `forces` (n, 3) [N on the tool] known at the target positions:
-        path - C f, exact. This covers forces that depend on where the tool
-        actually is: when the correction works, the tool is at the target, so
-        the force there is the one to use.
-
-        With `force_model(commanded_path) -> forces` - the forces the process
-        produces when the robot is *commanded* along a path (a re-simulation
-        along it, or a model of how the indentation grows with the command) -
-        the fixed point ``p_cmd = path - C f(p_cmd)`` is iterated from the
-        first-order guess until the miss |p_cmd + C f(p_cmd) - path| is below
-        `tolerance` [m]; it converges when ||C df/dp|| < 1. Returns
-        (commanded path, info) with the iterations and the miss history [m];
-        raises PrecompError when it has not converged.
-        """
-        target = np.asarray(path, dtype=float)
-        if force_model is None:
-            if forces is None:
-                raise ValueError("give forces or a force_model")
-            return target - self.deflection(forces), {"iterations": 0, "miss_m": [0.0]}
-        cmd = target.copy()
-        history: List[float] = []
-        for it in range(1, iterations + 1):
-            cmd = target - self.deflection(force_model(cmd))
-            miss = float(np.abs(cmd + self.deflection(force_model(cmd)) - target).max())
-            history.append(miss)
-            if not np.isfinite(miss):
-                break
-            if miss < tolerance:
-                return cmd, {"iterations": it, "miss_m": history}
-        raise PrecompError(f"precompensate_path did not converge: miss {history[-1]:.3g} m "
-                           f"after {len(history)} iterations (is ||C df/dp|| < 1?)")
 
 
 def forces_on_path(path: Toolpath, tool_forces: pd.DataFrame, *, tool: Optional[str] = None,
@@ -159,15 +105,3 @@ def forces_on_path(path: Toolpath, tool_forces: pd.DataFrame, *, tool: Optional[
         raise ValueError("sign must be 'on_sheet' or 'on_tool'")
     tp = path.t
     return np.column_stack([np.interp(tp, t, f[:, i]) for i in range(3)])
-
-
-def compensate_toolpath(path: Toolpath, compliance: CartesianCompliance,
-                        forces: np.ndarray) -> Toolpath:
-    """A copy of `path` pre-deflected against `forces` (n, 3) [N on the
-    tool] to first order (path - C f); metadata records the largest
-    correction [m]."""
-    cmd, _ = compliance.precompensate_path(path.points, forces)
-    meta = dict(path.metadata)
-    meta["robot_compensation"] = {
-        "max_correction_m": float(np.linalg.norm(cmd - path.points, axis=1).max())}
-    return Toolpath(cmd, path.level.copy(), path.tool_radius, meta)

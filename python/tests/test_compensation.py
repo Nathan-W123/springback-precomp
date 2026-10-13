@@ -5,10 +5,24 @@ import math
 import numpy as np
 import pytest
 
+from scipy import ndimage
+
 from precomp.compensation import (SurrogatePredictor, displacement_adjustment, limit_wall_angle,
-                                  linear_springback_predictor, smooth_update, update_from_scan)
-from precomp.geometry import Grid, Pyramid, TruncatedCone
-from precomp.metrology import flange_mask, part_mask, rotation_matrix
+                                  smooth_update)
+from precomp.geometry import Grid, HeightMap, Pyramid, TruncatedCone
+from precomp.metrology import flange_mask, part_mask
+
+
+def linear_springback_predictor(factor: float, smoothing: float = 0.0):
+    """A closed-form stand-in predictor: formed = c + (factor - 1) S(c), with
+    S Gaussian smoothing at `smoothing` [m] (identity when 0). For
+    0 < factor < 2 the operator G = (factor - 1) S has spectral radius
+    |factor - 1| < 1, so DA's convergence on it is known."""
+    def predict(c: HeightMap) -> HeightMap:
+        sc = ndimage.gaussian_filter(c.z, smoothing / c.grid.h, mode="nearest") \
+            if smoothing > 0 else c.z
+        return c.with_z(c.z + (factor - 1.0) * sc)
+    return predict
 
 
 @pytest.fixture
@@ -82,33 +96,6 @@ def test_normal_direction_da_converges_too(target):
                                   max_wall_angle_deg=None)
     r = res.rms_history
     assert r[-1] < 0.01 * r[0]
-
-
-def test_update_from_scan_is_one_da_step(target):
-    """A scan of the formed part taken at the grid nodes (where linear
-    gridding is exact whatever the triangulation), misplaced in the fixture
-    by a small tilt and lift: after alignment on the flange the update is
-    exactly c - (formed - target) on the part."""
-    commanded = target.copy()
-    formed = linear_springback_predictor(0.8)(commanded)
-    pts = formed.to_points()
-    R = rotation_matrix(np.radians([0.2, -0.1, 0.0]))
-    scan = pts @ R.T + np.array([0.0, 0.0, 4e-4])
-    new, report = update_from_scan(commanded, scan, target, alpha=1.0, fixture="flange",
-                                   max_wall_angle_deg=None)
-    assert report["alignment"]["rank"] == 3
-    assert report["alignment"]["rms_m"] < 1e-10               # the misplacement is undone
-    assert report["coverage"] == 1.0
-    part = part_mask(target) & ~flange_mask(target)
-    exact = commanded.z - (formed.z - target.z)
-    # A flat flange cannot fix the in-plane position (rank 3): it stays where
-    # the pivot of the tilt puts it, ~1e-7 m off here, which on a 45 deg wall
-    # reads as the same in z. Everything else is exact.
-    assert np.abs(new.z - exact)[part].max() < 3e-7
-    assert np.abs(new.z - exact)[part].mean() < 3e-8
-    half, _ = update_from_scan(commanded, scan, target, alpha=0.5, fixture="flange",
-                               max_wall_angle_deg=None)
-    assert np.abs(half.z - (commanded.z - 0.5 * (formed.z - target.z)))[part].max() < 3e-7
 
 
 class _ConstantModel:

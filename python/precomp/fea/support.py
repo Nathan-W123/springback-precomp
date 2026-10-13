@@ -130,21 +130,6 @@ def bottom_node_grid(setup: FormingSetup) -> Tuple[np.ndarray, np.ndarray, np.nd
     return ids, X, Y
 
 
-def part_distance(reference: HeightMap, x: np.ndarray, y: np.ndarray) -> np.ndarray:
-    """Distance [m] from points (x, y) to the nearest part node of
-    `reference` (nodes deeper than 1 um): 0 on the part's nodes. Half a grid
-    spacing more than the distance to the outline outside the part
-    (`outline_distance`)."""
-    part = reference.mask & (reference.z < -1e-6)
-    if not part.any():
-        raise PrecompError("the reference surface has no part: a backing plate needs an "
-                           "outline to follow")
-    X, Y = reference.grid.mesh()
-    tree = cKDTree(np.column_stack([X[part], Y[part]]))
-    d, _ = tree.query(np.column_stack([np.ravel(x), np.ravel(y)]))
-    return d.reshape(np.shape(x))
-
-
 def outline_distance(reference: HeightMap, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     """Signed distance [m] from points (x, y) to the outline of the part of
     `reference` (its nodes deeper than 1 um): negative inside, positive
@@ -512,4 +497,4 @@ __all__ = ["PLATE_TOOL", "SUPPORT_TOOL", "SUPPORT_PATH_FILE", "RIM_PASS_WINDOW",
            "COMMAND_TOLERANCE", "SupportPlan", "plan_support", "plate_nodes", "plate_tool",
            "support_tool", "dsif_trajectory", "rim_pass", "rim_pass_reach",
            "command_upper_bound", "check_command", "compensation_masks", "rim_band",
-           "bottom_node_grid", "part_distance", "outline_distance"]
+           "bottom_node_grid", "outline_distance"]

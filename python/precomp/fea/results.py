@@ -42,7 +42,7 @@ import pandas as pd
 
 from .._util import PathLike, PrecompError, read_json, safe_name
 from ..geometry.heightmap import Grid, HeightMap, _fill_nearest
-from ..geometry.stl import raycast_top
+from ..geometry.raycast import raycast_top
 
 NODE_COLUMNS = ["node", "X", "Y", "Z", "ux", "uy", "uz"]
 ELEMENT_COLUMNS = ["element", "eq_plastic_strain", "von_mises_Pa"]

@@ -135,22 +135,17 @@ def test_two_pockets_give_two_loops_per_level_and_air_moves():
         spiral_toolpath(target, R, 1e-3, 1e-3)
 
 
-def test_csv_exports_round_trip(tmp_path, small_cone):
+def test_the_trajectory_file_holds_the_path_exactly(tmp_path, small_cone):
     target = small_cone.heightmap(Grid.centered(0.1, 5e-4))
     path = spiral_toolpath(target, R, 1e-3, 1e-3)
     csv = path.to_sparlab_csv(tmp_path / "toolpath.csv")
-    frame = pd.read_csv(csv)
+    frame = pd.read_csv(csv, float_precision="round_trip")
     assert list(frame.columns) == ["t", "x", "y", "z"]
     t = frame["t"].to_numpy()
     assert t[0] == 0.0 and t[-1] == 1.0 and np.all(np.diff(t) > 0)
-    back = Toolpath.from_sparlab_csv(csv, R)
-    assert np.array_equal(back.points, path.points)
-    robot = pd.read_csv(path.to_robot_csv(tmp_path / "robot.csv", feed=0.02))
-    assert list(robot.columns) == ["x", "y", "z", "i", "j", "k", "feed"]
-    assert np.all(robot["k"] == 1.0) and np.all(robot["feed"] == 0.02)
+    assert np.array_equal(frame[["x", "y", "z"]].to_numpy(), path.points)
     summ = path.summary(feed=0.02)
     assert summ["time_s"] == pytest.approx(path.total_length / 0.02)
-    assert np.allclose(path.at(np.array([0.0, 1.0])), path.points[[0, -1]])
 
 
 def test_dsif_support_moves_with_the_tool_opposite_it_and_never_inside_the_sheet():

@@ -81,16 +81,6 @@ class Grid:
         half = 0.5 * n * spacing
         return cls(center[0] - half, center[1] - half, n + 1, n + 1, spacing)
 
-    @classmethod
-    def from_extent(cls, xmin: float, xmax: float, ymin: float, ymax: float,
-                    spacing: float) -> "Grid":
-        """The grid from (xmin, ymin) with spacing `spacing` [m] that covers the
-        box up to (xmax, ymax); the far sides are extended to a whole spacing."""
-        if not (xmax > xmin and ymax > ymin and spacing > 0):
-            raise ValueError("from_extent needs xmax > xmin, ymax > ymin, spacing > 0")
-        nx = int(math.ceil((xmax - xmin) / spacing - 1e-9)) + 1
-        ny = int(math.ceil((ymax - ymin) / spacing - 1e-9)) + 1
-        return cls(xmin, ymin, nx, ny, spacing)
 
     # -- coordinates -------------------------------------------------------
     @property
@@ -356,13 +346,6 @@ class HeightMap:
         H = ((1.0 + p * p) * zyy - 2.0 * p * q * zxy + (1.0 + q * q) * zxx) / (2.0 * w ** 1.5)
         return H, K
 
-    def smooth(self, sigma: float) -> "HeightMap":
-        """Gaussian smoothing of z with standard deviation `sigma` [m]
-        (border mode 'nearest'); the mask is kept."""
-        if sigma <= 0:
-            return self.copy()
-        z = ndimage.gaussian_filter(self.z, sigma / self.grid.h, mode="nearest")
-        return self.with_z(z)
 
     # -- resampling and conversion ----------------------------------------
     def resample(self, grid: Grid) -> "HeightMap":
@@ -412,31 +395,6 @@ class HeightMap:
         z = _fill_nearest(np.where(valid, z, 0.0), valid)
         return cls(grid, z, valid, dict(metadata or {}))
 
-    def to_stl(self, path: PathLike, binary: bool = True) -> Path:
-        """Write the valid cells as a triangulated surface (two triangles per
-        grid cell whose four nodes are valid, normals pointing +z) [m]."""
-        from .stl import heightmap_triangles, write_stl
-        vertices, triangles = heightmap_triangles(self)
-        return write_stl(path, vertices, triangles, binary=binary,
-                         header="precomp HeightMap, metres")
-
-    @classmethod
-    def from_stl(cls, path: PathLike, grid: Grid, scale: float = 1.0) -> "HeightMap":
-        """Read an STL surface onto `grid` by casting a ray along -z through
-        every node and keeping the top-most hit (the tool-side surface).
-
-        `scale` multiplies every coordinate as it is read (0.001 for a file in
-        millimetres). Nodes no triangle covers are invalid, filled with the
-        nearest valid height.
-        """
-        from .stl import raycast_top, read_stl
-        tris = read_stl(path) * float(scale)
-        z, hit = raycast_top(tris, grid)
-        if not hit.any():
-            raise PrecompError(f"{path}: no triangle lies above the grid; check `scale` and "
-                               "the grid extent")
-        z = _fill_nearest(np.where(hit, z, 0.0), hit)
-        return cls(grid, z, hit, {"source": str(path), "scale": float(scale)})
 
     # -- persistence -------------------------------------------------------
     def save(self, path: PathLike) -> Path:

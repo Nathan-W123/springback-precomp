@@ -39,7 +39,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
-import pandas as pd
 from scipy import ndimage
 
 from ._util import PathLike, PrecompError, require_positive
@@ -200,51 +199,6 @@ class Toolpath:
             lines.append(f"{ti:.17g},{x:.17g},{y:.17g},{z:.17g}")
         path.write_text("\n".join(lines) + "\n", encoding="ascii")
         return path
-
-    def to_robot_csv(self, path: PathLike, feed: float,
-                     axis: Sequence[float] = (0.0, 0.0, 1.0)) -> Path:
-        """Write robot waypoints `x,y,z,i,j,k,feed`.
-
-        x, y, z : tool-centre point [m]; i, j, k : unit tool-axis direction
-        (default +z, a vertical tool; the axis points from the ball towards
-        the spindle); feed : path speed [m/s]. Strict SI like the rest of the
-        package: a controller that expects mm and mm/min needs the conversion
-        on its side.
-        """
-        feed = require_positive("feed", feed)
-        a = np.asarray(axis, dtype=float)
-        if a.shape != (3,) or not np.linalg.norm(a) > 0:
-            raise ValueError("axis must be a non-zero 3-vector")
-        a = a / np.linalg.norm(a)
-        frame = pd.DataFrame({"x": self.points[:, 0], "y": self.points[:, 1],
-                              "z": self.points[:, 2], "i": a[0], "j": a[1], "k": a[2],
-                              "feed": feed})
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        frame.to_csv(path, index=False, float_format="%.12g")
-        return path
-
-    @classmethod
-    def from_sparlab_csv(cls, path: PathLike, tool_radius: float) -> "Toolpath":
-        """Read a `t,x,y,z` trajectory (levels are unknown and set to 0)."""
-        path = Path(path)
-        if not path.is_file():
-            raise PrecompError(f"{path} does not exist")
-        frame = pd.read_csv(path, float_precision="round_trip")
-        if list(frame.columns) != ["t", "x", "y", "z"]:
-            raise PrecompError(f"{path}: expected the columns t,x,y,z, found "
-                               f"{','.join(frame.columns)}")
-        t = frame["t"].to_numpy()
-        if np.any(np.diff(t) <= 0) or t[0] < 0 or t[-1] > 1 + 1e-12:
-            raise PrecompError(f"{path}: t must increase strictly within [0, 1]")
-        return cls(frame[["x", "y", "z"]].to_numpy(), np.zeros(len(frame), dtype=int),
-                   tool_radius, {"source": str(path)})
-
-    def at(self, t: np.ndarray) -> np.ndarray:
-        """Tool-centre positions (k, 3) [m] at pseudo-times `t` (linear)."""
-        tt = self.t
-        t = np.asarray(t, dtype=float)
-        return np.stack([np.interp(t, tt, self.points[:, i]) for i in range(3)], axis=-1)
 
 
 # ---------------------------------------------------------------------------
@@ -847,15 +801,6 @@ def dsif_support_path(primary: Toolpath, target: HeightMap, thickness: float,
     return Toolpath(pts, primary.level.copy(), R2, meta)
 
 
-def lift_cutter(underside: HeightMap, radius: float) -> HeightMap:
-    """`lift_heights` on the grid of `underside` (no floor, no offset): the
-    highest ball centre below the sheet at every node, the drop cutter of
-    the flipped surface turned back."""
-    flip = HeightMap(underside.grid, -underside.z, underside.mask)
-    return underside.with_z(-tool_center_surface(flip, radius).z,
-                            metadata={"quantity": "lift_cutter", "radius": float(radius)})
-
-
 def lift_at_points(underside: HeightMap, radius: float, x: np.ndarray, y: np.ndarray
                    ) -> np.ndarray:
     """The highest centre heights [m] of a ball of radius R at points (x, y)
@@ -887,25 +832,6 @@ def lift_at_points(underside: HeightMap, radius: float, x: np.ndarray, y: np.nda
             vals = underside.z[j0:j1, i0:i1] - np.sqrt(np.clip(R * R - d2, 0.0, None))
             out[k] = float(vals[inside].min())
     return out
-
-
-def reach_from_below(underside: HeightMap, radius: float) -> HeightMap:
-    """What a ball of radius R pushing from below can shape of `underside`:
-    the highest point of any ball below it at every node,
-
-        O(x) = max over |x - y| <= R of [b(y) + sqrt(R^2 - |x - y|^2)],
-
-    b the lift cutter - the morphological opening of the underside from
-    below by the ball. O <= underside everywhere, with equality exactly
-    where the ball can touch it; where O is lower, the underside is a recess
-    narrower than the ball (a concave corner seen from below, a narrow raised
-    band) that the ball cannot reach into.
-    """
-    b = lift_cutter(underside, radius)
-    footprint, structure = spherical_structure(radius, underside.grid.h)
-    top = ndimage.grey_dilation(b.z, footprint=footprint, structure=structure, mode="nearest")
-    return underside.with_z(np.minimum(top, underside.z),
-                            metadata={"quantity": "reach_from_below", "radius": float(radius)})
 
 
 def swept_ball_top(points: np.ndarray, radius: float, grid: Grid,

@@ -19,13 +19,12 @@ from precomp.compensation import FEAPredictor, displacement_adjustment
 from precomp.fea import FormingSetup, build_deck, deck_document, deck_hash, simulate
 from precomp.fea.support import (COMMAND_TOLERANCE, PLATE_TOOL, SUPPORT_PATH_FILE, SUPPORT_TOOL,
                                  bottom_node_grid, check_command, command_upper_bound,
-                                 compensation_masks, outline_distance, part_distance,
-                                 plate_nodes, rim_band)
-from precomp.geometry import Grid, HeightMap, TruncatedCone
+                                 compensation_masks, outline_distance, plate_nodes, rim_band)
+from precomp.geometry import Grid, TruncatedCone
 from precomp.geometry.parts import part_from_dict
 from precomp.materials import get_material
 from precomp.metrology import flange_mask, part_mask
-from precomp.toolpath import AIR, reach_from_below, signed_outline_distance
+from precomp.toolpath import AIR, signed_outline_distance
 
 T = 1e-3
 
@@ -126,7 +125,6 @@ def test_the_backing_plate_carries_the_bottom_faces_outside_the_opening(tmp_path
     dist = outline_distance(cone, X, Y)
     sd = signed_outline_distance(cone)
     assert np.allclose(dist, sd.interpolate(X, Y), atol=1e-12)       # the mesh on grid nodes
-    assert np.allclose(dist[dist > 0], part_distance(cone, X, Y)[dist > 0] - 0.5 * cone.grid.h)
     assert np.all(dist[listed] > 1e-3)                       # outside the opening ...
     # ... and every node outside it whose cell is wholly outside is listed
     out = dist > 1e-3
@@ -353,18 +351,6 @@ def test_only_the_rim_pass_realises_a_command_above_the_sheet_plane(tmp_path, ba
     assert up["z"][up["t"] >= 2].max() > flat["z"][flat["t"] >= 2].max() + 1e-4
 
 
-def test_reach_from_below_is_the_underside_where_the_ball_fits():
-    g = Grid.centered(0.02, 2.5e-4)
-    X, Y = g.mesh()
-    wide = HeightMap(g, 1e-3 * np.exp(-(X ** 2 + Y ** 2) / (2 * 0.004 ** 2)))
-    assert np.allclose(reach_from_below(wide, 1e-3).z, wide.z, atol=1e-6)
-    narrow = HeightMap(g, np.where(np.abs(X) < 5e-4, 1e-3, 0.0))
-    r = reach_from_below(narrow, 4e-3).z
-    assert np.all(r <= narrow.z + 1e-15)
-    assert r[np.abs(X) < 2.5e-4].max() < 1e-4                     # the slot is out of reach
-    assert np.allclose(r[np.abs(X) > 3e-3], 0.0)
-
-
 def _sagging_predictor(target):
     """formed = commanded - a sag of up to 1 mm around the outline (a
     stand-in for the simulated rim sag)."""
@@ -584,24 +570,3 @@ def test_the_proxy_refuses_a_setup_with_support(base, cone):
         assert not out.ok and "no model of support" in out.error
         with pytest.raises(PrecompError, match="no model of support"):
             proxy.predict_deviation(cone, s)
-
-
-def test_a_scan_update_adjusts_the_strip_the_rim_pass_sweeps(tmp_path, base, cone):
-    """update_from_scan takes the masks and the bound of displacement
-    adjustment, so a measured part gives the command FE-DA would: the swept
-    flange strip adjusted, the rim raised where the rim pass reaches."""
-    from precomp.compensation import update_from_scan
-
-    rim = base.replace(support="dsif", support_settings={"rim_pass": True, "radius": 1.5e-3})
-    pred = _sagging_predictor(cone)
-    hold, adjust = compensation_masks(rim, cone)
-    bound = command_upper_bound(rim, cone)
-    da = displacement_adjustment(cone, pred, iterations=1, hold_mask=hold, adjust_mask=adjust,
-                                 upper_bound=bound)
-    scan = pred(cone)
-    new, _ = update_from_scan(cone, scan, cone, hold_mask=hold, adjust_mask=adjust,
-                              upper_bound=bound)
-    assert np.array_equal(new.z, da.proposed.z) and new.z.max() > 3e-4
-    held, _ = update_from_scan(cone, scan, cone, upper_bound=bound)   # the whole flange held
-    fl = flange_mask(cone)
-    assert np.array_equal(held.z[fl], cone.z[fl]) and held.z.max() < 0.1 * new.z.max()

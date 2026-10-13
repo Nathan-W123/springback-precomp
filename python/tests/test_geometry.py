@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from precomp import PrecompError
-from precomp.geometry import Grid, HeightMap, read_stl, zeros
+from precomp.geometry import Grid, HeightMap, zeros
 
 
 def test_grid_centered_layout():
@@ -95,35 +95,6 @@ def test_npz_round_trip_keeps_mask_and_metadata(tmp_path):
     assert back.grid == g
     assert np.array_equal(back.z, z) and np.array_equal(back.mask, mask)
     assert back.metadata == hm.metadata
-
-
-@pytest.mark.parametrize("binary", [True, False])
-def test_stl_round_trip(tmp_path, binary, small_cone):
-    g = Grid.centered(0.08, 1e-3)
-    hm = small_cone.heightmap(g)
-    path = hm.to_stl(tmp_path / "part.stl", binary=binary)
-    tris = read_stl(path)
-    assert tris.shape == (2 * (g.nx - 1) * (g.ny - 1), 3, 3)
-    n = np.cross(tris[:, 1] - tris[:, 0], tris[:, 2] - tris[:, 0])
-    assert np.all(n[:, 2] > 0)                                     # normals towards the tool
-    back = HeightMap.from_stl(path, g)
-    assert back.mask.all()
-    tol = 2e-9 if binary else 1e-15                                # float32 in binary STL
-    assert np.abs(back.z - hm.z).max() < tol
-
-
-def test_stl_ray_cast_keeps_the_top_surface_and_applies_scale(tmp_path):
-    from precomp.geometry.stl import write_stl
-    # two parallel squares in millimetres; the upper one must win
-    v = np.array([[-10, -10, -5], [10, -10, -5], [10, 10, -5], [-10, 10, -5],
-                  [-10, -10, -2], [10, -10, -2], [10, 10, -2], [-10, 10, -2]], float)
-    t = np.array([[0, 1, 2], [0, 2, 3], [4, 5, 6], [4, 6, 7]])
-    write_stl(tmp_path / "two.stl", v, t)
-    g = Grid.centered(0.03, 1e-3)
-    hm = HeightMap.from_stl(tmp_path / "two.stl", g, scale=1e-3)
-    inside = (np.abs(g.mesh()[0]) <= 0.01 + 1e-12) & (np.abs(g.mesh()[1]) <= 0.01 + 1e-12)
-    assert np.array_equal(hm.mask, inside)
-    assert np.allclose(hm.z[inside], -0.002)
 
 
 def test_from_points_is_exact_for_a_plane_and_masks_outside(rng):
