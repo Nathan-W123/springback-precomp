@@ -18,16 +18,15 @@ Protocol (config.json, written from `PROTOCOL` when absent):
     benchmark's process on the audit's 0.833 mm incompatible-mode Hex8 mesh,
     one layer, 5 points through the thickness, penalty 10;
   * strategies: single-point forming ("none"), a backing plate with a 1 mm
-    clearance to the target's outline, DSIF with the sine-law gap (as in
-    benchmarks/support_cone);
+    clearance to the target's outline, and two-tool forming ("dsif": an
+    underside support tool follows the forming tool, sine-law gap);
   * methods: uncompensated (1 FE run), FE-DA-1 (2), FE-DA-2 (3): vertical
     displacement adjustment with the FE model in the loop, alpha = 1, no
     smoothing, 65 deg wall limit, the support-aware masks and command bound
     (`compensation_masks`, `command_upper_bound`) - the fixture made for the
     target.
 
-Protocol revision 2 (the deck fixes listed at `PROTOCOL`); revision 1's
-outputs are kept in benchmarks/springback_fine/rev1 with `deck_defects.csv`.
+Protocol revision 2 (the deck fixes listed at `PROTOCOL`).
 
 Resumable: every run goes through precomp's content-addressed cache in
 `<work>/runs` (an identical deck is never run twice), so a rerun after an
@@ -36,9 +35,8 @@ rewritten each time a DA chain finishes, from the chains finished so far.
 
 Outputs in --out: config.json, cases.csv (one row per part, strategy and FE
 run: deviation by region, cost, physics checks), tools.csv, summary.csv
-(per strategy and method, mean over the parts), compare_2mm.csv (single-point
-forming against benchmarks/springback's 2 mm numbers on the same parts),
-tables.md, run.json.
+(per strategy and method, mean over the parts), summary_common_parts.csv (the
+same over the parts every strategy and method finished), tables.md, run.json.
 """
 
 from __future__ import annotations
@@ -62,18 +60,16 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 
-import support_validation as sv  # noqa: E402  (deviation, physics, tool_rows, versions)
+import common  # noqa: E402  (deviation, physics, tool_rows, versions)
+from common import LABEL, MM, REPO  # noqa: E402
 
-MM = 1e-3
-LABEL = "SparLab simulation"
-REPO = HERE.parents[1]
 OLD = REPO / "benchmarks" / "springback"
 
 PROTOCOL: Dict[str, Any] = {
     # 2: the same protocol on the fixed deck generation - the deepest tool
     # path level no longer dropped under a dimpled floor or a dome's pole,
     # and DSIF support knots between the tool's where it swings round it
-    # (revision 1, which had both defects, is kept in <out>/rev1)
+    # (revision 1 had both defects; its outputs are at tag pre-cleanup)
     "protocol_revision": 2,
     "data_source": LABEL,
     "parts_from": "benchmarks/springback (config.json design, test split: indices 0-1 per family)",
@@ -148,8 +144,8 @@ def run_chain(cfg: Dict[str, Any], point, strategy: str, work: Path,
             "commanded_depth_mm": commanded.depth / MM,
             "deck_hash": res.provenance.get("key"), "cache_hit": res.provenance.get("cache_hit"),
             "wall_runtime_s": res.provenance.get("runtime_s")}
-        rec.update(sv.deviation(formed, target, cfg["upper_band_depth"]))
-        rec.update(sv.physics(res))
+        rec.update(common.deviation(formed, target, cfg["upper_band_depth"]))
+        rec.update(common.physics(res))
         theta = target.wall_angle()
         wall = (target.z < -3e-4) & (np.degrees(theta) > 30.0)
         th = res.thickness_map("form", grid=target.grid)
@@ -162,7 +158,7 @@ def run_chain(cfg: Dict[str, Any], point, strategy: str, work: Path,
         if plate:
             rec["plate_realised_clearance_mm"] = plate["realised_clearance_m"] / MM
         rec["_tools"] = [{"point_id": point.point_id, "strategy": strategy,
-                          "method": rec["method"], **t} for t in sv.tool_rows(rec["method"], res)]
+                          "method": rec["method"], **t} for t in common.tool_rows(rec["method"], res)]
         records.append(rec)
         log(f"{point.point_id} {strategy} {rec['method']}: RMS {rec['vert_rms_mm']:.3f} mm, "
             f"rim sag {rec['upper_band_bias_mm']:+.3f} mm, {rec['runtime_s']:.0f} s"
@@ -195,21 +191,6 @@ def fmt(x: Any, nd: int = 3) -> str:
     if x is None or (isinstance(x, (float, np.floating)) and not np.isfinite(x)):
         return "-"
     return f"{x:.{nd}f}" if isinstance(x, (float, np.floating)) else str(x)
-
-
-def old_numbers() -> pd.DataFrame:
-    """benchmarks/springback stage n18 (2 mm mesh, single-point forming):
-    per test part and method, the deviation and the regions."""
-    st = OLD / "stage_n18"
-    hd = pd.read_csv(st / "headline.csv")
-    hd = hd[hd["method"].isin(["uncompensated", "FE-DA-1", "FE-DA-2"])]
-    rg = pd.read_csv(st / "regions.csv")
-    cols = ["point_id", "method", "upper_band_rms_mm", "upper_band_bias_mm", "deep_rms_mm",
-            "deep_bias_mm", "flange_rms_mm"]
-    m = hd[["point_id", "method", "vert_rms_mm", "vert_max_mm", "normal_rms_mm"]].merge(
-        rg[cols], on=["point_id", "method"], how="left")
-    sims = pd.read_csv(st / "simulations.csv")
-    return m, sims
 
 
 def summarise(cases: pd.DataFrame) -> pd.DataFrame:
@@ -256,20 +237,6 @@ def summarise(cases: pd.DataFrame) -> pd.DataFrame:
     return sm
 
 
-def compare_2mm(cases: pd.DataFrame) -> pd.DataFrame:
-    old, _ = old_numbers()
-    new = cases[(cases["strategy"] == "none") & cases["completed"].fillna(False).astype(bool)]
-    cols = ["vert_rms_mm", "vert_max_mm", "normal_rms_mm", "upper_band_rms_mm",
-            "upper_band_bias_mm", "deep_rms_mm", "deep_bias_mm", "flange_rms_mm"]
-    m = new[["point_id", "method"] + cols].merge(old[["point_id", "method"] + cols],
-                                                 on=["point_id", "method"],
-                                                 suffixes=("_fine", "_2mm"))
-    for c in cols:
-        m[f"{c}_change"] = m[f"{c}_fine"] - m[f"{c}_2mm"]
-    m["data_source"] = LABEL
-    return m
-
-
 def write_tables(out: Path, cfg: Dict[str, Any], cases: pd.DataFrame, tools: pd.DataFrame,
                  meta: Dict[str, Any]) -> None:
     cases = cases.copy()
@@ -293,9 +260,6 @@ def write_tables(out: Path, cfg: Dict[str, Any], cases: pd.DataFrame, tools: pd.
     common = sorted(n_combos[n_combos == full].index)
     smc = summarise(cases[cases["point_id"].isin(common)])
     smc.to_csv(out / "summary_common_parts.csv", index=False, float_format="%.4f")
-    cmp_ = compare_2mm(cases)
-    cmp_.to_csv(out / "compare_2mm.csv", index=False, float_format="%.4f")
-    old, old_sims = old_numbers()
     from precomp.fea.setup import PRESETS
 
     penalty = PRESETS[cfg["preset"]].get("contact", {}).get("penalty", 10.0)
@@ -330,31 +294,15 @@ def write_tables(out: Path, cfg: Dict[str, Any], cases: pd.DataFrame, tools: pd.
         L.append(f"| {r['strategy']} | {r['method']} | **{fmt(r['vert_rms_mean_mm'])}** | "
                  f"{fmt(r['vert_max_mean_mm'])} | {fmt(r['rim_sag_mean_mm'])} | "
                  f"{fmt(r['interior_rms_mean_mm'])} ({fmt(r['interior_bias_mean_mm'], 2)}) |")
-    # old 2 mm reference rows
-    L += ["", "The 2 mm benchmark (benchmarks/springback, stage n18, single-point forming) "
-          "on the same parts:", "",
-          "| method | vertical RMS mean | max mean | rim sag | upper band RMS | interior RMS "
-          "(bias) |", "|---|--:|--:|--:|--:|--:|"]
-    for m in ["uncompensated", "FE-DA-1", "FE-DA-2"]:
-        g = old[old["method"] == m]
-        L.append(f"| {m} | {fmt(g['vert_rms_mm'].mean())} | {fmt(g['vert_max_mm'].mean())} | "
-                 f"{fmt(g['upper_band_bias_mm'].mean())} | {fmt(g['upper_band_rms_mm'].mean())}"
-                 f" | {fmt(g['deep_rms_mm'].mean())} ({fmt(g['deep_bias_mm'].mean(), 2)}) |")
-    ok = old_sims[old_sims["status"] == "complete"]
-    L.append(f"\n2 mm runs: {fmt(ok['runtime_s'].mean(), 0)} s mean, "
-             f"{fmt(ok['runtime_s'].median(), 0)} s median per run (stage n18, two at a time "
-             "on a shared machine).")
     # per part
     ok_cases = cases[cases["completed"].fillna(False).astype(bool)]
     L += ["", "Per part, vertical RMS [mm] (max |dev| in brackets; rim sag after the "
           "slash):", ""]
     combos = [(s, m) for s in cfg["strategies"] for m in ["uncompensated", "FE-DA-1", "FE-DA-2"]]
-    L.append("| part | 2 mm uncomp. | " + " | ".join(f"{s} {m}" for s, m in combos) + " |")
-    L.append("|---|--:|" + "--:|" * len(combos))
+    L.append("| part | " + " | ".join(f"{s} {m}" for s, m in combos) + " |")
+    L.append("|---|" + "--:|" * len(combos))
     for pid in sorted(cases["point_id"].unique()):
-        o = old[(old["point_id"] == pid) & (old["method"] == "uncompensated")]
-        cells = [f"{o['vert_rms_mm'].iloc[0]:.3f} ({o['vert_max_mm'].iloc[0]:.2f}) / "
-                 f"{o['upper_band_bias_mm'].iloc[0]:+.2f}" if len(o) else "-"]
+        cells = []
         for s, m in combos:
             x = ok_cases[(ok_cases["point_id"] == pid) & (ok_cases["strategy"] == s)
                          & (ok_cases["method"] == m)]
@@ -364,15 +312,6 @@ def write_tables(out: Path, cfg: Dict[str, Any], cases: pd.DataFrame, tools: pd.
                          f"{x['upper_band_bias_mm'].iloc[0]:+.2f}" if len(x)
                          else ("FAILED" if len(f) else "-"))
         L.append(f"| {pid} | " + " | ".join(cells) + " |")
-    if len(cmp_):
-        L += ["", "Single-point forming, fine minus 2 mm, mean over the parts [mm]:", "",
-              "| method | parts | vertical RMS | max | rim sag | interior RMS |",
-              "|---|--:|--:|--:|--:|--:|"]
-        for m, g in cmp_.groupby("method", sort=False):
-            L.append(f"| {m} | {len(g)} | {g['vert_rms_mm_change'].mean():+.3f} | "
-                     f"{g['vert_max_mm_change'].mean():+.3f} | "
-                     f"{g['upper_band_bias_mm_change'].mean():+.3f} | "
-                     f"{g['deep_rms_mm_change'].mean():+.3f} |")
     fails = cases[~cases["completed"].fillna(False).astype(bool)]
     L += ["", "Failures:", ""]
     if len(fails):
@@ -453,7 +392,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     def meta() -> Dict[str, Any]:
         return {"command": " ".join([Path(sys.argv[0]).name] + list(argv or sys.argv[1:])),
-                "versions": sv.versions(exe), "data_source": LABEL,
+                "versions": common.versions(exe), "data_source": LABEL,
                 "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)),
                 "elapsed_s": time.time() - t0, "load_average_start": load0,
                 "load_average_end": os.getloadavg(), "workers": args.workers,

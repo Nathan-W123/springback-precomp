@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Combined compensation, one test part (SparLab simulation; 1 part: not
-statistically meaningful): the DSIF support with its rim pass holds the
-clamp-side band, and the ML surrogate + optimiser compensates the smooth
-deep-region error the rim pass leaves.
+"""The headline method (SparLab simulation): two-tool forming with an edge
+pass holds the clamp-side band, and the ML surrogate + optimiser compensates
+the smooth deep-region error the edge pass leaves. (In the code "DSIF" is the
+two-tool process and the "rim pass" its edge pass.)
 
   1. data: 12 TRAIN-split parts of the stage_n26 design (3 per family,
      `select_parts`), the UNCOMPENSATED target of each simulated with exactly
-     the smoke test's rim-pass setup (`smoke_optimizer_edge.edge_setup(True)`:
-     benchmarks/springback_fine's dsif strategy + support_cone's dsif_rim,
+     the rim-pass setup (`edge_setup(True)`:
+     benchmarks/springback_fine's dsif strategy + the edge pass,
      `springback_fine` preset, penalty 10), 4 runs at a time, 1 thread each;
      one Sample per run (source "sim", fidelity "sparlab:dsif_rim") in its own
      Dataset, <work>/data_rim (never mixed into the plate data);
@@ -27,9 +27,18 @@ The verification starts as soon as the 8 fit parts are done; the 4 held-out
 runs are only for scoring and run in the remaining slots.
 
 usage (worktree root; OPENBLAS_NUM_THREADS=1 PYTHONPATH=python):
-    python3 python/scripts/combined_rim_ml.py all      # everything, resumable
+    python3 python/scripts/combined_rim_ml.py all      # steps 1-3, resumable
+    COMBINED_PART=<test part> python3 python/scripts/combined_rim_ml.py one
+                                                       # step 3 for another test part
     python3 python/scripts/combined_rim_ml.py status
-    python3 python/scripts/combined_rim_ml.py report   # results.csv, README.md
+    python3 python/scripts/combined_rim_ml.py report   # results.csv, README.md (one part)
+
+The published 8-part result ran `all` once, then `one` for each of the 8
+test parts (benchmarks/springback_fine_ml/combined_rim/run_all8.sh); its
+table (combined_rim/all8_results.csv and the "All 8 test parts" section of
+combined_rim/README.md) was assembled from the per-part verification records
+in <work>/combined_rim/ by hand. `report` writes the one-part table only,
+and rewrites combined_rim/README.md: keep the 8-part section when you run it.
 
 Resumable: every SparLab run goes through the content-addressed run cache
 (<work>/runs); each step writes a JSON in <work>/combined_rim/ and is skipped
@@ -39,6 +48,7 @@ when it exists (a recorded failure is not retried).
 from __future__ import annotations
 
 import argparse
+import copy
 import itertools
 import json
 import os
@@ -47,7 +57,7 @@ import threading
 import time
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import _bootstrap  # noqa: F401
 
@@ -57,28 +67,77 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import springback_benchmark as sb  # noqa: E402
-import springback_fine_ml as fm  # noqa: E402
-import smoke_optimizer_edge as se  # noqa: E402
-import support_validation as sv  # noqa: E402
+import common  # noqa: E402  (deviation by region, physics checks, split, JSON)
+import springback_fine_ml as fm  # noqa: E402  (the design, the split rules)
+from common import LABEL, MM, REPO, log  # noqa: E402
 
-MM = 1e-3
-LABEL = "SparLab simulation"
-OUT_ML = se.OUT_ML
-WORK = se.WORK
+OUT_ML = REPO / "benchmarks" / "springback_fine_ml"
+WORK = OUT_ML / "work"
+#: the training stage whose MLP ensemble is the base model
+STAGE, N = "stage_n26", 26
 OUT = OUT_ML / "combined_rim"
 CW = WORK / "combined_rim"
 DATA = WORK / "data_rim"
 #: the test part (env COMBINED_PART selects another one, for `one`)
-PART = os.environ.get("COMBINED_PART", se.PART)
+PART = os.environ.get("COMBINED_PART", "pyramid-s2026-0001")
 FIDELITY = "sparlab:dsif_rim"
 SLOTS = 4
-COLS = se.COLS
+COLS = ["vert_rms_mm", "upper_band_rms_mm", "upper_band_bias_mm", "deep_rms_mm",
+        "deep_bias_mm"]
 SEL_COLS = ["footprint_mm", "depth_mm", "max_wall_angle_deg"]
 
 
-def log(msg: str) -> None:
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+# ---------------------------------------------------------------------------
+# configuration, setup and the base model
+# ---------------------------------------------------------------------------
+def cfgs():
+    """(benchmarks/springback_fine_ml/config.json, benchmarks/springback/config.json)."""
+    cfg = json.loads((OUT_ML / "config.json").read_text())
+    old = json.loads((fm.OLD / "config.json").read_text())
+    return cfg, old
+
+
+def exe() -> str:
+    return str((WORK / "bin" / "sparlab_form").resolve())
+
+
+#: The edge pass: after forming, the support tool alone sweeps loops around
+#: the part's outline from below (FormingSetup support_settings rim_pass).
+EDGE_PASS = {"support": "dsif", "support_settings": {"rim_pass": True}}
+
+
+def edge_setup(rim: bool):
+    """benchmarks/springback_fine's dsif strategy (two-tool forming), with
+    the edge pass (`EDGE_PASS`) when `rim`."""
+    from precomp.fea import FormingSetup
+
+    fcfg = json.loads((fm.FINE / "config.json").read_text())
+    over = copy.deepcopy(fcfg.get("setup_overrides", {}))
+    over.update(copy.deepcopy(fcfg["strategies"]["dsif"]))
+    if rim:
+        over.update(copy.deepcopy(EDGE_PASS))
+    return FormingSetup.preset(fcfg["preset"], executable=exe(), timeout=fcfg["timeout_s"],
+                               **over)
+
+
+def load_mlp(cfg, old, pts):
+    """The stage_n26 MLP ensemble exactly as springback_fine_ml.py loads it
+    (`train_or_load` with the stage's train / calibration samples: a load,
+    never a retrain)."""
+    from precomp.ml import Dataset
+
+    ds = Dataset.create(WORK / "data", created_at="", exist_ok=True)
+    spl = fm.cfg_split(cfg)
+    pids = {p.point_id for p in pts}
+    by: Dict[str, List[Any]] = {"train": [], "calibration": []}
+    for s in ds:
+        if s.part_id in pids:
+            by.setdefault(common.split_of(s.part_id, spl), []).append(s)
+    bundle = WORK / "models" / STAGE / "mlp"
+    sur, dt = fm.train_or_load("mlp", by["train"], by["calibration"], cfg, bundle, 1)
+    if dt is not None:
+        raise SystemExit("the MLP was retrained: the bundle did not match the stage")
+    return sur
 
 
 # ---------------------------------------------------------------------------
@@ -95,11 +154,11 @@ def select_parts() -> pd.DataFrame:
     f = CW / "selection.csv"
     if f.exists():
         return pd.read_csv(f)
-    d = pd.read_csv(OUT_ML / se.STAGE / "design.csv")
+    d = pd.read_csv(OUT_ML / STAGE / "design.csv")
     st = pd.read_csv(OUT_ML / "data_status.csv")[["point_id", "unc_runtime_s"]]
-    cfg, _ = se.cfgs()
+    cfg, _ = cfgs()
     spl = fm.cfg_split(cfg)
-    d = d[[sb.split_of(p, spl) == "train" for p in d.point_id]]
+    d = d[[common.split_of(p, spl) == "train" for p in d.point_id]]
     assert (d.split == "train").all()
     m = d.merge(st, on="point_id")
     rows = []
@@ -132,16 +191,16 @@ def select_parts() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 class Ctx:
     def __init__(self) -> None:
-        self.cfg, self.old = se.cfgs()
-        self.points = {p.point_id: p for p in fm.design(self.cfg, self.old, se.N, se.exe())}
-        self.setup = se.edge_setup(True)
+        self.cfg, self.old = cfgs()
+        self.points = {p.point_id: p for p in fm.design(self.cfg, self.old, N, exe())}
+        self.setup = edge_setup(True)
         self._mlp = None
         self.lock = threading.Lock()
 
     def mlp(self):
         with self.lock:
             if self._mlp is None:
-                self._mlp = se.load_mlp(self.cfg, self.old, list(self.points.values()))
+                self._mlp = load_mlp(self.cfg, self.old, list(self.points.values()))
             return self._mlp
 
     def dataset(self):
@@ -179,8 +238,8 @@ def data_run(ctx: Ctx, pid: str, role: str) -> Dict[str, Any]:
         formed = res.formed_surface(-1, grid=target.grid)
         prov = res.provenance
         rec.update(ok=True, deck_hash=prov.get("key"), cache_hit=prov.get("cache_hit"))
-        rec.update(sv.physics(res))
-        rec.update(sv.deviation(formed, target, ctx.cfg["upper_band_depth"]))
+        rec.update(common.physics(res))
+        rec.update(common.deviation(formed, target, ctx.cfg["upper_band_depth"]))
         s = Sample(sample_id(pid), target.copy(), formed, ctx.setup.to_dict(), "sim", FIDELITY,
                    "uncompensated", p.part.to_dict(), pid, target, None,
                    {"created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -188,7 +247,7 @@ def data_run(ctx: Ctx, pid: str, role: str) -> Dict[str, Any]:
                     "sparlab_version": prov.get("sparlab_version"),
                     "runtime_s": rec.get("runtime_s"),
                     "note": "uncompensated target, DSIF + rim pass, penalty 10 "
-                            "(smoke_optimizer_edge.edge_setup(True))"})
+                            "(combined_rim_ml.edge_setup(True))"})
         with ctx.lock:
             ds = ctx.dataset()
             if not ds.has(s.sample_id):
@@ -206,7 +265,7 @@ def data_run(ctx: Ctx, pid: str, role: str) -> Dict[str, Any]:
                                                                       time.gmtime())})
     rec["wall_s"] = time.perf_counter() - t0
     f.parent.mkdir(parents=True, exist_ok=True)
-    sb.jdump(f, rec)
+    common.jdump(f, rec)
     log(f"data {pid}: {'ok' if rec['ok'] else 'FAILED ' + str(rec.get('termination'))}"
         f" [{rec['wall_s']:.0f} s] vert RMS {rec.get('vert_rms_mm', float('nan')):.3f} mm")
     return rec
@@ -310,14 +369,14 @@ def combined(ctx: Ctx, sel: pd.DataFrame, max_time: float) -> Dict[str, Any]:
         ores.save(CW / f"{PART}-combined-optimizer")
 
         def pred(res):
-            d = sv.deviation(res.predicted, target, ctx.cfg["upper_band_depth"])
+            d = common.deviation(res.predicted, target, ctx.cfg["upper_band_depth"])
             return {k: d[k] for k in COLS}
 
         v = sur.training["transfer"]
         info = {"point_id": PART, "data_source": "transfer-model prediction (stage_n26 MLP "
                 "on plate data, penalty 3, + linear correction on DSIF rim-pass runs, "
                 "penalty 10; SparLab simulation)",
-                "setup": "smoke_optimizer_edge.edge_setup(True) (dsif + rim pass, penalty 10)",
+                "setup": "combined_rim_ml.edge_setup(True) (dsif + rim pass, penalty 10)",
                 "transfer_accepted": v["accepted"], "transfer_validation": v["validation"],
                 "envelope_override": override,
                 "masks": {"band_nodes": int(band.sum()), "strip_nodes": int(strip.sum()),
@@ -336,11 +395,11 @@ def combined(ctx: Ctx, sel: pd.DataFrame, max_time: float) -> Dict[str, Any]:
                                   float(np.abs(comp.z - dres.compensated.z).max()) / MM}}
         # the transfer model's prediction for the UNCOMPENSATED target (rim pass)
         mu, _ = sur.predict_deviation(target, ctx.setup)
-        info["target_predicted"] = {k: v for k, v in sv.deviation(
+        info["target_predicted"] = {k: v for k, v in common.deviation(
             target.with_z(target.z + mu), target, ctx.cfg["upper_band_depth"]).items()
             if k in COLS}
         comp.save(fcmd)
-        sb.jdump(fpred, info)
+        common.jdump(fpred, info)
         log("combined prediction: " + json.dumps({k: info[k] for k in ("da", "optimizer")},
                                                  default=str))
     return verify(ctx, comp)
@@ -361,8 +420,8 @@ def verify(ctx: Ctx, comp) -> Dict[str, Any]:
         formed = res.formed_surface(-1, grid=target.grid)
         rec.update(ok=True, deck_hash=res.provenance.get("key"),
                    cache_hit=res.provenance.get("cache_hit"))
-        rec.update(sv.physics(res))
-        rec.update(sv.deviation(formed, target, ctx.cfg["upper_band_depth"]))
+        rec.update(common.physics(res))
+        rec.update(common.deviation(formed, target, ctx.cfg["upper_band_depth"]))
         formed.save(CW / f"{PART}-verify-formed.npz")
     except FormingError as exc:
         r = {k: v for k, v in (exc.record or {}).items()
@@ -370,7 +429,7 @@ def verify(ctx: Ctx, comp) -> Dict[str, Any]:
         rec.update(ok=False, error=str(exc)[:2000], termination=r.get("termination")
                    or r.get("reason"), record=r)
     rec["wall_s"] = time.perf_counter() - t0
-    sb.jdump(f, rec)
+    common.jdump(f, rec)
     log(f"verify {PART}: " + json.dumps({k: rec.get(k) for k in ["ok"] + COLS}, default=str))
     return rec
 
@@ -435,7 +494,7 @@ def evaluate(ctx: Ctx, sel: pd.DataFrame) -> Dict[str, Any]:
                                                                      np.nan),
                            "accepted": m.accepted, "theta": m.validation.get("theta"),
                            "per_part": m.validation.get("per_part")}
-    sb.jdump(f, out)
+    common.jdump(f, out)
     log("evaluation: " + json.dumps({k: v for k, v in out.items()
                                      if k.startswith(("heldout", "lopo"))}, default=str)[:2000])
     return out
@@ -498,7 +557,7 @@ def cmd_all(args) -> None:
     evaluate(ctx, sel)
     meta = {"finished": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "this_invocation_s": time.time() - t_start}
-    sb.jdump(CW / "all_done.json", meta)
+    common.jdump(CW / "all_done.json", meta)
     cmd_report(args)
     log("done")
 
@@ -522,19 +581,6 @@ def cmd_status(args) -> None:
 def cmd_report(args) -> None:
     sel = select_parts()
     rows: List[Dict[str, Any]] = []
-    smoke = pd.read_csv(se.OUT / "results.csv")
-    for case, kind, label in (
-            ("plate uncompensated", "simulated", "plate uncompensated"),
-            ("ML-MLP n26 (surrogate DA)", "predicted (MLP)", "ML-MLP DA (plate)"),
-            ("ML-MLP n26 (surrogate DA)", "simulated", "ML-MLP DA (plate)"),
-            ("optimizer (from ML-MLP DA)", "predicted (MLP)", "MLP + optimiser (plate)"),
-            ("optimizer (from ML-MLP DA)", "simulated", "MLP + optimiser (plate)"),
-            ("dsif + rim pass uncompensated", "simulated", "DSIF + rim pass uncompensated")):
-        r = smoke[(smoke["case"] == case) & (smoke["kind"] == kind)].iloc[0]
-        rows.append({"case": label, "kind": kind, "fe_runs": int(r.fe_runs),
-                     **{c: r[c] for c in COLS},
-                     "deck_hash": r.get("deck_hash") if isinstance(r.get("deck_hash"), str)
-                     else None, "source": "benchmarks/springback_fine_ml/smoke_n26"})
     pf = CW / f"{PART}-combined.json"
     info = json.loads(pf.read_text()) if pf.exists() else {}
     if info:
@@ -579,9 +625,9 @@ def cmd_report(args) -> None:
     ev = json.loads((CW / "evaluation.json").read_text()) if (CW / "evaluation.json").exists() \
         else {}
     if ev:
-        sb.jdump(OUT / "evaluation.json", ev)
+        common.jdump(OUT / "evaluation.json", ev)
     if info:
-        sb.jdump(OUT / "combined_prediction.json", info)
+        common.jdump(OUT / "combined_prediction.json", info)
 
     def f3(v):
         if v is None or (isinstance(v, float) and not np.isfinite(v)):
@@ -603,9 +649,8 @@ def cmd_report(args) -> None:
         L.append(f"| {x['case']} | {x['kind']} | {x['fe_runs']} | "
                  + " | ".join(f3(x.get(c)) for c in COLS)
                  + f" | {'' if pd.isna(note) else note} |")
-    L += ["", "FE runs: SparLab runs of this part for that row (the plate rows' ML models "
-          "were trained on separate data runs; the combined row also needed the 12 rim-pass "
-          "training runs below).", ""]
+    L += ["", "FE runs: SparLab runs of this part for that row (the combined row also "
+          "needed the 12 rim-pass training runs below).", ""]
     if info:
         o = info["optimizer"]
         L += [f"Combined: surrogate DA ({info['da']['stopped']}, {info['da']['time_s']:.0f} s), "
@@ -649,8 +694,8 @@ def cmd_report(args) -> None:
                  f"{r.max_wall_angle_deg:.1f} | {st} | {f3(r.runtime_s)} | "
                  f"{f3(r.vert_rms_mm)} | {f3(r.upper_band_bias_mm)} | {f3(r.deep_bias_mm)} |")
     L += ["", "Made by `python/scripts/combined_rim_ml.py` (rim-pass setup = "
-          "`smoke_optimizer_edge.edge_setup(True)`: benchmarks/springback_fine's dsif strategy "
-          "with benchmarks/support_cone's dsif_rim). Data set: "
+          "`edge_setup(True)`: benchmarks/springback_fine's dsif strategy "
+          "with the edge pass). Data set: "
           "benchmarks/springback_fine_ml/work/data_rim (kept apart from the plate data).", ""]
     (OUT / "README.md").write_text("\n".join(L))
     print(df.to_string(index=False))
@@ -668,7 +713,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("what", choices=["all", "one", "select", "status", "report"])
     ap.add_argument("--max-time", type=float, default=240.0,
-                    help="optimiser wall-time cap [s] (the smoke test's)")
+                    help="optimiser wall-time cap [s]")
     a = ap.parse_args()
     if a.what == "select":
         print(select_parts().to_string(index=False))

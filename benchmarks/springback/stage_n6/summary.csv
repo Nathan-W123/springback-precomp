@@ -1,4 +1,0 @@
-method,n_parts,fe_runs_per_part,vert_rms_mean_mm,vert_rms_median_mm,vert_max_mean_mm,normal_rms_mean_mm,n_failed,rms_over_uncompensated_mean,parts_better_than_uncompensated,parts_better_than_DA1,data_source
-uncompensated,8,1,0.7313,0.7348,1.3409,0.7286,0,1.0000,0,0,SparLab simulation
-FE-DA-1,8,2,0.6228,0.6202,1.1288,0.6291,0,0.8523,8,0,SparLab simulation
-ML-GBM,8,1,0.6271,0.6281,1.1356,0.6337,0,0.8608,7,5,SparLab simulation

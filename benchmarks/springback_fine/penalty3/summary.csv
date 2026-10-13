@@ -1,3 +1,0 @@
-strategy,method,fe_runs_per_part,n_parts,n_failed,vert_rms_mean_mm,vert_rms_median_mm,vert_max_mean_mm,normal_rms_mean_mm,rim_sag_mean_mm,upper_band_rms_mean_mm,interior_rms_mean_mm,interior_bias_mean_mm,flange_bias_mean_mm,upper_band_share_mean,runtime_s_mean,runtime_s_max,cpu_h_per_part,newton_iterations_mean,cuts_mean,parts_better_than_own_uncompensated,parts_better_than_spif_uncompensated,data_source
-backing_plate,uncompensated,1,4,0,0.2912,0.2893,0.5530,0.2718,-0.4100,0.4186,0.1449,-0.0884,-0.0496,0.8563,1164.0337,1568.7176,0.3233,1932.2500,1.0000,,0,SparLab simulation
-dsif,uncompensated,1,4,0,0.2606,0.2505,0.5411,0.2484,-0.2146,0.2644,0.2163,0.1143,0.0159,0.4722,1992.1822,2333.3304,0.5534,3906.2500,0.0000,,0,SparLab simulation

@@ -74,12 +74,9 @@ import pandas as pd
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-import springback_benchmark as sb  # noqa: E402  (split, models, versions, cache table)
-import support_validation as sv  # noqa: E402  (deviation by region)
+import common  # noqa: E402  (deviation by region, split, versions, JSON)
+from common import LABEL, MM, REPO, log  # noqa: E402
 
-MM = 1e-3
-LABEL = "SparLab simulation"
-REPO = HERE.parents[1]
 OLD = REPO / "benchmarks" / "springback"
 FINE = REPO / "benchmarks" / "springback_fine"
 
@@ -104,10 +101,9 @@ PROTOCOL: Dict[str, Any] = {
 }
 
 METHOD_ORDER = ["uncompensated", "FE-DA-1", "FE-DA-2", "FE-DA-1 fixed", "ML-MLP"]
-
-
-def log(msg: str) -> None:
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
+#: The model trained: the five-network MLP ensemble ("mlp" names its outputs:
+#: ml_compensation_mlp.csv, method ML-MLP, <work>/models/<stage>/mlp).
+MODELS = ("mlp",)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +172,7 @@ def generate_data(cfg, points, ds, work: Path, workers: int, out: Path) -> List[
     lock = threading.Lock()
     status: List[Dict[str, Any]] = []
     have = set(ds.ids())
-    todo = [p for p in points if sb.split_of(p.point_id, cfg_split(cfg)) != "test"
+    todo = [p for p in points if common.split_of(p.point_id, cfg_split(cfg)) != "test"
             and any(f"{p.point_id}-{k[:4]}" not in have for k in kinds)]
     log(f"data: {len(todo)} parts to simulate ({2 * len(todo)} runs at most), "
         f"{workers} at a time")
@@ -193,7 +189,7 @@ def generate_data(cfg, points, ds, work: Path, workers: int, out: Path) -> List[
         t0 = time.time()
         target = point.target()
         row: Dict[str, Any] = {"point_id": point.point_id,
-                               "split": sb.split_of(point.point_id, cfg_split(cfg))}
+                               "split": common.split_of(point.point_id, cfg_split(cfg))}
         oc0 = sim.run([sim_job(point.setup, target, target)])[0]
         row.update(unc_ok=oc0.ok, unc_hash=oc0.provenance.get("deck_hash"),
                    unc_runtime_s=oc0.provenance.get("runtime_s"),
@@ -240,6 +236,48 @@ def generate_data(cfg, points, ds, work: Path, workers: int, out: Path) -> List[
 def cfg_split(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """The split rules and seed of benchmarks/springback (kept in our config)."""
     return cfg["split"]
+
+
+# ---------------------------------------------------------------------------
+# the model
+# ---------------------------------------------------------------------------
+def make_model(name: str, cfg: Dict[str, Any]):
+    """The surrogate's model from the protocol: the MLP ensemble."""
+    from precomp.ml import MLPEnsemble
+
+    if name != "mlp":
+        raise ValueError(name)
+    m = cfg["surrogate"]["mlp"]
+    return MLPEnsemble(m["n_members"], hidden=tuple(m["hidden"]), epochs=m["epochs"],
+                       seed=cfg["seed"])
+
+
+def train_or_load(name, train, cal, cfg, bundle: Path, threads: int):
+    """Load the bundle when it was trained on exactly these training and
+    calibration samples, else train, calibrate and save it. Returns (surrogate,
+    training time [s] or None when loaded)."""
+    from precomp.ml import FeatureConfig, load_model, save_model, train_surrogate
+
+    ids = sorted(s.sample_id for s in train)
+    cal_ids = sorted(s.sample_id for s in cal)
+    if (bundle / "manifest.json").exists():
+        sur = load_model(bundle)
+        if (sorted(sur.training["sample_ids"]) == ids
+                and sorted(sur.training["calibration_sample_ids"]) == cal_ids):
+            log(f"{name}: loaded {bundle}")
+            return sur, None
+    t0 = time.perf_counter()
+    sur = train_surrogate(make_model(name, cfg), train, calibration=cal or None,
+                          features=FeatureConfig(),
+                          points_per_sample=cfg["surrogate"]["points_per_sample"],
+                          seed=cfg["seed"], n_jobs=threads)
+    dt = time.perf_counter() - t0
+    save_model(sur, bundle, {"created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                             "notes": "springback benchmark (SparLab simulation)",
+                             "training_time_s": dt}, overwrite=True)
+    log(f"{name}: trained on {len({s.part_id for s in train})} parts ({len(train)} samples), "
+        f"calibrated on {len({s.part_id for s in cal})} parts [{dt:.0f} s]")
+    return sur, dt
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +397,7 @@ def ml_shot(name, sur, cfg, test_points, work: Path, stage: str, exe: str,
             comp = res.compensated
             root.mkdir(parents=True, exist_ok=True)
             comp.save(f)
-            sb.jdump(meta, info)
+            common.jdump(meta, info)
         rows.append(info)
         jobs.append((p, comp))
     t0 = time.perf_counter()
@@ -374,10 +412,10 @@ def ml_shot(name, sur, cfg, test_points, work: Path, stage: str, exe: str,
             info["runtime_s"] = oc.provenance.get("runtime_s")
             info["cache_hit"] = oc.provenance.get("cache_hit")
             if oc.ok:
-                sb.jdump(root / f"{p.point_id}.json", info)
+                common.jdump(root / f"{p.point_id}.json", info)
         info["verify_ok"] = oc.ok
         if oc.ok:
-            info.update(sv.deviation(oc.formed, p.target(), cfg["upper_band_depth"]))
+            info.update(common.deviation(oc.formed, p.target(), cfg["upper_band_depth"]))
         else:
             info["error"] = (oc.error or "").splitlines()[0][:500]
     log(f"{name}: {len(jobs)} ML first shots verified at penalty 10 "
@@ -461,13 +499,48 @@ def summarise(hd: pd.DataFrame) -> pd.DataFrame:
     return sm
 
 
+def simulation_table(work: Path) -> pd.DataFrame:
+    """Every run of the cache: runtime, increments, status, failure reason."""
+    rows = []
+    for d in sorted((work / "runs" / "runs").glob("??/*")):
+        if not d.is_dir():
+            continue
+        done, failed = d / "COMPLETE", d / "FAILED"
+        r: Dict[str, Any] = {"deck_hash": d.name,
+                             "status": "complete" if done.exists() else
+                             ("failed" if failed.exists() else "incomplete")}
+        try:
+            run = json.loads((d / "run.json").read_text())
+            r["runtime_s"] = run.get("runtime_s")
+            r["exit_code"] = run.get("exit_code", run.get("returncode"))
+        except (OSError, ValueError):
+            pass
+        if failed.exists():
+            try:
+                fr = json.loads(failed.read_text())
+                r["reason"] = str(fr.get("reason", fr))[:300]
+            except ValueError:
+                r["reason"] = failed.read_text()[:300]
+        try:
+            s = json.loads((d / "output" / "summary.json").read_text())
+            r["increments"] = s["timing"]["increments"]
+            r["newton_iterations"] = s["timing"]["iterations"]
+            r["cuts"] = s["timing"]["cuts"]
+            r["warnings"] = len(s.get("warnings", []))
+            r["max_plastic_strain"] = max(st["max_plastic_strain"] for st in s["steps"])
+        except (OSError, ValueError, KeyError):
+            pass
+        rows.append(r)
+    return pd.DataFrame(rows)
+
+
 def write_stage(out: Path, stage: str, cfg, points, test_points, base, ml_rows, dz_frames,
                 dz_summary, ds, work: Path, meta: Dict[str, Any]) -> pd.DataFrame:
     sdir = out / stage
     sdir.mkdir(parents=True, exist_ok=True)
     spl = cfg_split(cfg)
     pd.DataFrame([{"point_id": p.point_id, "family": p.family,
-                   "split": sb.split_of(p.point_id, spl),
+                   "split": common.split_of(p.point_id, spl),
                    "footprint_mm": 2 * p.part.footprint_radius() / MM,
                    "depth_mm": p.part.max_depth() / MM,
                    "max_wall_angle_deg": p.part.max_wall_angle_deg(),
@@ -508,7 +581,7 @@ def write_stage(out: Path, stage: str, cfg, points, test_points, base, ml_rows, 
                               "reason": x.get("error"), "resolved_later": False})
     pd.DataFrame(frows, columns=["stage", "sample_id", "reason", "resolved_later"]).to_csv(
         sdir / "failures.csv", index=False)
-    sims = sb.simulation_table(work)
+    sims = simulation_table(work)
     if len(sims):
         sims = sims[sims["deck_hash"].isin(set(hashes))].copy()
         sims["role"] = sims["deck_hash"].map(hashes)
@@ -516,7 +589,7 @@ def write_stage(out: Path, stage: str, cfg, points, test_points, base, ml_rows, 
     okd = sims[(sims["status"] == "complete") & sims["role"].str.startswith("data")] \
         if len(sims) else sims
     meta = dict(meta)
-    by_split = {s: int(sum(sb.split_of(pid, spl) == s for pid in idx["part_id"].unique()))
+    by_split = {s: int(sum(common.split_of(pid, spl) == s for pid in idx["part_id"].unique()))
                 for s in ("train", "calibration", "test")} if len(idx) else {}
     meta["dataset"] = {"samples": int(len(idx)), "parts": int(idx["part_id"].nunique())
                        if len(idx) else 0, "by_split": by_split,
@@ -527,7 +600,7 @@ def write_stage(out: Path, stage: str, cfg, points, test_points, base, ml_rows, 
                        "data_runtime_s_total": float(okd["runtime_s"].sum()) if len(okd)
                        else None}
     meta["dz"] = dz_summary
-    sb.jdump(sdir / "run.json", meta)
+    common.jdump(sdir / "run.json", meta)
     # markdown
     L = [f"# {stage}: SparLab simulations (not experiments)", "",
          f"Backing plate. {by_split.get('train', 0)} train / "
@@ -597,7 +670,6 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--work", required=True, help="run cache, data set, models (large)")
     ap.add_argument("--stages", type=int, nargs="+", required=True,
                     help="design points per family, one stage each, in order (e.g. 18 26)")
-    ap.add_argument("--models", nargs="*", default=["mlp"], choices=["mlp"])
     ap.add_argument("--workers", type=int, default=4, help="simulations at a time")
     ap.add_argument("--threads", type=int, default=4, help="threads for training")
     ap.add_argument("--data-only", action="store_true", help="generate the data, no ML")
@@ -625,7 +697,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         cfg = copy.deepcopy(PROTOCOL)
         cfg["split"] = {k: old_cfg[k] for k in ("seed", "test_per_family",
                                                 "calibration_every")}
-        cfg["seed"] = old_cfg["seed"]          # the models' seed (springback_benchmark)
+        cfg["seed"] = old_cfg["seed"]          # the models' seed (the design's)
         cfg_path.write_text(json.dumps(cfg, indent=2, sort_keys=True) + "\n")
     if args.executable:
         exe = str(Path(args.executable).resolve())
@@ -646,7 +718,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         load0 = os.getloadavg()
         points = design(cfg, old_cfg, n, exe)
         spl = cfg_split(cfg)
-        test_points = [p for p in points if sb.split_of(p.point_id, spl) == "test"]
+        test_points = [p for p in points if common.split_of(p.point_id, spl) == "test"]
         log(f"{stage}: {len(points)} design points, {len(test_points)} test")
         t0 = time.time()
         generate_data(cfg, points, ds, work, args.workers, out)
@@ -658,14 +730,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         pids = {p.point_id for p in points}
         for s in samples.values():
             if s.part_id in pids:
-                by_split.setdefault(sb.split_of(s.part_id, spl), []).append(s)
+                by_split.setdefault(common.split_of(s.part_id, spl), []).append(s)
         base = baseline_rows(cfg, out)
         tests = test_samples(cfg, test_points, base, work)
         ml_rows, dz_frames, dz_summary, train_times = {}, [], {}, {}
-        for name in args.models:
+        for name in MODELS:
             t0 = time.time()
-            sur, dt = sb.train_or_load(name, by_split["train"], by_split["calibration"], cfg,
-                                       work / "models" / stage / name, args.threads)
+            sur, dt = train_or_load(name, by_split["train"], by_split["calibration"], cfg,
+                                    work / "models" / stage / name, args.threads)
             train_times[name] = dt
             if tests:
                 ev = evaluate_surrogate(sur, tests, split="test")
@@ -683,7 +755,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "data_source": LABEL, "stage": stage, "n_per_family": n,
                 "command": "python3 python/scripts/springback_fine_ml.py "
                            + " ".join(argv if argv is not None else sys.argv[1:]),
-                "versions": {**sb.versions(), **sv.versions(exe)},
+                "versions": common.versions(exe),
                 "workers": args.workers, "training_threads": args.threads,
                 "cpu_count": os.cpu_count(), "load_average_start": load0,
                 "load_average_end": os.getloadavg(), "timings_s": timings,

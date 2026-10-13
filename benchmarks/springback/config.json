@@ -1,6 +1,5 @@
 {
   "calibration_every": 4,
-  "da_fe_runs": 3,
   "families": [
     "truncated_cone",
     "pyramid",
@@ -106,18 +105,6 @@
       ]
     }
   },
-  "perturbation": {
-    "amplitude": [
-      0.0001,
-      0.0005
-    ],
-    "angle_margin_deg": 10.0,
-    "correlation_length": [
-      0.004,
-      0.012
-    ],
-    "taper": 1.0
-  },
   "protocol_revision": 1,
   "seed": 2026,
   "solver": {
@@ -141,26 +128,5 @@
     },
     "simulator": "sparlab_form"
   },
-  "surrogate": {
-    "gbm": {
-      "max_iter": 300,
-      "n_members": 8
-    },
-    "iterations": 8,
-    "mlp": {
-      "epochs": 40,
-      "hidden": [
-        128,
-        128
-      ],
-      "n_members": 5
-    },
-    "points_per_sample": 2000,
-    "stagnation": 0.02
-  },
-  "test_per_family": 2,
-  "train_kinds": [
-    "uncompensated",
-    "compensated"
-  ]
+  "test_per_family": 2
 }
