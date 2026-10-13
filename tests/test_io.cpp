@@ -10,9 +10,6 @@
 #include "sparlab/io/Json.hpp"
 #include "sparlab/io/ResultWriter.hpp"
 #include "sparlab/io/VtkWriter.hpp"
-#include "sparlab/topopt/DensityFilter.hpp"
-#include "sparlab/topopt/DesignDomain.hpp"
-#include "sparlab/topopt/TopologyOptimizer.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -215,9 +212,7 @@ TEST_CASE("a minimal deck parses into a solvable model", "[io][config]") {
   // "auto": exact Cholesky below the size limits, multigrid CG above.
   REQUIRE(config.analysis.linear.type == LinearSolverType::Auto);
   REQUIRE(config.modal.options.linear.type == LinearSolverType::Auto);
-  REQUIRE_FALSE(config.topology.optimizer.projection.enabled);
   REQUIRE_FALSE(config.modal.enabled);
-  REQUIRE_FALSE(config.topology.enabled);
 
   FemModel model = build_model(config);
   REQUIRE(model.mesh().num_elements() == 32);
@@ -351,149 +346,6 @@ TEST_CASE("unknown configuration keys are reported", "[io][config][diagnostics]"
   // Non-strict mode warns and continues with the default thickness.
   const Configuration config = parse_configuration(doc, "typo", /*strict=*/false);
   REQUIRE(config.thickness == Approx(1.0));
-}
-
-TEST_CASE("a topology deck parses with filter, passive regions and overrides",
-          "[io][config][topopt]") {
-  const std::string deck = R"({
-    "name": "topo_case",
-    "mesh": { "nx": 20, "ny": 10, "lx": 1.0, "ly": 0.5 },
-    "material": { "youngs_modulus": 70e9, "poisson_ratio": 0.3, "density": 2700 },
-    "model": { "thickness": 0.01 },
-    "boundary_conditions": [
-      { "fix": ["x","y"], "region": { "box": { "xmax": 0.0 } } }
-    ],
-    "load_cases": [
-      { "name": "down", "weight": 2.0,
-        "point_loads": [ { "force": [0,-1000], "region": { "box": { "xmin": 1.0 } } } ] },
-      { "name": "side", "weight": 1.0,
-        "tractions": [ { "traction": [1e5, 0], "region": { "box": { "ymin": 0.5 } } } ] }
-    ],
-    "modal": { "enabled": true, "num_modes": 4, "mass_type": "lumped" },
-    "topology": {
-      "enabled": true,
-      "volume_fraction": 0.35,
-      "simp": { "penalty": 3.5, "emin_ratio": 1e-8,
-                "mass_interpolation": "linear" },
-      "filter": { "type": "density", "radius_elements": 2.0 },
-      "optimizer": { "max_iterations": 50, "move_limit": 0.15,
-                     "continuation_steps": 2, "penalty_start": 1.5,
-                     "continuation_iterations": 10 },
-      "passive_regions": [
-        { "name": "hole", "type": "void",
-          "region": { "circle": { "center": [0.25, 0.25], "radius": 0.06 } } },
-        { "name": "collar", "type": "solid",
-          "region": { "annulus": { "center": [0.25, 0.25],
-                                   "inner_radius": 0.06, "radius": 0.09 } } }
-      ]
-    },
-    "output": { "vtk": false, "csv": true }
-  })";
-  const json::Value doc = json::parse(deck, "topo");
-  const Configuration config = parse_configuration(doc, "topo", /*strict=*/true);
-
-  REQUIRE(config.topology.enabled);
-  REQUIRE(config.topology.volume_fraction == Approx(0.35));
-  REQUIRE(config.topology.optimizer.simp.penalty == Approx(3.5));
-  REQUIRE(config.topology.optimizer.simp.mass_law == MassInterpolation::Linear);
-  REQUIRE(config.topology.filter_type == FilterType::Density);
-  REQUIRE(config.topology.filter_radius_elements == Approx(2.0));
-  REQUIRE(config.topology.optimizer.oc.move_limit == Approx(0.15));
-  REQUIRE(config.topology.optimizer.continuation_steps == 2);
-  REQUIRE(config.topology.passive_regions.size() == 2);
-  REQUIRE_FALSE(config.topology.passive_regions[0].solid);
-  REQUIRE(config.topology.passive_regions[1].solid);
-  REQUIRE(config.modal.enabled);
-  REQUIRE(config.modal.options.mass_type == MassType::Lumped);
-  REQUIRE_FALSE(config.output.write_vtk);
-  REQUIRE(config.load_cases.size() == 2);
-  REQUIRE(config.load_cases[1].tractions.size() == 1);
-
-  FemModel model = build_model(config);
-  REQUIRE(model.load_vectors().size() == 2);
-  const std::vector<Scalar> weights = model.normalised_weights();
-  REQUIRE(weights[0] == Approx(2.0 / 3.0));
-
-  // radius_elements resolves against the mesh: cell size is 0.05 m.
-  REQUIRE(config.resolved_filter_radius(model.mesh()) == Approx(0.1));
-
-  const DesignDomain domain = build_design_domain(config, model);
-  REQUIRE(domain.num_passive_void() > 0);
-  REQUIRE(domain.num_passive_solid() > 0);
-}
-
-TEST_CASE("the topology summary records the load cases behind its objective",
-          "[io][writers][topopt]") {
-  // The design study reads per-load-case compliance out of summary.json and
-  // recombines it, so the summary has to name the cases and record the
-  // normalised weights actually used. Without the normalised weights the
-  // reported objective cannot be reconstructed, because the objective is a
-  // weighted *mean*, not a weighted sum.
-  const std::string deck = R"({
-    "name": "summary_case",
-    "mesh": { "nx": 16, "ny": 8, "lx": 0.8, "ly": 0.4 },
-    "material": { "youngs_modulus": 70e9, "poisson_ratio": 0.3, "density": 2700 },
-    "model": { "thickness": 0.01 },
-    "boundary_conditions": [
-      { "fix": ["x","y"], "region": { "box": { "xmax": 0.0 } } }
-    ],
-    "load_cases": [
-      { "name": "down", "weight": 3.0,
-        "point_loads": [ { "force": [0,-1000], "region": { "box": { "xmin": 0.8 } } } ] },
-      { "name": "side", "weight": 1.0,
-        "point_loads": [ { "force": [500,0], "region": { "box": { "xmin": 0.8 } } } ] }
-    ],
-    "topology": {
-      "enabled": true,
-      "volume_fraction": 0.4,
-      "filter": { "type": "density", "radius_elements": 1.5 },
-      "optimizer": { "max_iterations": 12, "continuation_steps": 1 }
-    }
-  })";
-  const Configuration config =
-      parse_configuration(json::parse(deck, "summary"), "summary", /*strict=*/true);
-  FemModel model = build_model(config);
-  const DesignDomain domain = build_design_domain(config, model);
-  const DensityFilter filter(model.mesh(), config.topology.filter_type,
-                             config.resolved_filter_radius(model.mesh()));
-  Assembler assembler(model);
-  TopologyOptimizer optimizer(model, assembler, filter, domain,
-                              config.topology.optimizer);
-  const TopologyOptimizationResult result = optimizer.run();
-
-  TimingLedger timings;
-  const json::Value summary =
-      make_topology_summary(config, model, domain, filter, result, nullptr, nullptr,
-                            nullptr, nullptr, timings);
-  const json::Value& setup = *summary.find("optimization_setup");
-  const json::Value& res = *summary.find("optimization_result");
-
-  const std::vector<json::Value>& names = setup.find("load_case_names")->array_items();
-  REQUIRE(names.size() == 2);
-  REQUIRE(names[0].string_value() == "down");
-  REQUIRE(names[1].string_value() == "side");
-
-  // Deck weights are recorded as written...
-  const std::vector<json::Value>& raw =
-      setup.find("load_case_weights")->array_items();
-  REQUIRE(raw[0].number_value() == Approx(3.0));
-  REQUIRE(raw[1].number_value() == Approx(1.0));
-  // ...and the normalised weights as used.
-  const std::vector<json::Value>& norm =
-      setup.find("load_case_weights_normalised")->array_items();
-  REQUIRE(norm[0].number_value() == Approx(0.75));
-  REQUIRE(norm[1].number_value() == Approx(0.25));
-
-  // The headline objective reconstructs exactly from the recorded parts.
-  const std::vector<json::Value>& per_case =
-      res.find("load_case_compliance_J")->array_items();
-  REQUIRE(per_case.size() == 2);
-  Scalar recombined = 0.0;
-  for (std::size_t l = 0; l < per_case.size(); ++l) {
-    recombined += norm[l].number_value() * per_case[l].number_value();
-  }
-  REQUIRE(recombined ==
-          Approx(res.find("compliance_J")->number_value()).epsilon(1.0e-12));
 }
 
 TEST_CASE("CSV and VTK writers produce well-formed files", "[io][writers]") {

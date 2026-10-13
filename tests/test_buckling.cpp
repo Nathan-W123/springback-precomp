@@ -7,10 +7,7 @@
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/elements/Element.hpp"
 #include "sparlab/fem/Buckling.hpp"
-#include "sparlab/topopt/BucklingConstraint.hpp"
-#include "sparlab/topopt/DensityFilter.hpp"
-#include "sparlab/topopt/DesignDomain.hpp"
-#include "sparlab/topopt/TopologyOptimizer.hpp"
+#include "sparlab/fem/StaticAnalysis.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -66,39 +63,6 @@ FemModel make_column(Mesh mesh, Scalar length, Scalar area, Scalar thickness, Sc
   model.load_case_specs().push_back(load);
   model.finalize();
   return model;
-}
-
-/// A smooth, non-uniform design in [0.2, 0.8].
-Vector wavy_design(const FemModel& model, const DesignDomain& domain) {
-  Vector x = domain.initial_design();
-  for (Index e = 0; e < domain.num_elements(); ++e) {
-    const Vector3 c = model.mesh().element_centroid(e);
-    x(e) = 0.5 + 0.3 * std::sin(11.0 * c.x()) * std::cos(7.0 * c.y() + 5.0 * c.z());
-  }
-  domain.clamp(x);
-  return x;
-}
-
-/// Max relative error between an analytical gradient and central differences
-/// of `value` over every `stride`-th variable, with a floor at 1e-3 of the
-/// gradient's scale.
-template <typename Value>
-Scalar gradient_error(const Vector& analytical, const Vector& x, Scalar step,
-                      const Value& value, Eigen::Index stride = 1) {
-  const Scalar floor = 1.0e-3 * analytical.cwiseAbs().maxCoeff();
-  Scalar worst = 0.0;
-  Vector xp = x;
-  Vector xm = x;
-  for (Eigen::Index e = 0; e < x.size(); e += stride) {
-    xp(e) = x(e) + step;
-    xm(e) = x(e) - step;
-    const Scalar fd = (value(xp) - value(xm)) / (2.0 * step);
-    xp(e) = x(e);
-    xm(e) = x(e);
-    worst = std::max(worst, std::abs(fd - analytical(e)) /
-                                std::max({std::abs(fd), std::abs(analytical(e)), floor}));
-  }
-  return worst;
 }
 
 Vector random_vector(Eigen::Index n, unsigned int seed) {
@@ -396,75 +360,4 @@ TEST_CASE("buckling input errors are reported", "[buckling]") {
           Approx(3.14159265358979 * 3.14159265358979 * 200.0e9 * 1.0e-8 / 4.0));
   REQUIRE(engesser_cantilever_load(200.0e9, 0.3, 1.0e-8, 1.0e-4, 1.0) <
           euler_cantilever_load(200.0e9, 1.0e-8, 1.0));
-}
-
-TEST_CASE("buckling-constraint sensitivities match central differences",
-          "[buckling][sensitivity][verification]") {
-  struct Case {
-    std::string name;
-    Mesh mesh;
-    Scalar length;
-    Scalar area;
-    Scalar thickness;
-    bool projection;
-  };
-  std::vector<Case> cases;
-  cases.push_back({"Q4 dense", make_structured_quad_mesh(box_spec(12, 6, 1, 0.6, 0.3, 1.0)),
-                   0.6, 0.3 * 0.01, 0.01, false});
-  cases.push_back({"Q4 projected", make_structured_quad_mesh(box_spec(12, 6, 1, 0.6, 0.3, 1.0)),
-                   0.6, 0.3 * 0.01, 0.01, true});
-  cases.push_back({"Q4 subspace", make_structured_quad_mesh(box_spec(24, 10, 1, 0.6, 0.25, 1.0)),
-                   0.6, 0.25 * 0.01, 0.01, false});
-  cases.push_back({"Hex8 dense", make_structured_hex_mesh(box_spec(5, 2, 2, 0.6, 0.3, 0.3)),
-                   0.6, 0.3 * 0.3, 1.0, false});
-  for (Case& c : cases) {
-    INFO(c.name);
-    FemModel model = make_column(std::move(c.mesh), c.length, c.area, c.thickness, -1.0e4);
-    Assembler assembler(model);
-    const DensityFilter filter(model.mesh(), FilterType::Density,
-                               1.5 * model.mesh().mean_element_size());
-    DesignDomain domain(model, 0.5, 0.5, {});
-    StaticAnalysisOptions options;
-    options.linear.type = LinearSolverType::SimplicialLdlt;
-    ComplianceObjective objective(model, assembler, filter, domain, SimpOptions(), options);
-    if (c.projection) objective.set_projection(4.0, 0.5);
-    BucklingConstraintOptions bo;
-    bo.enabled = true;
-    bo.min_load_factor = 5.0;
-    bo.num_modes = 3;
-    bo.ks_parameter = 20.0;
-    bo.eigen.tolerance = 1.0e-14;
-    bo.eigen.residual_tolerance = 1.0e-11;
-    bo.eigen.max_iterations = 2000;
-    BucklingConstraint buckling(model, assembler, bo);
-    const Vector x = wavy_design(model, domain);
-    const ObjectiveEvaluation eval = objective.evaluate(x, true);
-    const BucklingEvaluation be = buckling.evaluate(objective, eval, 0, true);
-    REQUIRE(be.load_factors.size() == 3);
-    INFO("lambda = " << be.load_factors.transpose() << ", KS - 1 = " << be.constraint);
-    // Separated load factors: the simple-eigenvalue formula applies.
-    REQUIRE(be.load_factors(1) > 1.01 * be.load_factors(0));
-    const Scalar step = 1.0e-5;
-    // About 25 variables per case, spread over the domain.
-    const Eigen::Index stride = std::max<Eigen::Index>(1, x.size() / 25);
-    const Scalar ks_error = gradient_error(
-        be.dg_dx, x, step,
-        [&](const Vector& xx) {
-          const ObjectiveEvaluation e = objective.evaluate(xx, false);
-          return buckling.evaluate(objective, e, 0, false).constraint;
-        },
-        stride);
-    const Vector dlambda_dx = objective.chain_to_design(eval, be.dlambda_dphysical[0]);
-    const Scalar lambda_error = gradient_error(
-        dlambda_dx, x, step,
-        [&](const Vector& xx) {
-          const ObjectiveEvaluation e = objective.evaluate(xx, false);
-          return buckling.evaluate(objective, e, 0, false).load_factors(0);
-        },
-        stride);
-    // Measured: 1.6e-8 to 1.3e-6 over the four cases.
-    INFO("KS gradient error " << ks_error << ", lambda_1 gradient error " << lambda_error);
-    REQUIRE(ks_error < 1.0e-5);
-    REQUIRE(lambda_error < 1.0e-5);
-  }
 }

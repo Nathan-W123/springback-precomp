@@ -21,17 +21,12 @@ set(SPARLAB_TEST_SOURCES
   test_assembly_solver.cpp
   test_static_verification.cpp
   test_modal.cpp
-  test_topopt.cpp
   test_io.cpp
   test_solid.cpp
-  test_geometry.cpp
-  test_mma.cpp
   test_unstructured.cpp
   test_multigrid.cpp
-  test_projection.cpp
   test_tet10.cpp
   test_buckling.cpp
-  test_manufacturing.cpp
   test_dofs.cpp
   test_loads_thermal.cpp
   test_nonlinear.cpp

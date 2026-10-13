@@ -20,7 +20,6 @@
 ///   "buckling": { "enabled": true, "num_modes":.., "load_cases": [..] },
 ///   "nonlinear": { "enabled": true, "method": "arc_length", "steps":.. },
 ///   "forming":  { "tools": [..], "steps": [..] },   // sparlab_form (docs/forming.md)
-///   "topology": { "enabled": true, "volume_fraction":.., "filter": {..} },
 ///   "output":   { "vtk": true, "csv": true }
 /// }
 /// \endcode
@@ -53,9 +52,6 @@
 #include "sparlab/io/Json.hpp"
 #include "sparlab/io/MeshReader.hpp"
 #include "sparlab/mesh/StructuredMesh.hpp"
-#include "sparlab/topopt/DensityFilter.hpp"
-#include "sparlab/topopt/DesignDomain.hpp"
-#include "sparlab/topopt/TopologyOptimizer.hpp"
 
 #include <memory>
 #include <optional>
@@ -89,23 +85,14 @@ struct MeshFileConfig {
 struct ModalConfig {
   bool enabled = false;
   ModalAnalysisOptions options;
-  /// Also run modal analysis on the density-thresholded topology (topopt runs).
-  bool analyse_optimised_topology = true;
-  /// Compare against a uniformly thinned domain of the same mass (2-D only:
-  /// the argument rests on thickness scaling and has no 3-D counterpart).
-  bool compare_mass_matched_baseline = true;
 };
 
-/// Linear buckling check of the load cases (sparlab_solve), and of the full
-/// solid domain and the interpreted structure after an optimisation
-/// (sparlab_topopt).
+/// Linear buckling check of the load cases.
 struct BucklingConfig {
   bool enabled = false;
   BucklingOptions options;
   /// Load cases to check, by name; empty checks every case.
   std::vector<std::string> load_cases;
-  /// Also check the thresholded structure of a topology run.
-  bool analyse_optimised_topology = true;
 };
 
 /// Geometrically non-linear static analysis of the load cases
@@ -147,31 +134,6 @@ struct FormingConfig {
   int snapshot_stride = 0;
 };
 
-struct TopologyConfig {
-  bool enabled = false;
-  Scalar volume_fraction = 0.4;
-  /// Starting density for free variables; negative means "use volume_fraction".
-  Scalar initial_density = -1.0;
-  FilterType filter_type = FilterType::Density;
-  /// Filter radius in metres. When `filter_radius_elements` > 0 the radius is
-  /// computed as that multiple of the mean element size instead.
-  Scalar filter_radius = 0.0;
-  Scalar filter_radius_elements = 1.5;
-  TopologyOptimizerOptions optimizer;
-  std::vector<PassiveRegionSpec> passive_regions;
-  /// A `topology.overhang` section names a build direction: the final design
-  /// is checked for unsupported material, and with `filter` the overhang
-  /// filter shapes the optimisation (optimizer.overhang holds the settings).
-  bool overhang_check = false;
-  /// Minimum length-scale check of the final design: probe radii from half a
-  /// cell size up to `length_scale_max_radius_elements` cells in half-cell
-  /// steps, a probe passing while it flags at most `length_scale_tolerance`
-  /// of the volume. On by default with the robust formulation.
-  bool length_scale_check = false;
-  Scalar length_scale_max_radius_elements = 6.0;
-  Scalar length_scale_tolerance = 0.02;
-};
-
 /// A material assigned to an element region, overriding the deck's primary
 /// `material` there (later regions win).
 struct MaterialRegion {
@@ -183,7 +145,6 @@ struct MaterialRegion {
 struct OutputConfig {
   bool write_csv = true;
   bool write_vtk = true;
-  bool write_density_history = true;
   bool write_mode_shapes = true;
 };
 
@@ -205,8 +166,7 @@ class Configuration {
   bool mesh_elevated = false;
   MeshFileConfig mesh_file;       ///< MeshKind::File
   /// The mesh read from `mesh_file` while parsing (shared by copies of the
-  /// configuration, which the thinned-plate comparison makes), and what the
-  /// reader found.
+  /// configuration), and what the reader found.
   std::shared_ptr<const Mesh> file_mesh;
   MeshReadReport mesh_report;
   Scalar thickness = 1.0;
@@ -224,7 +184,6 @@ class Configuration {
   TransientConfig transient;
   FrequencyResponseConfig frequency_response;
   FormingConfig forming;
-  TopologyConfig topology;
   OutputConfig output;
 
   /// The parsed document, retained so run summaries can record exactly what
@@ -240,9 +199,6 @@ class Configuration {
 
   const IsotropicMaterial& material() const;
   void set_material(IsotropicMaterial material);
-
-  /// Filter radius resolved against a concrete mesh [m].
-  Scalar resolved_filter_radius(const Mesh& mesh) const;
 
   /// Indices of the load cases the buckling check covers.
   std::vector<std::size_t> buckling_load_cases() const;
@@ -277,9 +233,6 @@ Mesh build_mesh(const Configuration& config);
 /// Build the mesh, material, boundary conditions and load cases described by a
 /// configuration and finalise the model.
 FemModel build_model(const Configuration& config);
-
-/// Build the design domain for a topology optimisation run.
-DesignDomain build_design_domain(const Configuration& config, const FemModel& model);
 
 /// Parse a region specification (used by tests and by the config parser).
 /// \param dim mesh dimension (2 or 3), which decides how many entries the

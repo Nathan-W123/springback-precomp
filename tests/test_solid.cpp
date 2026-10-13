@@ -1,8 +1,8 @@
 /// \file test_solid.cpp
 /// \brief Three-dimensional verification: the Hex8 element, structured hex
 ///        meshes, the 3-D patch test, tractions, reactions, diagnostics,
-///        modal analysis, beam-theory validation, topology sensitivities and
-///        the 3-D configuration path.
+///        modal analysis, beam-theory validation and the 3-D configuration
+///        path.
 ///
 /// The 2-D suite is the regression net for the shared code; this file checks
 /// that everything the dimension-generic core does for a solid mesh is exact
@@ -19,11 +19,6 @@
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/io/ResultWriter.hpp"
-#include "sparlab/mesh/SubMesh.hpp"
-#include "sparlab/topopt/DensityFilter.hpp"
-#include "sparlab/topopt/DesignDomain.hpp"
-#include "sparlab/topopt/Sensitivity.hpp"
-#include "sparlab/topopt/TopologyOptimizer.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -527,7 +522,7 @@ TEST_CASE("perturbed hex mesh keeps its boundary and volume", "[solid][mesh]") {
   REQUIRE_THROWS_AS(make_perturbed_hex_mesh(spec, 0.5), ConfigError);
 }
 
-TEST_CASE("3-D selectors, sub-meshes and face connectivity", "[solid][mesh][selector]") {
+TEST_CASE("3-D selectors", "[solid][mesh][selector]") {
   StructuredMeshSpec spec;
   spec.nx = 4;
   spec.ny = 4;
@@ -572,43 +567,6 @@ TEST_CASE("3-D selectors, sub-meshes and face connectivity", "[solid][mesh][sele
       const Vector3 c = mesh.element_centroid(e);
       REQUIRE(std::hypot(c.x() - 0.5, c.z() - 0.5) <= 0.3 + 1.0e-9);
     }
-  }
-  SECTION("sub-mesh extraction keeps 3-D coordinates") {
-    const SubMeshResult sub = extract_element_subset(mesh, {0, 1, 4, 16});
-    REQUIRE(sub.mesh.dim() == 3);
-    REQUIRE(sub.mesh.num_elements() == 4);
-    REQUIRE_NOTHROW(sub.mesh.validate());
-    for (Index n = 0; n < sub.mesh.num_nodes(); ++n) {
-      REQUIRE(sub.mesh.node(n).isApprox(mesh.node(sub.node_map[static_cast<std::size_t>(n)])));
-    }
-  }
-  SECTION("face connectivity ignores edge-only and corner-only contact") {
-    // Cell (i, j, k) has index 16 k + 4 j + i. Cells 0 = (0,0,0), 5 = (1,1,0)
-    // and 20 = (0,1,1) pairwise share only an edge, so they are three groups.
-    Vector density = Vector::Zero(mesh.num_elements());
-    density(0) = 1.0;
-    density(5) = 1.0;
-    density(20) = 1.0;
-    const Vector volumes = Vector::Ones(mesh.num_elements());
-    const TopologyInterpretation report =
-        interpret_density_as_solid(mesh, density, volumes, 0.5, true);
-    REQUIRE(report.components_above_threshold == 3);
-    REQUIRE(report.elements_retained == 1);
-    // Cells 0 and 21 = (1,1,1) touch at a single corner.
-    density.setZero();
-    density(0) = 1.0;
-    density(21) = 1.0;
-    REQUIRE(interpret_density_as_solid(mesh, density, volumes, 0.5, true)
-                .components_above_threshold == 2);
-    // Cells 0 and 1 share a face.
-    density.setZero();
-    density(0) = 1.0;
-    density(1) = 1.0;
-    const TopologyInterpretation joined =
-        interpret_density_as_solid(mesh, density, volumes, 0.5, true);
-    REQUIRE(joined.components_above_threshold == 1);
-    REQUIRE(joined.elements_retained == 2);
-    REQUIRE(element_components_by_face(mesh).size() == 1);
   }
 }
 
@@ -944,142 +902,6 @@ TEST_CASE("solid cantilever tip deflection converges towards Timoshenko theory",
   REQUIRE(std::abs(tips.back()) > 0.95 * std::abs(eb));
 }
 
-TEST_CASE("3-D compliance sensitivities match central differences",
-          "[solid][topopt][sensitivity][verification]") {
-  StructuredMeshSpec spec;
-  spec.nx = 6;
-  spec.ny = 3;
-  spec.nz = 2;
-  spec.lx = 0.6;
-  spec.ly = 0.3;
-  spec.lz = 0.2;
-  FemModel model(make_structured_hex_mesh(spec), default_material(), 1.0,
-                 StressState::ThreeDimensional, IntegrationOptions());
-  DisplacementConstraint root;
-  Selector box;
-  box.kind = SelectorKind::Box;
-  box.xmax = 0.0;
-  root.region.members.push_back(box);
-  root.fix_x = root.fix_y = root.fix_z = true;
-  model.constraints().push_back(root);
-  LoadCaseSpec load;
-  load.name = "tip";
-  PointLoadSpec tip;
-  Selector tip_box;
-  tip_box.kind = SelectorKind::Box;
-  tip_box.xmin = spec.lx;
-  tip_box.ymax = 0.0;
-  tip.region.members.push_back(tip_box);
-  tip.force = Vector3(0.0, -500.0, 100.0);
-  load.point_loads.push_back(tip);
-  model.load_case_specs().push_back(load);
-  model.finalize();
-
-  const Scalar cell = 0.1;
-  const DensityFilter filter(model.mesh(), FilterType::Density, 1.5 * cell);
-  REQUIRE(filter.average_support() > 4.0);
-
-  PassiveRegionSpec hole;
-  hole.region.name = "sphere_hole";
-  Selector sphere;
-  sphere.kind = SelectorKind::Sphere;
-  sphere.center = Vector3(0.35, 0.15, 0.1);
-  sphere.radius = 0.06;
-  hole.region.members.push_back(sphere);
-  hole.solid = false;
-  DesignDomain domain(model, 0.5, 0.5, {hole});
-  REQUIRE(domain.num_passive_void() > 0);
-
-  Assembler assembler(model);
-  SimpOptions simp;
-  StaticAnalysisOptions options;
-  options.linear.residual_tolerance = 1.0e-9;
-  ComplianceObjective objective(model, assembler, filter, domain, simp, options);
-
-  Vector x = domain.initial_design();
-  for (Index e = 0; e < domain.num_elements(); ++e) {
-    if (!domain.is_free(e)) continue;
-    const Vector3 cc = model.mesh().element_centroid(e);
-    x(e) = 0.45 + 0.25 * std::sin(9.0 * cc.x()) * std::cos(7.0 * cc.y()) * std::cos(5.0 * cc.z());
-  }
-  domain.clamp(x);
-
-  const SensitivityCheckResult check =
-      verify_sensitivities(objective, domain, x, {}, 1.0e-4, 1.0e-5);
-  INFO("max relative error " << check.max_relative_error << ", directional "
-                             << check.directional_relative_error);
-  REQUIRE(check.num_tested > 20);
-  REQUIRE(check.passed);
-  REQUIRE(check.directional_relative_error < 1.0e-6);
-
-  // The gradient is non-positive everywhere and the volume gradient positive.
-  const ObjectiveEvaluation eval = objective.evaluate(x, true);
-  REQUIRE(eval.dc_dx.maxCoeff() <= 1.0e-12 * eval.dc_dx.cwiseAbs().maxCoeff());
-  REQUIRE(eval.dv_dx.minCoeff() > 0.0);
-}
-
-TEST_CASE("a short 3-D optimisation runs end to end and can be interpreted",
-          "[solid][topopt][optimizer]") {
-  StructuredMeshSpec spec;
-  spec.nx = 12;
-  spec.ny = 4;
-  spec.nz = 3;
-  spec.lx = 0.6;
-  spec.ly = 0.2;
-  spec.lz = 0.15;
-  FemModel model(make_structured_hex_mesh(spec), default_material(), 1.0,
-                 StressState::ThreeDimensional, IntegrationOptions());
-  DisplacementConstraint root;
-  Selector box;
-  box.kind = SelectorKind::Box;
-  box.xmax = 0.0;
-  root.region.members.push_back(box);
-  root.fix_x = root.fix_y = root.fix_z = true;
-  model.constraints().push_back(root);
-  LoadCaseSpec load;
-  load.name = "tip";
-  PointLoadSpec tip;
-  Selector tip_box;
-  tip_box.kind = SelectorKind::Box;
-  tip_box.xmin = spec.lx;
-  tip_box.ymax = 0.0;
-  tip.region.members.push_back(tip_box);
-  tip.force = Vector3(0.0, -1000.0, 0.0);
-  load.point_loads.push_back(tip);
-  model.load_case_specs().push_back(load);
-  model.finalize();
-
-  const DensityFilter filter(model.mesh(), FilterType::Density, 1.5 * 0.05);
-  DesignDomain domain(model, 0.4, -1.0, {});
-  Assembler assembler(model);
-  TopologyOptimizerOptions options;
-  options.max_iterations = 30;
-  options.change_tolerance = 0.02;
-  options.history_stride = 5;
-  TopologyOptimizer optimizer(model, assembler, filter, domain, options);
-  const TopologyOptimizationResult result = optimizer.run();
-
-  REQUIRE(result.iterations >= 5);
-  REQUIRE(result.volume_fraction == Approx(0.4).epsilon(1.0e-6));
-  REQUIRE(result.compliance < result.history.front().compliance);
-  REQUIRE(result.physical_density.minCoeff() >= 0.0);
-  REQUIRE(result.physical_density.maxCoeff() <= 1.0);
-  REQUIRE(result.displacements.size() == 1);
-
-  const TopologyInterpretation interp = interpret_density_as_solid(
-      model.mesh(), result.physical_density, domain.element_volumes(), 0.5);
-  REQUIRE(interp.sub.mesh.dim() == 3);
-  REQUIRE(interp.elements_retained > 0);
-  REQUIRE(interp.volume_retained <= interp.volume_above_threshold + 1.0e-15);
-
-  // Stresses of the final design carry six components.
-  const StressField field =
-      recover_stresses(model, assembler, result.displacements.front(),
-                       &result.stiffness_factors);
-  REQUIRE(field.element_stress.rows() == 6);
-  REQUIRE(field.element_von_mises.maxCoeff() > 0.0);
-}
-
 // ---------------------------------------------------------------------------
 // Configuration and writers
 // ---------------------------------------------------------------------------
@@ -1101,16 +923,7 @@ std::string hex_deck() {
       { "name": "top", "tractions": [
           { "traction": [0.0, 0.0, -2.0e5], "region": { "box": { "zmin": 0.1 } } } ] }
     ],
-    "modal": { "enabled": true, "num_modes": 3 },
-    "topology": { "enabled": true, "volume_fraction": 0.5,
-                  "filter": { "radius_elements": 1.5 },
-                  "optimizer": { "max_iterations": 4 },
-                  "passive_regions": [
-                    { "type": "void", "region": { "sphere": { "center": [0.2, 0.05, 0.05],
-                                                              "radius": 0.05 } } },
-                    { "type": "solid", "region": { "circle": { "center": [0.3, 0.0, 0.05],
-                                                               "radius": 0.04, "axis": "y" } } }
-                  ] }
+    "modal": { "enabled": true, "num_modes": 3 }
   })";
 }
 
@@ -1127,19 +940,11 @@ TEST_CASE("a structured_hex deck parses into a 3-D model", "[solid][io][config]"
   REQUIRE(config.constraints.front().fix_z);
   REQUIRE(config.load_cases[0].point_loads.front().force.z() == Approx(200.0));
   REQUIRE(config.load_cases[1].tractions.front().traction.z() == Approx(-2.0e5));
-  REQUIRE(config.topology.passive_regions[0].region.members.front().kind ==
-          SelectorKind::Sphere);
-  REQUIRE(config.topology.passive_regions[1].region.members.front().axis == 1);
 
   FemModel model = build_model(config);
   REQUIRE(model.dim() == 3);
   REQUIRE(model.dofs().num_dofs() == 3 * 9 * 3 * 3);
   REQUIRE(model.load_vectors().size() == 2);
-  // radius_elements resolves against the cube root of the cell volume (0.05 m).
-  REQUIRE(config.resolved_filter_radius(model.mesh()) == Approx(0.075));
-  const DesignDomain domain = build_design_domain(config, model);
-  REQUIRE(domain.num_passive_void() > 0);
-  REQUIRE(domain.num_passive_solid() > 0);
 
   Assembler assembler(model);
   StaticAnalysis analysis(model, assembler, config.analysis);

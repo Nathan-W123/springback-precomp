@@ -22,12 +22,7 @@
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/io/MeshReader.hpp"
-#include "sparlab/io/StlWriter.hpp"
 #include "sparlab/io/VtkWriter.hpp"
-#include "sparlab/mesh/SubMesh.hpp"
-#include "sparlab/topopt/DensityFilter.hpp"
-#include "sparlab/topopt/DesignDomain.hpp"
-#include "sparlab/topopt/Sensitivity.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -597,8 +592,6 @@ TEST_CASE("structured triangle and tetrahedron meshes split the grid conformingl
     for (const Mesh::BoundaryFace& f : mesh.boundary_faces()) REQUIRE(f.nodes.size() == 3);
     REQUIRE(mesh.mean_element_size() ==
             Approx(0.2 * (3.0 + 2.0 * std::sqrt(2.0) + std::sqrt(3.0)) / 6.0));
-    // The face-connected components of the whole mesh: one.
-    REQUIRE(element_components_by_face(mesh).size() == 1);
   }
 }
 
@@ -759,79 +752,10 @@ TEST_CASE("simplex meshes of the same box conserve mass and converge on the Hex8
   REQUIRE(modes.frequencies_hz(0) > 0.0);
 }
 
-TEST_CASE("compliance sensitivities are exact on triangle and tetrahedron meshes",
-          "[unstructured][topopt][sensitivity][verification]") {
-  const auto check = [](FemModel& model, Scalar cell) {
-    const DensityFilter filter(model.mesh(), FilterType::Density, 1.6 * cell);
-    DesignDomain domain(model, 0.5, 0.5, {});
-    Assembler assembler(model);
-    StaticAnalysisOptions options;
-    options.linear.residual_tolerance = 1.0e-9;
-    ComplianceObjective objective(model, assembler, filter, domain, SimpOptions(), options);
-    Vector x = domain.initial_design();
-    for (Index e = 0; e < domain.num_elements(); ++e) {
-      const Vector3 c = model.mesh().element_centroid(e);
-      x(e) = 0.45 + 0.25 * std::sin(9.0 * c.x()) * std::cos(7.0 * c.y() + 3.0 * c.z());
-    }
-    domain.clamp(x);
-    const SensitivityCheckResult result =
-        verify_sensitivities(objective, domain, x, {}, 1.0e-4, 1.0e-5);
-    INFO("max relative error " << result.max_relative_error << ", directional "
-                               << result.directional_relative_error);
-    REQUIRE(result.num_tested > 20);
-    REQUIRE(result.passed);
-    REQUIRE(result.directional_relative_error < 1.0e-6);
-  };
-  const auto add_cantilever_bcs = [](FemModel& model, Scalar length, int dim) {
-    DisplacementConstraint root;
-    Selector box;
-    box.kind = SelectorKind::Box;
-    box.xmax = 0.0;
-    root.region.members.push_back(box);
-    root.fix_x = root.fix_y = true;
-    root.fix_z = dim == 3;
-    model.constraints().push_back(root);
-    LoadCaseSpec load;
-    load.name = "tip";
-    PointLoadSpec tip;
-    Selector tip_box;
-    tip_box.kind = SelectorKind::Box;
-    tip_box.xmin = length;
-    tip.region.members.push_back(tip_box);
-    tip.force = Vector3(100.0, -500.0, dim == 3 ? 50.0 : 0.0);
-    load.point_loads.push_back(tip);
-    model.load_case_specs().push_back(load);
-    model.finalize();
-  };
-  {
-    FemModel model(make_perturbed_tri_mesh(box_spec(8, 4, 1, 0.8, 0.4, 1.0), 0.2, 3u),
-                   default_material(), 0.01, StressState::PlaneStress, IntegrationOptions());
-    add_cantilever_bcs(model, 0.8, 2);
-    check(model, 0.1);
-  }
-  {
-    FemModel model(make_structured_tet_mesh(box_spec(4, 2, 2, 0.4, 0.2, 0.2)),
-                   default_material(), 1.0, StressState::ThreeDimensional,
-                   IntegrationOptions());
-    add_cantilever_bcs(model, 0.4, 3);
-    check(model, 0.1);
-  }
-}
-
-TEST_CASE("simplex meshes export closed surfaces, VTK cells and CalculiX elements",
+TEST_CASE("simplex meshes export VTK cells and CalculiX elements",
           "[unstructured][geometry][io]") {
   ensure_directory(kTmp);
   const Mesh tets = make_perturbed_tet_mesh(box_spec(3, 2, 2, 0.6, 0.4, 0.3), 0.2, 9u);
-  const SurfaceStats stats = surface_stats(boundary_surface(tets, 1.0));
-  REQUIRE(stats.closed);
-  REQUIRE(stats.non_manifold_edges == 0);
-  REQUIRE(stats.enclosed_volume == Approx(0.6 * 0.4 * 0.3).epsilon(1.0e-12));
-
-  const Mesh tris = make_structured_tri_mesh(box_spec(4, 2, 1, 0.4, 0.2, 1.0));
-  const SurfaceStats extruded = surface_stats(boundary_surface(tris, 0.01));
-  REQUIRE(extruded.closed);
-  REQUIRE(extruded.enclosed_volume == Approx(0.4 * 0.2 * 0.01).epsilon(1.0e-12));
-
   const std::string path = std::string(kTmp) + "/tets.vtk";
   VtkWriter(tets, "tet mesh").write(path);
   const std::string text = read_text(path);
@@ -842,16 +766,6 @@ TEST_CASE("simplex meshes export closed surfaces, VTK cells and CalculiX element
   int value = 0;
   lines >> value;
   REQUIRE(value == 10);
-
-  // Two tetrahedra that share only the edge (1, 2) form a hinge, not a
-  // connection: the face-connected analysis sees two bodies.
-  Matrix coords(3, 6);
-  coords << 0.0, 1.0, 0.0, 0.0, 1.0, 0.5,
-            0.0, 0.0, 1.0, 0.0, 1.0, 0.5,
-            0.0, 0.0, 0.0, 1.0, 0.0, -1.0;
-  const Mesh pair(coords, {0, 1, 2, 3, 1, 2, 4, 5}, ElementType::Tet4);
-  REQUIRE_NOTHROW(pair.validate());
-  REQUIRE(element_components_by_face(pair).size() == 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1007,7 +921,6 @@ $EndElements
     REQUIRE(mesh.num_nodes() == 6);
     REQUIRE(report.duplicate_nodes == 2);
     REQUIRE_FALSE(report.duplicates_merged);
-    REQUIRE(element_components_by_face(mesh).size() == 2);
     REQUIRE(report.warnings.size() == 1);
     REQUIRE_THAT(report.warnings.front(), ContainsSubstring("merge_duplicate_nodes"));
   }
@@ -1020,7 +933,6 @@ $EndElements
     REQUIRE(mesh.num_nodes() == 4);
     REQUIRE(report.duplicates_merged);
     REQUIRE(report.nodes_used == 4);
-    REQUIRE(element_components_by_face(mesh).size() == 1);
     REQUIRE(mesh.boundary_faces().size() == 4);
   }
   {
@@ -1208,7 +1120,7 @@ TEST_CASE("the Abaqus reader handles includes, sets, GENERATE and continuation l
 // Groups in selectors, sub-meshes and decks
 // ---------------------------------------------------------------------------
 
-TEST_CASE("mesh groups drive selectors and survive sub-mesh extraction",
+TEST_CASE("mesh groups drive selectors",
           "[unstructured][selector][mesh]") {
   const Mesh original = make_structured_tri_mesh(box_spec(4, 2, 1, 0.4, 0.2, 1.0));
   const std::vector<BoundaryGroup> groups = {
@@ -1248,12 +1160,6 @@ TEST_CASE("mesh groups drive selectors and survive sub-mesh extraction",
   corner.point = Vector3(0.2, 0.2, 0.0);
   mixed.members = {group, corner};
   REQUIRE(mixed.select_nodes(mesh).size() == 4);
-
-  // A sub-mesh keeps the groups, restricted to what it retains.
-  const SubMeshResult sub = extract_element_subset(mesh, {0, 1, 2, 3});
-  REQUIRE(sub.mesh.node_sets().at("root").size() == 2);
-  REQUIRE(sub.mesh.node_sets().at("tip").empty());
-  REQUIRE(sub.mesh.element_sets().at("body").size() == 4);
   REQUIRE_THROWS_AS(mesh.set_node_set("bad", {0, 1000}), MeshError);
 }
 
@@ -1274,10 +1180,7 @@ TEST_CASE("a deck reads its mesh from a file relative to itself and addresses gr
     "model": { "thickness": 0.01 },
     "boundary_conditions": [ { "fix": ["x", "y"], "region": { "group": "clamp" } } ],
     "load_cases": [ { "name": "tip", "tractions": [
-        { "region": { "group": "tip" }, "traction": [0, -1e6] } ] } ],
-    "topology": { "enabled": true, "volume_fraction": 0.5,
-                  "passive_regions": [ { "type": "solid",
-                                         "region": { "any_of": [ { "group": "clamp" } ] } } ] }
+        { "region": { "group": "tip" }, "traction": [0, -1e6] } ] } ]
   })");
   const Configuration config = load_configuration(dir + "/beam.json", true);
   REQUIRE(config.mesh_kind == MeshKind::File);
@@ -1295,13 +1198,6 @@ TEST_CASE("a deck reads its mesh from a file relative to itself and addresses gr
   REQUIRE(sol.equilibrium.applied_force.isApprox(Vector3(0.0, -1.0e6 * 0.15 * 0.01, 0.0),
                                                  1.0e-12));
   REQUIRE(sol.equilibrium.relative_force_error < 1.0e-10);
-  // The filter radius in elements uses the mean edge length.
-  REQUIRE(config.resolved_filter_radius(model.mesh()) ==
-          Approx(1.5 * model.mesh().mean_element_size()));
-
-  // Element groups as passive regions: the clamp is a node set, so it is
-  // refused as an element region with the reason.
-  REQUIRE_THROWS_WITH(build_design_domain(config, model), ContainsSubstring("node set"));
 
   // Resolution keys and a missing file are rejected with the fix.
   const auto parse = [&](const std::string& mesh_block) {

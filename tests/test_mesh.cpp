@@ -3,7 +3,6 @@
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/fem/Selector.hpp"
 #include "sparlab/mesh/StructuredMesh.hpp"
-#include "sparlab/mesh/SubMesh.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -262,90 +261,4 @@ TEST_CASE("selectors pick the expected nodes and elements", "[selector]") {
     group.members.push_back(nearest);
     REQUIRE_THROWS_AS(group.select_elements(mesh), ConfigError);
   }
-}
-
-TEST_CASE("sub-mesh extraction renumbers nodes compactly", "[mesh][submesh]") {
-  StructuredMeshSpec spec;
-  spec.nx = 4;
-  spec.ny = 3;
-  const Mesh mesh = make_structured_quad_mesh(spec);
-
-  const std::vector<Index> subset = {0, 1, 4, 5};
-  const SubMeshResult sub = extract_element_subset(mesh, subset);
-
-  REQUIRE(sub.mesh.num_elements() == 4);
-  REQUIRE(sub.element_map == subset);
-  REQUIRE(static_cast<std::size_t>(sub.mesh.num_nodes()) == sub.node_map.size());
-  REQUIRE_NOTHROW(sub.mesh.validate());
-
-  // Coordinates survive the renumbering.
-  for (Index n = 0; n < sub.mesh.num_nodes(); ++n) {
-    REQUIRE(sub.mesh.node(n).isApprox(mesh.node(sub.node_map[static_cast<std::size_t>(n)])));
-  }
-  // old_to_new is consistent with node_map.
-  for (std::size_t n = 0; n < sub.node_map.size(); ++n) {
-    REQUIRE(sub.old_to_new_node[static_cast<std::size_t>(sub.node_map[n])] ==
-            static_cast<Index>(n));
-  }
-  REQUIRE_THROWS_AS(extract_element_subset(mesh, {}), MeshError);
-  REQUIRE_THROWS_AS(extract_element_subset(mesh, {999}), MeshError);
-}
-
-TEST_CASE("edge connectivity ignores corner-only contact", "[mesh][submesh]") {
-  StructuredMeshSpec spec;
-  spec.nx = 2;
-  spec.ny = 2;
-  const Mesh mesh = make_structured_quad_mesh(spec);
-
-  // A checkerboard pair touching only at one corner must count as two groups.
-  Vector density = Vector::Zero(mesh.num_elements());
-  density(0) = 1.0;  // lower-left
-  density(3) = 1.0;  // upper-right
-  const Vector volumes = Vector::Ones(mesh.num_elements());
-
-  const TopologyInterpretation report =
-      interpret_density_as_solid(mesh, density, volumes, 0.5,
-                                 /*largest_component_only=*/true);
-  REQUIRE(report.elements_above_threshold == 2);
-  REQUIRE(report.components_above_threshold == 2);
-  REQUIRE(report.elements_retained == 1);
-  REQUIRE(report.volume_discarded_as_islands == Approx(1.0));
-
-  // Keeping everything reports two groups but retains both cells.
-  const TopologyInterpretation keep_all =
-      interpret_density_as_solid(mesh, density, volumes, 0.5, false);
-  REQUIRE(keep_all.elements_retained == 2);
-  REQUIRE(keep_all.volume_discarded_as_islands == Approx(0.0));
-}
-
-TEST_CASE("density interpretation rejects impossible thresholds",
-          "[mesh][submesh][diagnostics]") {
-  StructuredMeshSpec spec;
-  spec.nx = 2;
-  spec.ny = 2;
-  const Mesh mesh = make_structured_quad_mesh(spec);
-  const Vector volumes = Vector::Ones(mesh.num_elements());
-
-  REQUIRE_THROWS_AS(
-      interpret_density_as_solid(mesh, Vector::Zero(mesh.num_elements()), volumes, 0.5),
-      MeshError);
-  REQUIRE_THROWS_AS(
-      interpret_density_as_solid(mesh, Vector::Ones(mesh.num_elements()), volumes, 0.0),
-      ConfigError);
-  REQUIRE_THROWS_AS(
-      interpret_density_as_solid(mesh, Vector::Ones(mesh.num_elements()), volumes, 1.0),
-      ConfigError);
-  REQUIRE_THROWS_AS(interpret_density_as_solid(mesh, Vector::Ones(2), volumes, 0.5),
-                    MeshError);
-}
-
-TEST_CASE("element components are found for a fully connected mesh",
-          "[mesh][submesh]") {
-  StructuredMeshSpec spec;
-  spec.nx = 5;
-  spec.ny = 4;
-  const Mesh mesh = make_structured_quad_mesh(spec);
-  const auto components = element_components_by_face(mesh);
-  REQUIRE(components.size() == 1);
-  REQUIRE(components.front().size() == static_cast<std::size_t>(mesh.num_elements()));
 }

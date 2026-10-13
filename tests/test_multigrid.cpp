@@ -14,7 +14,6 @@
 #include "sparlab/fem/LinearSolver.hpp"
 #include "sparlab/fem/ModalAnalysis.hpp"
 #include "sparlab/fem/Multigrid.hpp"
-#include "sparlab/topopt/SimpInterpolation.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -308,53 +307,6 @@ TEST_CASE("multigrid iteration counts barely grow under refinement; Jacobi CG's 
   REQUIRE(jacobi_iterations[2] > 3 * jacobi_iterations[0]);
   REQUIRE(amg_iterations[2] < 2 * amg_iterations[0]);
   REQUIRE(amg_iterations[2] < jacobi_iterations[2] / 4);
-}
-
-TEST_CASE("multigrid CG copes with SIMP contrast and reuses its aggregates",
-          "[multigrid][solver][topopt]") {
-  const FemModel model = make_beam(make_structured_hex_mesh(box(20, 8, 6, 1.0, 0.4, 0.3)));
-  const Index ne = model.mesh().num_elements();
-  // A density field with genuine void (rho = 0.001, E ratio 1e-9 floor):
-  // a solid lower chord and upper chord, voids between them.
-  Vector rho(ne);
-  for (Index e = 0; e < ne; ++e) {
-    const Vector3 c = model.mesh().element_centroid(e);
-    const bool chord = c.y() < 0.1 || c.y() > 0.3;
-    const bool web = std::fmod(c.x() + 1.0e-9, 0.2) < 0.05;
-    rho(e) = (chord || web) ? 1.0 : 0.001;
-  }
-  SimpOptions simp;
-  const Vector scale = simp_stiffness_factors(rho, simp);
-  const Solved direct = solve_with(model, ldlt_options(), &scale);
-
-  // One solver across two "design iterations", as the optimiser uses it.
-  const Assembler assembler(model);
-  LinearSolverOptions options = amg_options(AmgSmoother::Chebyshev, 1.0e-10);
-  auto solver = make_linear_solver(options);
-  StaticAnalysisOptions analysis_options;
-  analysis_options.linear = options;
-  analysis_options.check_model = false;
-  Vector previous;
-  int first_iterations = 0;
-  for (int design = 0; design < 2; ++design) {
-    const Vector s = design == 0 ? Vector(Vector::Ones(ne)) : scale;
-    StaticAnalysis analysis(model, assembler, analysis_options);
-    analysis.use_external_solver(solver.get());
-    analysis.prepare(&s);
-    REQUIRE(solver->amg_stats() != nullptr);
-    REQUIRE(solver->amg_stats()->reused_aggregates == (design == 1));
-    const Vector u = analysis.solve_load_vector(model.load_vectors().front(),
-                                                previous.size() ? &previous : nullptr);
-    if (design == 0) first_iterations = analysis.last_iterations();
-    if (design == 1) {
-      INFO("iterations: uniform " << first_iterations << ", SIMP contrast "
-                                  << analysis.last_iterations());
-      REQUIRE(analysis.last_iterations() < 200);
-      const Scalar c = model.load_vectors().front().dot(u);
-      REQUIRE(c == Approx(direct.compliance).epsilon(1.0e-7));
-    }
-    previous = u;
-  }
 }
 
 TEST_CASE("warm starts, thread counts and the automatic choice",

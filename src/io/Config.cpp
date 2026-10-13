@@ -461,18 +461,6 @@ std::string Configuration::describe_mesh() const {
   return os.str();
 }
 
-Scalar Configuration::resolved_filter_radius(const Mesh& mesh) const {
-  if (topology.filter_radius > 0.0) return topology.filter_radius;
-  if (!(topology.filter_radius_elements > 0.0)) {
-    throw ConfigError(
-        "topology.filter needs either 'radius' (metres) or a positive "
-        "'radius_elements'");
-  }
-  // The side of the square / cube with the mean cell measure for Q4 and
-  // Hex8, the mean edge length for triangles and tetrahedra (Mesh.hpp).
-  return topology.filter_radius_elements * mesh.mean_element_size();
-}
-
 std::vector<std::size_t> Configuration::buckling_load_cases() const {
   std::vector<std::size_t> out;
   if (buckling.load_cases.empty()) {
@@ -1031,10 +1019,6 @@ Configuration parse_configuration(const json::Value& document, const std::string
         modal.number_or("residual_tolerance", 1.0e-6);
     config.modal.options.seed =
         static_cast<unsigned int>(modal.integer_or("seed", 20240917));
-    config.modal.analyse_optimised_topology =
-        modal.boolean_or("analyse_optimised_topology", true);
-    config.modal.compare_mass_matched_baseline =
-        modal.boolean_or("compare_mass_matched_baseline", true);
     // The eigen solver factorises (or preconditions) with the deck's solver.
     config.modal.options.linear = config.analysis.linear;
     if (config.modal.enabled && config.material().density() <= 0.0) {
@@ -1051,8 +1035,6 @@ Configuration parse_configuration(const json::Value& document, const std::string
     config.buckling.options.num_modes = buckling.integer_or("num_modes", 4);
     parse_buckling_solver(buckling, config.buckling.options);
     config.buckling.load_cases = string_list(buckling, "load_cases");
-    config.buckling.analyse_optimised_topology =
-        buckling.boolean_or("analyse_optimised_topology", true);
     config.buckling.options.linear = config.analysis.linear;
     if (config.buckling.enabled) {
       if (config.buckling.options.num_modes < 1) {
@@ -1663,201 +1645,11 @@ Configuration parse_configuration(const json::Value& document, const std::string
     }
   }
 
-  // --- topology -----------------------------------------------------------
-  {
-    const ConfigNode topo = root.child("topology");
-    config.topology.enabled = topo.boolean_or("enabled", false);
-    config.topology.volume_fraction = topo.number_or("volume_fraction", 0.4);
-    config.topology.initial_density = topo.number_or("initial_density", -1.0);
-
-    const ConfigNode simp = topo.child("simp");
-    config.topology.optimizer.simp.penalty = simp.number_or("penalty", 3.0);
-    config.topology.optimizer.simp.emin_ratio = simp.number_or("emin_ratio", 1.0e-9);
-    config.topology.optimizer.simp.mass_floor = simp.number_or("mass_floor", 1.0e-9);
-    config.topology.optimizer.simp.mass_law = parse_mass_interpolation(
-        simp.string_or("mass_interpolation", "penalty_matched"));
-
-    const ConfigNode filter = topo.child("filter");
-    config.topology.filter_type = parse_filter_type(filter.string_or("type", "density"));
-    config.topology.filter_radius = filter.number_or("radius", 0.0);
-    config.topology.filter_radius_elements = filter.number_or("radius_elements", 1.5);
-
-    const ConfigNode opt = topo.child("optimizer");
-    TopologyOptimizerOptions& o = config.topology.optimizer;
-    o.max_iterations = opt.integer_or("max_iterations", 200);
-    o.change_tolerance = opt.number_or("change_tolerance", 1.0e-2);
-    o.objective_tolerance = opt.number_or("objective_tolerance", 0.0);
-    o.objective_window = opt.integer_or("objective_window", 5);
-    o.continuation_steps = opt.integer_or("continuation_steps", 1);
-    o.penalty_start = opt.number_or("penalty_start", 1.0);
-    o.continuation_iterations = opt.integer_or("continuation_iterations", 25);
-    o.history_stride = opt.integer_or("history_stride", 1);
-    o.interpretation_threshold = opt.number_or("interpretation_threshold", 0.5);
-    o.oc.move_limit = opt.number_or("move_limit", 0.2);
-    o.oc.damping = opt.number_or("damping", 0.5);
-    o.oc.volume_tolerance = opt.number_or("volume_tolerance", 1.0e-10);
-    o.oc.max_bisections = opt.integer_or("max_bisections", 200);
-    o.analysis = config.analysis;
-
-    // Update method: optimality criteria (default, volume constraint only) or
-    // MMA (any number of constraints). MMA shares the move limit unless its
-    // own block overrides it.
-    o.method = parse_optimizer_method(opt.string_or("method", "oc"));
-    const ConfigNode mma = opt.child("mma");
-    o.mma.move_limit = mma.number_or("move_limit", o.oc.move_limit);
-    o.mma.asymptote_init = mma.number_or("asymptote_init", 0.5);
-    o.mma.asymptote_increase = mma.number_or("asymptote_increase", 1.2);
-    o.mma.asymptote_decrease = mma.number_or("asymptote_decrease", 0.7);
-    o.mma.c = mma.number_or("constraint_penalty", 1000.0);
-    o.mma.epsimin = mma.number_or("subproblem_tolerance", 1.0e-7);
-    o.mma.max_inner_iterations =
-        mma.integer_or("max_newton_iterations", o.mma.max_inner_iterations);
-    o.mma.validate();
-    o.constraint_tolerance = opt.number_or("constraint_tolerance", 1.0e-4);
-
-    // Heaviside projection with beta continuation.
-    {
-      const ConfigNode proj = topo.child("projection");
-      ProjectionOptions& pr = o.projection;
-      pr.enabled = proj.boolean_or("enabled", false);
-      pr.eta = proj.number_or("eta", pr.eta);
-      pr.beta_start = proj.number_or("beta_start", pr.beta_start);
-      pr.beta_max = proj.number_or("beta_max", pr.beta_max);
-      pr.beta_factor = proj.number_or("beta_factor", pr.beta_factor);
-      pr.beta_interval = proj.integer_or("beta_interval", pr.beta_interval);
-      pr.advance_on_convergence =
-          proj.boolean_or("advance_on_convergence", pr.advance_on_convergence);
-      pr.robust = proj.boolean_or("robust", false);
-      pr.robust_delta = proj.number_or("robust_delta", pr.robust_delta);
-      pr.robust_volume_interval =
-          proj.integer_or("robust_volume_interval", pr.robust_volume_interval);
-      pr.erosion_check = proj.boolean_or("erosion_check", false);
-      pr.validate();
-      if (pr.enabled && config.topology.filter_type == FilterType::Sensitivity) {
-        throw ConfigError(
-            "'topology.projection' needs the density filter (or none): the sensitivity "
-            "filter has no chain rule to extend through the projection");
-      }
-    }
-
-    // Aggregated von Mises stress constraint (MMA only).
-    const ConfigNode stress = topo.child("stress");
-    o.stress.enabled = stress.boolean_or("enabled", false);
-    o.stress.limit = stress.number_or("limit", 0.0);
-    o.stress.p_norm = stress.number_or("p_norm", 8.0);
-    o.stress.relaxation = stress.number_or("relaxation", 0.5);
-    o.stress.scaling_blend = stress.number_or("scaling_blend", 0.5);
-    o.stress.feasibility_tolerance = stress.number_or("feasibility_tolerance", 1.0e-3);
-    if (o.stress.enabled && o.method != OptimizerMethod::MMA) {
-      throw ConfigError(
-          "'topology.stress.enabled' needs 'topology.optimizer.method' = \"mma\"; the "
-          "optimality-criteria update cannot handle a second constraint");
-    }
-    if (o.stress.enabled && config.topology.filter_type == FilterType::Sensitivity) {
-      throw ConfigError(
-          "'topology.stress' needs the density filter (or none): the sensitivity filter "
-          "has no exact chain rule for the stress gradient");
-    }
-    if (config.topology.enabled) o.stress.validate(o.simp);
-
-    // Additive-manufacturing overhang: check, and optionally filter.
-    {
-      const ConfigNode am = topo.child("overhang");
-      if (am.exists()) {
-        config.topology.overhang_check = true;
-        OverhangOptions& oh = o.overhang;
-        oh.filter = am.boolean_or("filter", false);
-        oh.direction = parse_build_direction(am.require("build_direction").string(), dim);
-        oh.smax_exponent = am.number_or("smax_exponent", oh.smax_exponent);
-        oh.smax_reference = am.number_or("smax_reference", oh.smax_reference);
-        oh.smin_epsilon = am.number_or("smin_epsilon", oh.smin_epsilon);
-        oh.validate();
-        if (config.mesh_kind != MeshKind::StructuredQuad &&
-            config.mesh_kind != MeshKind::StructuredHex) {
-          throw ConfigError("'" + am.path() + "' needs a structured_quad or structured_hex "
-                            "mesh: the supports of an element are the grid cells of the "
-                            "layer below it");
-        }
-        if (oh.filter && config.topology.filter_type == FilterType::Sensitivity) {
-          throw ConfigError("'" + am.path() + ".filter' needs the density filter (or none): "
-                            "the sensitivity filter has no chain rule through it");
-        }
-      }
-    }
-    {
-      const ConfigNode ls = topo.child("length_scale_check");
-      config.topology.length_scale_check =
-          ls.boolean_or("enabled", ls.exists() || (o.projection.enabled && o.projection.robust));
-      config.topology.length_scale_max_radius_elements =
-          ls.number_or("max_radius_elements", config.topology.length_scale_max_radius_elements);
-      config.topology.length_scale_tolerance =
-          ls.number_or("tolerance", config.topology.length_scale_tolerance);
-      if (!(config.topology.length_scale_max_radius_elements >= 0.5)) {
-        throw ConfigError("'" + ls.path() + ".max_radius_elements' must be at least 0.5");
-      }
-      if (!(config.topology.length_scale_tolerance >= 0.0 &&
-            config.topology.length_scale_tolerance < 0.5)) {
-        throw ConfigError("'" + ls.path() + ".tolerance' must lie in [0, 0.5)");
-      }
-    }
-
-    // Aggregated lower bound on the buckling load factors (MMA only).
-    const ConfigNode buckle = topo.child("buckling_constraint");
-    o.buckling.enabled = buckle.boolean_or("enabled", false);
-    o.buckling.min_load_factor = buckle.number_or("min_load_factor", 1.0);
-    o.buckling.num_modes = buckle.integer_or("num_modes", 6);
-    o.buckling.ks_parameter = buckle.number_or("ks_parameter", 40.0);
-    o.buckling.solid_threshold = buckle.number_or("solid_threshold", 0.5);
-    o.buckling.load_cases = string_list(buckle, "load_cases");
-    parse_buckling_solver(buckle, o.buckling.eigen);
-    o.buckling.eigen.linear = config.analysis.linear;
-    if (o.buckling.enabled && o.method != OptimizerMethod::MMA) {
-      throw ConfigError(
-          "'topology.buckling_constraint.enabled' needs 'topology.optimizer.method' = "
-          "\"mma\"; the optimality-criteria update cannot handle a second constraint");
-    }
-    if (o.buckling.enabled && config.topology.filter_type == FilterType::Sensitivity) {
-      throw ConfigError(
-          "'topology.buckling_constraint' needs the density filter (or none): the "
-          "sensitivity filter has no exact chain rule for the load-factor gradient");
-    }
-    if (config.topology.enabled) o.buckling.validate();
-    for (const std::string& name : o.buckling.load_cases) {
-      bool found = false;
-      for (const LoadCaseSpec& spec : config.load_cases) found = found || spec.name == name;
-      if (!found) {
-        throw ConfigError("'topology.buckling_constraint.load_cases' names '" + name +
-                          "', which is not a load case of the deck");
-      }
-    }
-
-    int passive_index = 0;
-    for (const ConfigNode& region : topo.array("passive_regions")) {
-      PassiveRegionSpec spec;
-      std::ostringstream default_name;
-      default_name << "passive" << passive_index++;
-      spec.region = parse_region(region.require("region"),
-                                 region.string_or("name", default_name.str()), dim);
-      const std::string kind = region.string_or("type", "solid");
-      if (kind == "solid") {
-        spec.solid = true;
-      } else if (kind == "void") {
-        spec.solid = false;
-      } else {
-        throw ConfigError("'" + region.path() + ".type' must be 'solid' or 'void', got '" +
-                          kind + "'");
-      }
-      spec.void_density = region.number_or("density", 0.0);
-      config.topology.passive_regions.push_back(std::move(spec));
-    }
-  }
-
   // --- output -------------------------------------------------------------
   {
     const ConfigNode out = root.child("output");
     config.output.write_csv = out.boolean_or("csv", true);
     config.output.write_vtk = out.boolean_or("vtk", true);
-    config.output.write_density_history = out.boolean_or("density_history", true);
     config.output.write_mode_shapes = out.boolean_or("mode_shapes", true);
   }
 
@@ -1918,12 +1710,6 @@ FemModel build_model(const Configuration& config) {
   model.load_case_specs() = config.load_cases;
   model.finalize();
   return model;
-}
-
-DesignDomain build_design_domain(const Configuration& config, const FemModel& model) {
-  return DesignDomain(model, config.topology.volume_fraction,
-                      config.topology.initial_density,
-                      config.topology.passive_regions);
 }
 
 }  // namespace sparlab

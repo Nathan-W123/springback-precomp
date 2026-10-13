@@ -19,9 +19,7 @@
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/io/MeshReader.hpp"
-#include "sparlab/io/StlWriter.hpp"
 #include "sparlab/io/VtkWriter.hpp"
-#include "sparlab/mesh/SubMesh.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -713,16 +711,9 @@ TEST_CASE("elevating a Tet4 mesh adds shared edge nodes and carries named sets",
                       ContainsSubstring("only a Tet4 mesh"));
 }
 
-TEST_CASE("Tet10 meshes threshold into face-connected parts and export closed surfaces",
-          "[tet10][mesh][geometry][io]") {
+TEST_CASE("Tet10 meshes export VTK cells", "[tet10][mesh][io]") {
   ensure_directory(kTmp);
   const Mesh mesh = make_perturbed_tet10_mesh(box_spec(3, 2, 2, 0.6, 0.4, 0.3), 0.2, 9u);
-  const SurfaceStats stats = surface_stats(boundary_surface(mesh, 1.0));
-  REQUIRE(stats.closed);
-  REQUIRE(stats.non_manifold_edges == 0);
-  REQUIRE(stats.num_triangles == 4 * static_cast<Index>(mesh.boundary_faces().size()));
-  REQUIRE(stats.enclosed_volume == Approx(0.6 * 0.4 * 0.3).epsilon(1.0e-12));
-
   const std::string path = std::string(kTmp) + "/tet10.vtk";
   VtkWriter(mesh, "tet10 mesh").write(path);
   const std::string text = read_text(path);
@@ -735,31 +726,6 @@ TEST_CASE("Tet10 meshes threshold into face-connected parts and export closed su
   int value = 0;
   lines >> value;
   REQUIRE(value == 24);
-
-  // Density threshold: the upper half in x survives as one face-connected
-  // body, and two cells sharing only an edge are two bodies.
-  Vector density = Vector::Constant(ne, 0.01);
-  Vector volumes(ne);
-  Scalar kept = 0.0;
-  for (Index e = 0; e < ne; ++e) {
-    volumes(e) = mesh.element_measure(e);
-    if (mesh.element_centroid(e).x() > 0.3) {
-      density(e) = 1.0;
-      kept += volumes(e);
-    }
-  }
-  const TopologyInterpretation part = interpret_density_as_solid(mesh, density, volumes, 0.5);
-  REQUIRE(part.components_above_threshold == 1);
-  REQUIRE(part.sub.mesh.element_type() == ElementType::Tet10);
-  REQUIRE(part.volume_retained == Approx(kept).epsilon(1.0e-12));
-  REQUIRE(surface_stats(boundary_surface(part.sub.mesh, 1.0)).closed);
-
-  Matrix corners(3, 6);
-  corners << 0.0, 1.0, 0.0, 0.0, 1.0, 0.5,
-             0.0, 0.0, 1.0, 0.0, 1.0, 0.5,
-             0.0, 0.0, 0.0, 1.0, 0.0, -1.0;
-  Mesh pair = elevate_to_tet10(Mesh(corners, {0, 1, 2, 3, 1, 2, 4, 5}, ElementType::Tet4));
-  REQUIRE(element_components_by_face(pair).size() == 2);
 }
 
 // ---------------------------------------------------------------------------

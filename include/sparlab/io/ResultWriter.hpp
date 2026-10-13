@@ -30,11 +30,6 @@
 ///   <out>/frequency_response_<lc>.csv      complex monitor amplitudes per frequency
 ///   <out>/frequency_response_<lc>_<k>.vtk  complex fields at the snapshot frequencies,
 ///                                   indexed by frequency_response_<lc>.vtk.series
-///   <out>/history.csv               optimisation iteration history
-///   <out>/density_final.csv         final design and physical density
-///   <out>/density_history.csv       density snapshots for the animation
-///   <out>/structure_before.{vtk,stl} the design domain the optimiser started from
-///   <out>/structure_after.{vtk,stl}  the thresholded, largest-group structure
 /// \endcode
 /// Every file is plain text. `summary.json` is the single source of truth for
 /// the numbers quoted in the documentation.
@@ -51,10 +46,6 @@
 #include "sparlab/fem/StressRecovery.hpp"
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/Json.hpp"
-#include "sparlab/mesh/SubMesh.hpp"
-#include "sparlab/topopt/LengthScale.hpp"
-#include "sparlab/topopt/OverhangFilter.hpp"
-#include "sparlab/topopt/TopologyOptimizer.hpp"
 
 #include <string>
 #include <vector>
@@ -130,28 +121,6 @@ class ResultWriter {
   void write_frequency_response(const FemModel& model,
                                 const FrequencyResponseResult& result) const;
 
-  /// Optimisation iteration history.
-  void write_history(const TopologyOptimizationResult& result) const;
-
-  /// Final design, physical density and per-element energy.
-  void write_density(const Mesh& mesh, const DesignDomain& domain,
-                     const TopologyOptimizationResult& result) const;
-
-  /// Density snapshots used by the evolution animation.
-  /// \param max_frames snapshots are strided down to at most this many frames.
-  void write_density_history(const TopologyOptimizationResult& result,
-                             int max_frames = 60) const;
-
-  /// One geometry as a solid: `<stem>.vtk` (the cells, with `density` as cell
-  /// data) and `<stem>.stl` (the watertight boundary surface, extruded by
-  /// `thickness` for a 2-D mesh). Returns the surface statistics and the
-  /// mismatch between the enclosed and the cell volume, which the summary
-  /// records.
-  /// \param density per-cell density written to the VTK file (length
-  ///        num_elements of `mesh`).
-  json::Value write_geometry(const Mesh& mesh, const Vector& density, Scalar thickness,
-                             const std::string& stem, const std::string& what) const;
-
   /// Write an arbitrary JSON document into the directory.
   void write_json(const std::string& file_name, const json::Value& value) const;
 
@@ -169,17 +138,6 @@ json::Value make_static_summary(const Configuration& config, const FemModel& mod
                                 const std::vector<StaticSolution>& solutions,
                                 const std::vector<StressField>& stresses,
                                 const ModalResult* modal, const TimingLedger& timings);
-
-/// Build the JSON summary of a topology-optimisation run.
-json::Value make_topology_summary(const Configuration& config, const FemModel& model,
-                                  const DesignDomain& domain,
-                                  const DensityFilter& filter,
-                                  const TopologyOptimizationResult& result,
-                                  const TopologyInterpretation* interpretation,
-                                  const ModalResult* modal_initial,
-                                  const ModalResult* modal_optimised,
-                                  const ModalResult* modal_mass_matched,
-                                  const TimingLedger& timings);
 
 /// Common provenance block: version, build type, timestamp, tolerances.
 json::Value make_provenance(const Configuration& config);
@@ -207,11 +165,5 @@ json::Value transient_json(const std::vector<TransientResult>& results,
 /// per load case (the peak of every monitor and where it lies).
 json::Value frequency_response_json(const std::vector<FrequencyResponseResult>& results,
                                     const FrequencyResponseOptions& options);
-
-/// Summary block of the overhang check of the final design.
-json::Value overhang_json(const OverhangReport& report, bool filtered);
-
-/// Summary block of the minimum length-scale scan of the final design.
-json::Value length_scale_json(const LengthScaleScan& scan);
 
 }  // namespace sparlab

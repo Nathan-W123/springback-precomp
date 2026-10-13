@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(SparLab
         VERSION 1.0.0
-        DESCRIPTION "2-D/3-D finite-element structural solver with SIMP topology optimization"
+        DESCRIPTION "Finite-element incremental-forming and springback solver"
         LANGUAGES CXX)
 
 # ----------------------------------------------------------------------------
@@ -81,7 +81,6 @@ add_library(sparlab STATIC
   src/core/Logging.cpp
   src/mesh/Mesh.cpp
   src/mesh/StructuredMesh.cpp
-  src/mesh/SubMesh.cpp
   src/material/IsotropicMaterial.cpp
   src/material/Hyperelastic.cpp
   src/material/Plasticity.cpp
@@ -119,23 +118,10 @@ add_library(sparlab STATIC
   src/fem/Forming.cpp
   src/fem/ExplicitKernel.cpp
   src/fem/ExplicitDynamics.cpp
-  src/topopt/SimpInterpolation.cpp
-  src/topopt/DensityFilter.cpp
-  src/topopt/DesignDomain.cpp
-  src/topopt/Sensitivity.cpp
-  src/topopt/OptimalityCriteria.cpp
-  src/topopt/Mma.cpp
-  src/topopt/Projection.cpp
-  src/topopt/StressConstraint.cpp
-  src/topopt/BucklingConstraint.cpp
-  src/topopt/OverhangFilter.cpp
-  src/topopt/LengthScale.cpp
-  src/topopt/TopologyOptimizer.cpp
   src/io/Json.cpp
   src/io/Config.cpp
   src/io/CsvWriter.cpp
   src/io/VtkWriter.cpp
-  src/io/StlWriter.cpp
   src/io/CalculixWriter.cpp
   src/io/MeshReader.cpp
   src/io/ResultWriter.cpp
