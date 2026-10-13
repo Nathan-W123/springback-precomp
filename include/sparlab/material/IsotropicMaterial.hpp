@@ -20,8 +20,7 @@
 ///   \tfrac{1-2\nu}{2}\end{bmatrix}
 /// \f]
 /// In plane strain the out-of-plane stress is
-/// \f$\sigma_{zz} = \nu(\sigma_{xx}+\sigma_{yy})\f$, which StressRecovery
-/// accounts for when forming the von Mises stress.
+/// \f$\sigma_{zz} = \nu(\sigma_{xx}+\sigma_{yy})\f$.
 ///
 /// **Thermal strain.** A temperature change \f$\Delta T = T - T_{ref}\f$ gives
 /// the isotropic free strain \f$\alpha\,\Delta T\f$. Its Voigt form depends on

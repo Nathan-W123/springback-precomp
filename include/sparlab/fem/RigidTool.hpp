@@ -250,8 +250,7 @@ struct ToolContactEvaluation {
 class ToolContact {
  public:
   /// \throws ConfigError for an invalid tool, a surface that selects no
-  ///         boundary face, or duplicate tool names; the elements' faces must
-  ///         be linear (Q4, Tri3, Hex8, Tet4 meshes).
+  ///         boundary face, or duplicate tool names.
   ToolContact(const FemModel& model, std::vector<RigidTool> tools,
               FrictionTangent friction_tangent = FrictionTangent::Exact);
 

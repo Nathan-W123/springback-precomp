@@ -506,15 +506,10 @@ Scalar element_kernel(const ElementJob& job, Scalar* out) {
 }  // namespace
 
 ExplicitInternalForce::ExplicitInternalForce(const FemModel& model, const Assembler& assembler,
-                                             const NonlinearOptions& options, int load_case,
+                                             const NonlinearOptions& options,
                                              bool allow_dedicated)
-    : model_(model), assembler_(assembler), options_(options), load_case_(load_case) {
-  if (load_case >= 0) {
-    system_ = std::make_unique<detail::NonlinearSystem>(
-        model, assembler, static_cast<std::size_t>(load_case), options_);
-  } else {
-    system_ = std::make_unique<detail::NonlinearSystem>(model, assembler, options_);
-  }
+    : model_(model), assembler_(assembler), options_(options) {
+  system_ = std::make_unique<detail::NonlinearSystem>(model, assembler, options_);
   // The dedicated kernel covers what it reproduces exactly; everything else
   // takes the element dispatch.
   const Mesh& mesh = model.mesh();
@@ -545,17 +540,6 @@ ExplicitInternalForce::ExplicitInternalForce(const FemModel& model, const Assemb
         options_.law != HyperelasticModel::SaintVenantKirchhoff) {
       reason_ = "the dedicated kernel's elastic law with finite kinematics is Saint "
                 "Venant-Kirchhoff";
-    }
-    if (reason_.empty() && load_case >= 0) {
-      const LoadCaseSpec& spec = model.load_case_specs()[static_cast<std::size_t>(load_case)];
-      const LoadCaseData& data = model.load_case_data(static_cast<std::size_t>(load_case));
-      if (data.temperature.size() > 0 && data.temperature.cwiseAbs().maxCoeff() > 0.0) {
-        reason_ = "the dedicated kernel applies no temperature";
-      } else if (finite_ && options_.follower_pressure && !spec.pressures.empty()) {
-        reason_ = "the dedicated kernel applies no follower pressure";
-      } else if (finite_ && spec.centrifugal.enabled) {
-        reason_ = "the dedicated kernel applies no centrifugal load at finite kinematics";
-      }
     }
   }
   if (reason_.empty()) build_dedicated();
@@ -807,13 +791,8 @@ void ExplicitInternalForce::evaluate(const Vector& u, Scalar lambda, bool commit
 
 Vector ExplicitInternalForce::generic_internal(
     const Vector& u, const std::vector<std::vector<PlasticState>>& history) const {
-  std::unique_ptr<detail::NonlinearSystem> system;
-  if (load_case_ >= 0) {
-    system = std::make_unique<detail::NonlinearSystem>(
-        model_, assembler_, static_cast<std::size_t>(load_case_), options_);
-  } else {
-    system = std::make_unique<detail::NonlinearSystem>(model_, assembler_, options_);
-  }
+  std::unique_ptr<detail::NonlinearSystem> system =
+      std::make_unique<detail::NonlinearSystem>(model_, assembler_, options_);
   if (!history.empty()) system->set_committed(history);
   return system->evaluate(u, 0.0, false).internal;
 }

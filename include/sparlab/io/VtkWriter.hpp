@@ -3,19 +3,10 @@
 ///
 /// The legacy format is used deliberately: it is a single self-describing text
 /// file with no XML or compression dependencies, and ParaView, VisIt and
-/// pyvista all read it. Q4 elements are written as VTK_QUAD (cell type 9) with
-/// z = 0; Hex8 elements as VTK_HEXAHEDRON (cell type 12).
-///
-/// Field naming convention in the output file:
-///   * point data: `displacement` (3-vector, z = 0 in 2-D),
-///     `displacement_magnitude`, `nodal_von_mises`, and `mode_<k>` for mode
-///     shapes;
-///   * cell data: `density`, `stiffness_factor`, `sigma_xx`, `sigma_yy`,
-///     `sigma_xy` (plus `sigma_zz`, `sigma_yz`, `sigma_zx` in 3-D),
-///     `von_mises`, `principal_max`, `principal_min`, `strain_energy`.
-///
-/// A density field written to VTK is the SIMP *material distribution*, not a
-/// solid body; docs/limitations.md states how it should be read.
+/// pyvista all read it. Hex8 elements are written as VTK_HEXAHEDRON (cell
+/// type 12). The forming writer (FormingWriter.hpp) names its fields:
+/// point data `displacement` and `displacement_magnitude`, cell data
+/// `eq_plastic_strain` and `von_mises`.
 #pragma once
 
 #include "sparlab/core/Types.hpp"

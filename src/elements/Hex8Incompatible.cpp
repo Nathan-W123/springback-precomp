@@ -139,72 +139,9 @@ Vector Hex8IncompatibleElement::shape_functions(const NaturalPoint& point) const
   return standard_.shape_functions(point);
 }
 
-std::vector<NaturalPoint> Hex8IncompatibleElement::stress_evaluation_points(
-    const IntegrationOptions& opts) const {
-  return standard_.stress_evaluation_points(opts);
-}
-
 std::vector<IntegrationPoint> Hex8IncompatibleElement::integration_rule(
     const IntegrationOptions& opts) const {
   return standard_.integration_rule(opts);
-}
-
-Vector Hex8IncompatibleElement::boundary_traction(const Matrix& coords, int local_face,
-                                                  const Vector3& traction, Scalar thickness,
-                                                  const IntegrationOptions& opts) const {
-  return standard_.boundary_traction(coords, local_face, traction, thickness, opts);
-}
-
-Matrix Hex8IncompatibleElement::geometric_stiffness(const Matrix& coords, const Matrix& d,
-                                                    const Vector& ue, Scalar stress_scale,
-                                                    Scalar thickness,
-                                                    const IntegrationOptions& opts) const {
-  if (ue.size() != num_dofs()) {
-    std::ostringstream os;
-    os << "Hex8 geometric stiffness expects an element vector of " << num_dofs()
-       << " entries, received " << ue.size();
-    throw ModelError(os.str());
-  }
-  const InternalCondensation c = condense_internal(coords, d, thickness, opts);
-  std::vector<Vector> stresses;
-  for (const IntegrationPoint& ip : integration_rule(opts)) {
-    stresses.push_back(stress_scale * (d * (condensed_strain_operator(coords, ip.point, c) * ue)));
-  }
-  return geometric_stiffness_of_stress(coords, stresses, thickness, opts);
-}
-
-Vector Hex8IncompatibleElement::geometric_stiffness_derivative(
-    const Matrix& coords, const Matrix& d, const Vector& phi, Scalar stress_scale,
-    Scalar thickness, const IntegrationOptions& opts) const {
-  if (phi.size() != num_dofs()) {
-    std::ostringstream os;
-    os << "Hex8 geometric-stiffness derivative expects an element vector of " << num_dofs()
-       << " entries, received " << phi.size();
-    throw ModelError(os.str());
-  }
-  const InternalCondensation c = condense_internal(coords, d, thickness, opts);
-  // Displacement-gradient matrix H(i, k) = d phi_k / d x_i of the mode, from
-  // the compatible gradients (the normal rows of B).
-  Matrix modes(8, 3);
-  for (int a = 0; a < 8; ++a) {
-    for (int k = 0; k < 3; ++k) modes(a, k) = phi(3 * a + k);
-  }
-  Vector out = Vector::Zero(num_dofs());
-  for (const IntegrationPoint& ip : integration_rule(opts)) {
-    const StrainOperator op = strain_operator(coords, ip.point);
-    Matrix g(3, 8);
-    for (int a = 0; a < 8; ++a) {
-      for (int i = 0; i < 3; ++i) g(i, a) = op.b(i, 3 * a + i);
-    }
-    const Matrix h = g * modes;
-    const Matrix phi_tensor = h * h.transpose();
-    Vector hat(6);
-    hat << phi_tensor(0, 0), phi_tensor(1, 1), phi_tensor(2, 2), 2.0 * phi_tensor(0, 1),
-        2.0 * phi_tensor(1, 2), 2.0 * phi_tensor(2, 0);
-    const Matrix bhat = condensed_strain_operator(coords, ip.point, c);
-    out.noalias() += (stress_scale * ip.weight * op.detJ) * (bhat.transpose() * (d * hat));
-  }
-  return out;
 }
 
 }  // namespace sparlab

@@ -8,15 +8,15 @@
 /// **Equations of motion.** With the lumped (diagonal) mass M, the
 /// mass-proportional damping \f$C = \alpha M\f$, the internal forces
 /// \f$f_{int}(u)\f$ of the non-linear system (the elements, kinematics and
-/// plasticity of NonlinearStatic.hpp, the plastic history of every point),
-/// the loads \f$f_{ext}(t) = r(t)\,f\f$ of an optional load case and the
-/// contact forces \f$f_c\f$ of the tools,
+/// plasticity of Elastoplastic.hpp, the plastic history of every point) and
+/// the contact forces \f$f_c\f$ of the tools (no other load acts,
+/// \f$f_{ext} = 0\f$),
 /// \f[
 ///   M\ddot u + C\dot u + f_{int}(u) = f_{ext}(t) + f_c(u, \dot u, t)
 /// \f]
 /// on the free DOFs; a prescribed DOF follows
 /// \f$u_p(t) = u_{p,0} + r(t)\,(u_{p,1} - u_{p,0})\f$ (r a ramp, linear in
-/// the physical time unless given).
+/// the physical time).
 ///
 /// **Central differences** (Belytschko, Liu and Moran, *Nonlinear Finite
 /// Elements for Continua and Structures*, Wiley 2000, box 6.1), with the
@@ -137,9 +137,8 @@
 #include "sparlab/core/Timer.hpp"
 #include "sparlab/core/Types.hpp"
 #include "sparlab/fem/Assembler.hpp"
-#include "sparlab/fem/Dynamics.hpp"
+#include "sparlab/fem/Elastoplastic.hpp"
 #include "sparlab/fem/FemModel.hpp"
-#include "sparlab/fem/NonlinearStatic.hpp"
 #include "sparlab/fem/RigidTool.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
@@ -256,10 +255,6 @@ struct ExplicitDrive {
   std::vector<Index> fixed;       ///< prescribed DOFs, ascending
   Vector fixed_start;             ///< their values at tau = 0 [m]
   Vector fixed_end;               ///< their values at r = 1 [m]
-  /// r(tau), the ramp of the prescribed values and of the load case's loads;
-  /// an empty table (the default) is linear, 0 at tau = 0 to 1 at the
-  /// duration.
-  Amplitude ramp = {Amplitude::Kind::Table, {}, {}, 0.0, 0.0, 1.0};
   std::vector<char> active;       ///< per tool: in contact this run
   ExplicitTimeMap time_map;       ///< the tools' pseudo-time; empty: constant 0
 };
@@ -378,13 +373,12 @@ class ExplicitInternalForce;
 /// The explicit integrator of a finalised continuum model.
 class ExplicitDynamics {
  public:
-  /// `nonlinear` gives the kinematics, elastic law and mean dilatation;
-  /// `load_case` (-1: none) the loads, scaled by the drive's ramp.
+  /// `nonlinear` gives the kinematics, elastic law and mean dilatation.
   /// \throws ConfigError for invalid options, a model with a material
   ///         without density or with shells, or an invalid tool.
   ExplicitDynamics(const FemModel& model, const Assembler& assembler,
                    const NonlinearOptions& nonlinear, std::vector<RigidTool> tools,
-                   ExplicitOptions options, int load_case = -1);
+                   ExplicitOptions options);
   ~ExplicitDynamics();
   ExplicitDynamics(const ExplicitDynamics&) = delete;
   ExplicitDynamics& operator=(const ExplicitDynamics&) = delete;
@@ -422,7 +416,6 @@ class ExplicitDynamics {
   NonlinearOptions nonlinear_;
   std::vector<RigidTool> tools_;
   ExplicitOptions options_;
-  int load_case_ = -1;
   std::unique_ptr<ExplicitInternalForce> force_;
 };
 

@@ -87,33 +87,17 @@ add_library(sparlab STATIC
   src/material/LogarithmicStrain.cpp
   src/elements/Quadrature.cpp
   src/elements/Element.cpp
-  src/elements/Quad4.cpp
   src/elements/Hex8.cpp
   src/elements/Hex8Incompatible.cpp
-  src/elements/Tri3.cpp
-  src/elements/Tet4.cpp
-  src/elements/Tet10.cpp
   src/elements/FaceGeometry.cpp
   src/fem/DofManager.cpp
   src/fem/Selector.cpp
   src/fem/BoundaryConditions.cpp
   src/fem/FemModel.cpp
   src/fem/Assembler.cpp
-  src/fem/LinearSolver.cpp
-  src/fem/Multigrid.cpp
-  src/fem/ModelDiagnostics.cpp
-  src/fem/StaticAnalysis.cpp
-  src/fem/StressRecovery.cpp
-  src/fem/ModalAnalysis.cpp
-  src/fem/Buckling.cpp
-  src/fem/Loads.cpp
-  src/fem/HeatConduction.cpp
   src/fem/TotalLagrangian.cpp
-  src/fem/NonlinearStatic.cpp
   src/fem/Elastoplastic.cpp
   src/fem/IncompatibleModes.cpp
-  src/fem/Dynamics.cpp
-  src/fem/Contact.cpp
   src/fem/RigidTool.cpp
   src/fem/Forming.cpp
   src/fem/ExplicitKernel.cpp
@@ -122,7 +106,6 @@ add_library(sparlab STATIC
   src/io/Config.cpp
   src/io/CsvWriter.cpp
   src/io/VtkWriter.cpp
-  src/io/CalculixWriter.cpp
   src/io/MeshReader.cpp
   src/io/ResultWriter.cpp
   src/io/FormingWriter.cpp

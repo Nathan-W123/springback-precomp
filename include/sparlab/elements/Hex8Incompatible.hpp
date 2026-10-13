@@ -90,9 +90,6 @@ class Hex8IncompatibleElement final : public Element {
 
   Vector shape_functions(const NaturalPoint& point) const override;
 
-  std::vector<NaturalPoint> stress_evaluation_points(
-      const IntegrationOptions& opts) const override;
-
   std::vector<IntegrationPoint> integration_rule(
       const IntegrationOptions& opts) const override;
 
@@ -100,26 +97,9 @@ class Hex8IncompatibleElement final : public Element {
   /// for \f$\phi_k = 1 - \xi_k^2\f$) [1/m].
   Matrix internal_mode_gradients(const Matrix& coords, const NaturalPoint& point) const override;
 
-  /// The geometric stiffness of the stress \f$\sigma = s\,D\hat B u_e\f$
-  /// with the condensed \f$\hat B\f$, on the compatible gradients: the
-  /// modes enter the stress, not the initial-stress term (a linearised
-  /// buckling approximation; docs/formulation.md).
-  Matrix geometric_stiffness(const Matrix& coords, const Matrix& d, const Vector& ue,
-                             Scalar stress_scale, Scalar thickness,
-                             const IntegrationOptions& opts) const override;
-
-  /// The derivative of the geometric stiffness above:
-  /// \f$g_e = s\int \hat B^T D\hat\Phi\,dV\f$.
-  Vector geometric_stiffness_derivative(const Matrix& coords, const Matrix& d,
-                                        const Vector& phi, Scalar stress_scale,
-                                        Scalar thickness,
-                                        const IntegrationOptions& opts) const override;
-
-  Vector boundary_traction(const Matrix& coords, int local_face, const Vector3& traction,
-                           Scalar thickness, const IntegrationOptions& opts) const override;
 
  private:
-  Hex8Element standard_;  ///< the compatible element: mass, loads, shape functions, rule
+  Hex8Element standard_;  ///< the compatible element: mass, shape functions, rule
 };
 
 /// The Taylor-corrected incompatible-mode gradients of a Hex8 at the natural

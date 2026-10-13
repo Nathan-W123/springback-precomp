@@ -1,28 +1,16 @@
 /// \file test_logarithmic.cpp
 /// \brief Logarithmic-strain finite plasticity (Kinematics::FiniteLogarithmic):
 ///        the Hencky strain and its derivatives, the element's consistent
-///        tangent, objectivity, the exact large-strain uniaxial response, the
-///        small-strain limit, thermal expansion, and the solver.
+///        tangent, objectivity, inverted points and the small-strain limit.
 ///
 /// The strain and its derivatives are compared with an independent matrix
 /// logarithm (Eigen's Schur-Pade) and with fourth-order central differences
-/// at distinct, equal and nearly equal eigenvalues. The large-strain
-/// benchmarks are exact: for a coaxial homogeneous stretch the log strains
-/// of successive increments add, so uniaxial stress to a stretch of 2 is the
-/// one-dimensional small-strain law in the log strain, the Kirchhoff stress
-/// its stress - to round-off, for J2 with linear and Voce hardening, for
-/// Armstrong-Frederick backstresses along a tension-compression cycle, and
-/// for Hill48 along its axes, whose plastic lateral log strains keep the
-/// ratio r exactly.
+/// at distinct, equal and nearly equal eigenvalues.
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/fem/Dynamics.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
-#include "sparlab/fem/NonlinearStatic.hpp"
-#include "sparlab/io/CalculixWriter.hpp"
 #include "sparlab/io/Config.hpp"
-#include "sparlab/io/ResultWriter.hpp"
 #include "sparlab/material/LogarithmicStrain.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
@@ -47,8 +35,6 @@ using namespace sparlab::testing;
 using Catch::Approx;
 
 namespace {
-
-constexpr Scalar kInf = std::numeric_limits<Scalar>::infinity();
 
 Vector6 engineering(const Matrix3& t) {
   Vector6 v;
@@ -223,18 +209,16 @@ TEST_CASE("the logarithmic strain and its first and second derivatives are exact
 
 namespace {
 
-/// One distorted element of a 2 x 2 (x 2) mesh.
+/// One distorted element of a 2 x 2 x 2 Hex8 mesh.
 FemModel one_element(ElementType type, StressState state, const IsotropicMaterial& m) {
   StructuredMeshSpec spec;
   spec.nx = spec.ny = spec.nz = 2;
   spec.lx = 1.0;
   spec.ly = 0.8;
   spec.lz = 0.6;
-  Mesh mesh = type == ElementType::Quad4  ? make_perturbed_quad_mesh(spec, 0.2)
-              : type == ElementType::Hex8 ? make_perturbed_hex_mesh(spec, 0.2)
-                                          : make_perturbed_tet10_mesh(spec, 0.2);
-  const Scalar thickness = mesh.dim() == 2 ? 0.05 : 1.0;
-  return FemModel(std::move(mesh), m, thickness, state, IntegrationOptions());
+  Mesh mesh = make_perturbed_hex_mesh(spec, 0.2);
+  REQUIRE(mesh.element_type() == type);
+  return FemModel(std::move(mesh), m, 1.0, state, IntegrationOptions());
 }
 
 /// The displacement of element e's nodes under u = (F - I) X plus a random
@@ -274,8 +258,8 @@ Matrix3 plane(Matrix3 f) {
 
 }  // namespace
 
-TEST_CASE("the logarithmic element tangent is the derivative of its internal force: Hex8, Q4 "
-          "plane strain and plane stress, Tet10, elastic, J2, Hill48 and Chaboche",
+TEST_CASE("the logarithmic element tangent is the derivative of its internal force: Hex8, "
+          "elastic, J2, Hill48 and Chaboche",
           "[logarithmic][element]") {
   struct Law {
     const char* name;
@@ -292,10 +276,7 @@ TEST_CASE("the logarithmic element tangent is the derivative of its internal for
     ElementType type;
     StressState state;
   };
-  const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional},
-                                   {ElementType::Quad4, StressState::PlaneStrain},
-                                   {ElementType::Quad4, StressState::PlaneStress},
-                                   {ElementType::Tet10, StressState::ThreeDimensional}};
+  const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional}};
   Scalar worst = 0.0;
   for (const Law& law : laws) {
     const IsotropicMaterial m = steel(law.plastic ? &law.p : nullptr);
@@ -355,10 +336,8 @@ TEST_CASE("the logarithmic thermal load rate is the derivative of the internal f
   PlasticityParameters p = j2(1.0e9, 60.0e6, 30.0);
   IsotropicMaterial m = steel(&p);
   m.set_thermal(1.2e-5, 20.0, 50.0);
-  for (const StressState state : {StressState::ThreeDimensional, StressState::PlaneStress}) {
-    const ElementType type =
-        state == StressState::ThreeDimensional ? ElementType::Hex8 : ElementType::Quad4;
-    FemModel model = one_element(type, state, m);
+  for (const StressState state : {StressState::ThreeDimensional}) {
+    FemModel model = one_element(ElementType::Hex8, state, m);
     const int dim = model.dim();
     Vector temperature(model.mesh().num_nodes());
     for (Index n = 0; n < model.mesh().num_nodes(); ++n) {
@@ -395,7 +374,7 @@ TEST_CASE("logarithmic kinematics is objective: a superposed rotation leaves T, 
   const IsotropicMaterial m = steel(&p);
   const Matrix3 rot =
       Eigen::AngleAxisd(0.9, Vector3(0.2, 1.0, -0.4).normalized()).toRotationMatrix();
-  for (const ElementType type : {ElementType::Hex8, ElementType::Tet10}) {
+  for (const ElementType type : {ElementType::Hex8}) {
     FemModel model = one_element(type, StressState::ThreeDimensional, m);
     const Matrix x0 = model.mesh().element_coordinates(0);
     const std::vector<PlasticState> virgin(static_cast<std::size_t>(elastoplastic_points(model)));
@@ -460,10 +439,7 @@ TEST_CASE("an inverted point is refused with logarithmic kinematics: det F <= 0 
     ElementType type;
     StressState state;
   };
-  const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional},
-                                   {ElementType::Quad4, StressState::PlaneStrain},
-                                   {ElementType::Quad4, StressState::PlaneStress},
-                                   {ElementType::Tet10, StressState::ThreeDimensional}};
+  const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional}};
   const Matrix3 flip = Vector3(1.0, -1.0, 1.0).asDiagonal();
   const Matrix3 turn = Vector3(-1.0, -1.0, 1.0).asDiagonal();  // by pi about z
   for (const Case& c : cases) {
@@ -513,9 +489,8 @@ TEST_CASE("at strains of 1e-6 the logarithmic and the Green-Lagrange element agr
   // Elastoplastically too, with a yield stress scaled with the strain so
   // that the points yield alike.
   for (const bool plastic : {false, true}) {
-    for (const ElementType type : {ElementType::Hex8, ElementType::Tet10, ElementType::Quad4}) {
-      const StressState state =
-          type == ElementType::Quad4 ? StressState::PlaneStrain : StressState::ThreeDimensional;
+    for (const ElementType type : {ElementType::Hex8}) {
+      const StressState state = StressState::ThreeDimensional;
       std::vector<Scalar> differences;
       for (const Scalar amplitude : {1.0e-6, 1.0e-7}) {
         PlasticityParameters low = j2(1.0e9);
@@ -552,548 +527,8 @@ TEST_CASE("at strains of 1e-6 the logarithmic and the Green-Lagrange element agr
   }
 }
 
-namespace {
-
-/// A block [0, L] x [0, W] x [0, H] of Hex8 on symmetry planes x = 0, y = 0,
-/// z = 0, its face x = L pulled to u_x = `pull`: uniaxial stress, a
-/// homogeneous stretch on any mesh. Monitors: the end force and the mean
-/// lateral displacements of the faces y = W and z = H.
-struct Specimen {
-  Scalar length = 1.0;
-  Scalar width = 0.5;
-  Scalar height = 0.4;
-};
-
-FemModel uniaxial_model(const Specimen& s, const IsotropicMaterial& m, bool patch, Scalar pull) {
-  StructuredMeshSpec spec;
-  spec.nx = spec.ny = spec.nz = patch ? 2 : 1;
-  spec.lx = s.length;
-  spec.ly = s.width;
-  spec.lz = s.height;
-  Mesh mesh = patch ? make_perturbed_hex_mesh(spec, 0.3) : make_structured_hex_mesh(spec);
-  FemModel model(std::move(mesh), m, 1.0, StressState::ThreeDimensional, IntegrationOptions());
-  const auto plane_at = [&](int axis, Scalar value) {
-    SelectorGroup g;
-    Selector sel;
-    sel.kind = SelectorKind::Box;
-    sel.xmin = axis == 0 ? value : -kInf;
-    sel.xmax = axis == 0 ? value : kInf;
-    sel.ymin = axis == 1 ? value : -kInf;
-    sel.ymax = axis == 1 ? value : kInf;
-    sel.zmin = axis == 2 ? value : -kInf;
-    sel.zmax = axis == 2 ? value : kInf;
-    g.members.push_back(sel);
-    g.name = "plane";
-    return g;
-  };
-  for (int axis = 0; axis < 3; ++axis) {
-    DisplacementConstraint sym;
-    sym.region = plane_at(axis, 0.0);
-    sym.set(axis, true, 0.0);
-    model.constraints().push_back(sym);
-  }
-  DisplacementConstraint end;
-  end.region = plane_at(0, s.length);
-  end.set(0, true, pull);
-  model.constraints().push_back(end);
-  LoadCaseSpec lc;
-  lc.name = "pull";
-  lc.prescribed_displacement_only = true;
-  model.load_case_specs().push_back(lc);
-  model.finalize();
-  return model;
-}
-
-NonlinearOptions uniaxial_options(const Specimen& s, std::vector<Scalar> path, int steps) {
-  NonlinearOptions o;
-  o.kinematics = Kinematics::FiniteLogarithmic;
-  o.steps = steps;
-  o.load_path = std::move(path);
-  o.residual_tolerance = 1.0e-12;
-  o.displacement_tolerance = 1.0e-12;
-  const auto face = [&](int axis, Scalar value) {
-    NonlinearMonitor mon;
-    Selector sel;
-    sel.kind = SelectorKind::Box;
-    sel.xmin = axis == 0 ? value : -kInf;
-    sel.xmax = axis == 0 ? value : kInf;
-    sel.ymin = axis == 1 ? value : -kInf;
-    sel.ymax = axis == 1 ? value : kInf;
-    sel.zmin = axis == 2 ? value : -kInf;
-    sel.zmax = axis == 2 ? value : kInf;
-    mon.region.members.push_back(sel);
-    mon.component = axis;
-    return mon;
-  };
-  NonlinearMonitor force = face(0, s.length);
-  force.name = "force";
-  force.quantity = NonlinearMonitor::Quantity::Reaction;
-  NonlinearMonitor uy = face(1, s.width);
-  uy.name = "uy";
-  NonlinearMonitor uz = face(2, s.height);
-  uz.name = "uz";
-  o.monitors = {force, uy, uz};
-  return o;
-}
-
-/// The 1-D law of the return in uniaxial stress, exact along a path of
-/// monotonic legs: J2 with linear and Voce isotropic hardening and
-/// Armstrong-Frederick backstresses, integrated per leg by the branch
-/// solution X_i = nu C_i/gamma_i + (X_i0 - nu C_i/gamma_i) exp(-gamma_i D).
-struct Uniaxial {
-  PlasticityParameters p;
-  Scalar e = 0.0;
-  Scalar plastic_strain = 0.0;
-  Scalar p_accumulated = 0.0;
-  std::vector<Scalar> x;
-
-  Scalar back(int i, Scalar nu, Scalar d) const {
-    const Backstress t = p.kinematic_term(i);
-    const Scalar x0 = x[static_cast<std::size_t>(i)];
-    if (t.recovery == 0.0) return x0 + nu * t.modulus * d;
-    const Scalar limit = nu * t.modulus / t.recovery;
-    return limit + (x0 - limit) * std::exp(-t.recovery * d);
-  }
-  Scalar back_sum(Scalar nu, Scalar d) const {
-    Scalar s = 0.0;
-    for (int i = 0; i < p.kinematic_terms(); ++i) s += back(i, nu, d);
-    return s;
-  }
-  /// The stress at the total strain `eps`, advancing the state.
-  Scalar at(Scalar eps) {
-    if (x.empty()) x.assign(static_cast<std::size_t>(p.kinematic_terms()), 0.0);
-    const Scalar trial = e * (eps - plastic_strain);
-    const Scalar relative_stress = trial - back_sum(1.0, 0.0);
-    if (std::abs(relative_stress) <= p.yield(p_accumulated)) return trial;
-    const Scalar nu = relative_stress > 0.0 ? 1.0 : -1.0;
-    // f(D) = nu (E (eps - eps_p - nu D) - sum X_i(D)) - sigma_y(p + D)
-    // falls monotonically from f(0) > 0.
-    const auto f = [&](Scalar d) {
-      return nu * (e * (eps - plastic_strain - nu * d) - back_sum(nu, d)) -
-             p.yield(p_accumulated + d);
-    };
-    Scalar lo = 0.0;
-    Scalar hi = 1.0e-3;
-    while (f(hi) > 0.0) hi *= 2.0;
-    for (int it = 0; it < 200; ++it) {
-      const Scalar mid = 0.5 * (lo + hi);
-      (f(mid) > 0.0 ? lo : hi) = mid;
-    }
-    const Scalar d = 0.5 * (lo + hi);
-    for (int i = 0; i < p.kinematic_terms(); ++i) x[static_cast<std::size_t>(i)] = back(i, nu, d);
-    plastic_strain += nu * d;
-    p_accumulated += d;
-    return e * (eps - plastic_strain);
-  }
-};
-
-}  // namespace
-
-TEST_CASE("uniaxial tension to a stretch of 2 is exact: the Kirchhoff stress against the log "
-          "strain is the 1-D law, for J2 with linear and Voce hardening",
-          "[logarithmic][solver]") {
-  // A coaxial homogeneous stretch diag(l1, l2, l2): E_log = diag(ln l1,
-  // ln l2, ln l2), the return is the small-strain J2 return in it (exact on
-  // this proportional path), T = diag(tau, 0, 0) is the Kirchhoff stress
-  // and the end force is tau A0 / l1.
-  const Specimen s;
-  const Scalar area = s.width * s.height;
-  for (const bool voce : {false, true}) {
-    const PlasticityParameters p = voce ? j2(0.5e9, 150.0e6, 12.0) : j2(1.5e9);
-    const IsotropicMaterial m = steel(&p);
-    for (const bool patch : {false, true}) {
-      FemModel model = uniaxial_model(s, m, patch, s.length);  // to a stretch of 2
-      Assembler assembler(model);
-      const NonlinearResult r =
-          NonlinearStaticAnalysis(model, assembler, uniaxial_options(s, {}, 20)).solve(0);
-      INFO((voce ? "Voce" : "linear") << (patch ? ", distorted 2 x 2 x 2 patch" : ", one Hex8"));
-      REQUIRE(r.completed);
-      REQUIRE(r.kinematics == "finite_logarithmic");
-      Uniaxial law;
-      law.p = p;
-      law.e = m.youngs_modulus();
-      Scalar worst = 0.0;
-      Scalar lateral = 0.0;
-      Scalar tau_end = 0.0;
-      for (const NonlinearStep& step : r.steps) {
-        const Scalar l1 = 1.0 + step.load_factor;
-        const Scalar eps = std::log(l1);
-        const Scalar tau = law.at(eps);
-        tau_end = tau;
-        worst = std::max(worst, std::abs(step.monitors[0] * l1 / area - tau) / std::abs(tau));
-        // Lateral log strains: equal, and with the axial one the elastic
-        // volume change (1 - 2 nu) tau / E (the flow is isochoric).
-        const Scalar e2 = std::log1p(step.monitors[1] / s.width);
-        const Scalar e3 = std::log1p(step.monitors[2] / s.height);
-        lateral = std::max(lateral, std::abs(e2 - e3));
-        lateral = std::max(lateral, std::abs(eps + e2 + e3 - (1.0 - 2.0 * 0.3) * tau / law.e));
-      }
-      INFO("Kirchhoff stress error " << worst << ", lateral " << lateral);
-      REQUIRE(worst <= 1.0e-12);
-      REQUIRE(lateral <= 1.0e-12);
-      REQUIRE(r.max_plastic_strain == Approx(law.p_accumulated).epsilon(1e-12));
-      // Stress recovery: the Kirchhoff stress, the log strain, the Cauchy
-      // stress tau / J of every element.
-      const Scalar tau = tau_end;
-      const Scalar e2 = std::log1p(r.steps.back().monitors[1] / s.width);
-      const Scalar e3 = std::log1p(r.steps.back().monitors[2] / s.height);
-      for (Index el = 0; el < model.mesh().num_elements(); ++el) {
-        REQUIRE(r.element_kirchhoff(0, el) == Approx(tau).epsilon(1e-12));
-        REQUIRE(std::abs(r.element_kirchhoff(1, el)) <= 1.0e-12 * tau);
-        REQUIRE(r.element_log_strain(0, el) == Approx(std::log(2.0)).epsilon(1e-12));
-        REQUIRE(r.element_log_strain(1, el) == Approx(e2).epsilon(1e-12));
-        REQUIRE(r.element_cauchy(0, el) ==
-                Approx(tau / std::exp(std::log(2.0) + e2 + e3)).epsilon(1e-12));
-      }
-      REQUIRE(r.max_green_strain == Approx(std::log(2.0)).epsilon(1e-12));
-      REQUIRE(r.warnings.empty());  // no small-strain warning at a log strain of 0.69
-    }
-  }
-}
-
-TEST_CASE("a tension-compression cycle to +-0.3 log strain with Chaboche backstresses follows "
-          "the exact Armstrong-Frederick solution in the log strain",
-          "[logarithmic][solver]") {
-  const Specimen s;
-  const Scalar area = s.width * s.height;
-  const PlasticityParameters p = chaboche();
-  const IsotropicMaterial m = steel(&p);
-  // Stretch e^0.3 at lambda = 1; lambda = (e^-0.3 - 1) / (e^0.3 - 1) gives
-  // e^-0.3.
-  const Scalar pull = s.length * std::expm1(0.3);
-  const Scalar back = std::expm1(-0.3) / std::expm1(0.3);
-  for (const bool patch : {false, true}) {
-    FemModel model = uniaxial_model(s, m, patch, pull);
-    Assembler assembler(model);
-    const NonlinearResult r =
-        NonlinearStaticAnalysis(model, assembler, uniaxial_options(s, {1.0, back, 1.0}, 12))
-            .solve(0);
-    INFO((patch ? "distorted 2 x 2 x 2 patch" : "one Hex8"));
-    REQUIRE(r.completed);
-    Uniaxial law;
-    law.p = p;
-    law.e = m.youngs_modulus();
-    Scalar worst = 0.0;
-    int reversed = 0;
-    Scalar previous = 0.0;
-    for (const NonlinearStep& step : r.steps) {
-      const Scalar l1 = 1.0 + step.load_factor * pull / s.length;
-      const Scalar tau = law.at(std::log(l1));
-      worst = std::max(worst, std::abs(step.monitors[0] * l1 / area - tau) / law.p.yield_stress);
-      if (step.load_factor < previous && step.yielding_points > 0) ++reversed;
-      previous = step.load_factor;
-    }
-    INFO("Kirchhoff stress error " << worst << " sigma_y");
-    REQUIRE(reversed > 0);  // reverse plastic flow on the way down
-    REQUIRE(worst <= 1.0e-12);
-    REQUIRE(r.load_factor == 1.0);
-    REQUIRE(r.max_plastic_strain == Approx(law.p_accumulated).epsilon(1e-12));
-  }
-}
-
-TEST_CASE("Hill48 pulled along RD and TD to a stretch of 1.6 keeps the plastic lateral "
-          "log-strain ratio r0 and r90 exactly",
-          "[logarithmic][solver]") {
-  // The frame's axes along x, y, z: uniaxial stress along RD (or TD) is a
-  // proportional path in the log strain, T = diag(tau, 0, 0); the plastic
-  // width over thickness log strain is the r-value at any strain, and tau
-  // follows E (k sigma_y + k^2 H eps) / (E + k^2 H), k = sigma_theta / sigma_0.
-  const Specimen s;
-  const Scalar area = s.width * s.height;
-  for (const bool transverse : {false, true}) {
-    PlasticityParameters p =
-        hill48(transverse ? Vector3::UnitY() : Vector3::UnitX(), Vector3::UnitZ(), 1.0e9);
-    p.saturation_stress = 0.0;
-    p.saturation_rate = 0.0;
-    const IsotropicMaterial m = steel(&p);
-    const Hill48Parameters& h = m.plasticity().hill;
-    // Loading along x: RD, or TD (rolled along y, with ND = z the thickness
-    // direction and the width along RD).
-    const Scalar r_expected = transverse ? 2.3 : 1.9;
-    const Scalar k = transverse ? 1.0 / std::sqrt(h.F + h.H) : 1.0;
-    FemModel model = uniaxial_model(s, m, true, 0.6 * s.length);
-    Assembler assembler(model);
-    const NonlinearResult r =
-        NonlinearStaticAnalysis(model, assembler, uniaxial_options(s, {}, 12)).solve(0);
-    INFO((transverse ? "TD" : "RD"));
-    REQUIRE(r.completed);
-    const Scalar e = m.youngs_modulus();
-    const Scalar nu = m.poisson_ratio();
-    Scalar ratio_error = 0.0;
-    Scalar stress_error = 0.0;
-    int plastic = 0;
-    for (const NonlinearStep& step : r.steps) {
-      const Scalar l1 = 1.0 + 0.6 * step.load_factor;
-      const Scalar eps = std::log(l1);
-      const Scalar tau = step.monitors[0] * l1 / area;
-      if (step.yielding_points == 0) continue;
-      ++plastic;
-      const Scalar expected = e * (k * p.yield_stress + k * k * p.hardening_modulus * eps) /
-                              (e + k * k * p.hardening_modulus);
-      stress_error = std::max(stress_error, std::abs(tau - expected) / expected);
-      // Plastic lateral log strains: the total less the elastic -nu tau / E.
-      const Scalar width = std::log1p(step.monitors[1] / s.width) + nu * tau / e;
-      const Scalar thickness = std::log1p(step.monitors[2] / s.height) + nu * tau / e;
-      ratio_error = std::max(ratio_error, std::abs(width / thickness - r_expected) / r_expected);
-    }
-    INFO("stress error " << stress_error << ", r error " << ratio_error);
-    REQUIRE(plastic >= 10);
-    REQUIRE(stress_error <= 1.0e-12);
-    REQUIRE(ratio_error <= 1.0e-12);
-  }
-}
-
-TEST_CASE("a block crushed past zero volume stops with logarithmic kinematics instead of "
-          "converging to an inverted state",
-          "[logarithmic][solver]") {
-  // One Hex8 on symmetry planes with its end pushed to u_x = -1.5 L in 10
-  // steps: at lambda = 2/3 it is flat, beyond it F_11 < 0 - inverted. The
-  // Hencky energy sees only |det F|, so an inverted state is an equilibrium
-  // of it; the run must stop short of lambda = 2/3 with every converged
-  // state valid, as the neo-Hookean one does.
-  const Specimen s;
-  const PlasticityParameters p = j2(1.5e9);
-  for (const bool plastic : {false, true}) {
-    const IsotropicMaterial m = steel(plastic ? &p : nullptr);
-    const Scalar push = -1.5 * s.length;
-    FemModel model = uniaxial_model(s, m, false, push);
-    Assembler assembler(model);
-    const NonlinearResult r =
-        NonlinearStaticAnalysis(model, assembler, uniaxial_options(s, {}, 10)).solve(0);
-    INFO((plastic ? "J2" : "elastic") << ": stopped at lambda = " << r.load_factor
-                                      << ", min det F " << r.min_jacobian << ": "
-                                      << r.termination);
-    REQUIRE_FALSE(r.completed);
-    REQUIRE(r.load_factor > 0.5);
-    REQUIRE(r.load_factor < 2.0 / 3.0);
-    REQUIRE(r.min_jacobian > 0.0);
-    for (const NonlinearStep& step : r.steps) {
-      REQUIRE(1.0 + step.load_factor * push / s.length > 0.0);
-      REQUIRE(step.monitors[1] > 0.0);  // the lateral faces move out, not through
-    }
-  }
-}
-
-TEST_CASE("plane stress with logarithmic kinematics: the thickness stretches by exp(E_log,33) "
-          "and uniaxial tension to a stretch of 1.6 is exact",
-          "[logarithmic][solver]") {
-  // A strip of distorted plane-stress Q4 on symmetry lines x = 0, y = 0,
-  // pulled along x. J2 is isotropic, so the thickness log strain the return
-  // finds equals the in-plane lateral one, and tau against ln l1 is the 1-D
-  // law.
-  const PlasticityParameters p = j2(1.5e9);
-  const IsotropicMaterial m = steel(&p);
-  StructuredMeshSpec spec;
-  spec.nx = 4;
-  spec.ny = 2;
-  spec.lx = 1.0;
-  spec.ly = 0.5;
-  const Scalar thickness = 0.02;
-  FemModel model(make_perturbed_quad_mesh(spec, 0.25), m, thickness, StressState::PlaneStress,
-                 IntegrationOptions());
-  const auto line = [](int axis, Scalar value) {
-    SelectorGroup g;
-    Selector sel;
-    sel.kind = SelectorKind::Box;
-    sel.xmin = axis == 0 ? value : -kInf;
-    sel.xmax = axis == 0 ? value : kInf;
-    sel.ymin = axis == 1 ? value : -kInf;
-    sel.ymax = axis == 1 ? value : kInf;
-    g.members.push_back(sel);
-    return g;
-  };
-  for (int axis = 0; axis < 2; ++axis) {
-    DisplacementConstraint sym;
-    sym.region = line(axis, 0.0);
-    sym.set(axis, true, 0.0);
-    model.constraints().push_back(sym);
-  }
-  DisplacementConstraint end;
-  end.region = line(0, 1.0);
-  end.set(0, true, 0.6);
-  model.constraints().push_back(end);
-  LoadCaseSpec lc;
-  lc.name = "pull";
-  lc.prescribed_displacement_only = true;
-  model.load_case_specs().push_back(lc);
-  model.finalize();
-  Assembler assembler(model);
-  NonlinearOptions o;
-  o.kinematics = Kinematics::FiniteLogarithmic;
-  o.steps = 12;
-  o.residual_tolerance = 1.0e-12;
-  o.displacement_tolerance = 1.0e-12;
-  NonlinearMonitor force;
-  force.name = "force";
-  force.region = line(0, 1.0);
-  force.quantity = NonlinearMonitor::Quantity::Reaction;
-  NonlinearMonitor uy;
-  uy.name = "uy";
-  uy.region = line(1, 0.5);
-  uy.component = 1;
-  o.monitors = {force, uy};
-  const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, o).solve(0);
-  REQUIRE(r.completed);
-  Uniaxial law;
-  law.p = p;
-  law.e = m.youngs_modulus();
-  Scalar worst = 0.0;
-  Scalar tau = 0.0;
-  for (const NonlinearStep& step : r.steps) {
-    const Scalar l1 = 1.0 + 0.6 * step.load_factor;
-    tau = law.at(std::log(l1));
-    worst = std::max(worst,
-                     std::abs(step.monitors[0] * l1 / (0.5 * thickness) - tau) / std::abs(tau));
-  }
-  INFO("Kirchhoff stress error " << worst);
-  REQUIRE(worst <= 1.0e-12);
-  const Scalar lateral = std::log1p(r.steps.back().monitors[1] / 0.5);
-  for (Index el = 0; el < model.mesh().num_elements(); ++el) {
-    REQUIRE(r.element_log_strain(0, el) == Approx(std::log(1.6)).epsilon(1e-12));
-    REQUIRE(r.element_log_strain(1, el) == Approx(lateral).epsilon(1e-12));
-    REQUIRE(r.element_log_strain(2, el) == Approx(lateral).epsilon(1e-12));  // the thickness
-    REQUIRE(r.element_kirchhoff(0, el) == Approx(tau).epsilon(1e-12));
-    REQUIRE(std::abs(r.element_kirchhoff(2, el)) <= 1.0e-12 * tau);
-    // J = l1 l2 l3 with l3 = exp(E_log,33).
-    REQUIRE(r.element_cauchy(0, el) ==
-            Approx(tau / (1.6 * std::exp(2.0 * lateral))).epsilon(1e-12));
-  }
-}
-
-TEST_CASE("heated with logarithmic kinematics a free body expands stress-free by the stretch "
-          "1 + alpha dT",
-          "[logarithmic][solver][thermal]") {
-  // The thermal strain is ln(1 + alpha dT) I, the log strain of the free
-  // thermal stretch: on statically determinate supports u = alpha dT x
-  // exactly, without stress or yielding (as with finite kinematics).
-  const Scalar alpha = 1.2e-5;
-  const Scalar t_ref = 20.0;
-  const Scalar dt = 500.0;
-  PlasticityParameters p = j2(1.0e9, 60.0e6, 30.0, 2.0e9);
-  IsotropicMaterial m = steel(&p);
-  m.set_thermal(alpha, t_ref, 50.0);
-  const auto hold = [](const Vector& x, int dim, const std::array<bool, 3>& on) {
-    DisplacementConstraint bc;
-    Selector s;
-    s.kind = SelectorKind::NearestNode;
-    s.point = Vector3::Zero();
-    s.point.head(dim) = x;
-    bc.region.members.push_back(s);
-    for (int k = 0; k < dim; ++k) {
-      if (on[static_cast<std::size_t>(k)]) bc.set(k, true, 0.0);
-    }
-    return bc;
-  };
-  NonlinearOptions options;
-  options.kinematics = Kinematics::FiniteLogarithmic;
-  options.steps = 4;
-  options.residual_tolerance = 1.0e-11;
-  options.displacement_tolerance = 1.0e-11;
-  for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-    INFO(to_string(type));
-    StructuredMeshSpec spec;
-    spec.nx = spec.ny = spec.nz = 3;
-    Mesh mesh = type == ElementType::Quad4  ? make_perturbed_quad_mesh(spec, 0.25)
-                : type == ElementType::Hex8 ? make_perturbed_hex_mesh(spec, 0.25)
-                                            : make_perturbed_tet10_mesh(spec, 0.25);
-    FemModel model(std::move(mesh), m, type == ElementType::Quad4 ? 0.01 : 1.0,
-                   type == ElementType::Quad4 ? StressState::PlaneStress
-                                              : StressState::ThreeDimensional,
-                   IntegrationOptions());
-    const int dim = model.dim();
-    model.constraints().push_back(hold(Vector::Zero(dim), dim, {true, true, true}));
-    Vector corner = Vector::Zero(dim);
-    corner(0) = 1.0;
-    model.constraints().push_back(hold(corner, dim, {false, true, true}));
-    if (dim == 3) {
-      corner.setZero();
-      corner(1) = 1.0;
-      model.constraints().push_back(hold(corner, dim, {false, false, true}));
-    }
-    LoadCaseSpec lc;
-    lc.name = "heat";
-    lc.temperature.source = TemperatureSpec::Source::Uniform;
-    lc.temperature.uniform = t_ref + dt;
-    model.load_case_specs().push_back(lc);
-    model.finalize();
-    Assembler assembler(model);
-    const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, options).solve(0);
-    REQUIRE(r.completed);
-    REQUIRE(r.plastic_points == 0);
-    Scalar error = 0.0;
-    for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-      const Vector3 x = model.mesh().node(node);
-      for (int k = 0; k < dim; ++k) {
-        error = std::max(error, std::abs(r.displacement(dim * node + k) - alpha * dt * x(k)));
-      }
-    }
-    REQUIRE(error <= 1.0e-13);
-    // Stress-free (to round-off of E alpha dT = 1.2 GPa), the log strain
-    // that of the stretch 1 + alpha dT - the thickness's too in plane stress.
-    REQUIRE(r.element_kirchhoff.cwiseAbs().maxCoeff() <= 1.0e-12 * 200.0e9 * alpha * dt);
-    REQUIRE(r.element_cauchy.cwiseAbs().maxCoeff() <= 1.0e-12 * 200.0e9 * alpha * dt);
-    for (Index el = 0; el < model.mesh().num_elements(); ++el) {
-      for (int i = 0; i < 3; ++i) {
-        REQUIRE(r.element_log_strain(i, el) == Approx(std::log1p(alpha * dt)).epsilon(1e-12));
-      }
-    }
-  }
-}
-
-TEST_CASE("the logarithmic kinematics key of a deck parses, runs and is reported",
-          "[logarithmic][config]") {
-  const auto deck = [](const std::string& nonlinear) {
-    return json::parse(R"({
-      "mesh": { "type": "structured_hex", "nx": 4, "ny": 1, "nz": 1, "lx": 1.0, "ly": 0.1,
-                "lz": 0.1 },
-      "material": { "youngs_modulus": 200e9, "poisson_ratio": 0.3,
-                    "plasticity": { "yield_stress": 250e6, "hardening_modulus": 1e9 } },
-      "boundary_conditions": [ { "fix": ["x", "y", "z"], "region": { "box": { "xmax": 0.0 } } },
-                               { "fix": ["x"], "value": [0.05, 0, 0],
-                                 "region": { "box": { "xmin": 1.0 } } } ],
-      "load_cases": [ { "name": "pull", "prescribed_displacement_only": true } ],
-      "nonlinear": )" + nonlinear + " }");
-  };
-  const Configuration config = parse_configuration(
-      deck(R"({ "enabled": true, "kinematics": "finite_logarithmic", "steps": 4 })"), "inline",
-      true);
-  REQUIRE(config.nonlinear.options.kinematics == Kinematics::FiniteLogarithmic);
+TEST_CASE("the logarithmic kinematics key parses and prints", "[logarithmic][config]") {
   REQUIRE(parse_kinematics("finite_logarithmic") == Kinematics::FiniteLogarithmic);
   REQUIRE(to_string(Kinematics::FiniteLogarithmic) == "finite_logarithmic");
-  FemModel model = build_model(config);
-  Assembler assembler(model);
-  const NonlinearResult r =
-      NonlinearStaticAnalysis(model, assembler, config.nonlinear.options).solve(0);
-  REQUIRE(r.completed);
-  REQUIRE(r.law == "hencky");
-  REQUIRE(r.element_kirchhoff.rows() == 6);
-  REQUIRE(r.element_log_strain.cols() == model.mesh().num_elements());
-  const json::Value summary = nonlinear_json({r}, config.nonlinear.options, model, {});
-  REQUIRE(summary.find("kinematics")->string_value() == "finite_logarithmic");
-  REQUIRE(summary.find("material_model")->string_value() == "hencky");
-  const json::Value& run = summary.find("load_cases")->array_items()[0];
-  REQUIRE(run.find("max_logarithmic_strain")->number_value() >= std::log(1.05));
-  // The CSV and VTK carry the Kirchhoff stress and the log strain.
-  const std::string directory = "results/_test_tmp/logarithmic";
-  ResultWriter(directory, config).write_nonlinear(model, r);
-  std::ifstream csv(directory + "/nonlinear_stress_pull.csv");
-  std::string header;
-  std::getline(csv, header);
-  REQUIRE(header.find("kirchhoff_xx[Pa]") != std::string::npos);
-  REQUIRE(header.find("log_strain_zz[-]") != std::string::npos);
-  std::ifstream vtk(directory + "/nonlinear_pull.vtk");
-  const std::string text((std::istreambuf_iterator<char>(vtk)), std::istreambuf_iterator<char>());
-  REQUIRE(text.find("kirchhoff_xy") != std::string::npos);
-  REQUIRE(text.find("log_strain_xx") != std::string::npos);
-  // No CalculiX counterpart; the neo-Hookean law is refused with it.
-  REQUIRE(calculix_logarithmic_obstacle().find("logarithmic") != std::string::npos);
-  REQUIRE_THROWS_AS(
-      parse_configuration(deck(R"({ "enabled": true, "kinematics": "finite_logarithmic",
-                                    "material_model": "neo_hookean" })"),
-                          "inline", true),
-      ConfigError);
-  REQUIRE_THROWS_AS(
-      parse_configuration(deck(R"({ "enabled": true, "kinematics": "logarithmic" })"), "inline",
-                          true),
-      ConfigError);
+  REQUIRE_THROWS_AS(parse_kinematics("logarithmic"), ConfigError);
 }

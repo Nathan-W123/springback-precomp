@@ -16,25 +16,14 @@ endif()
 set(SPARLAB_TEST_SOURCES
   test_quadrature_shape.cpp
   test_material.cpp
-  test_mesh.cpp
-  test_element.cpp
   test_assembly_solver.cpp
-  test_static_verification.cpp
-  test_modal.cpp
   test_io.cpp
   test_solid.cpp
   test_unstructured.cpp
-  test_multigrid.cpp
-  test_tet10.cpp
-  test_buckling.cpp
   test_dofs.cpp
-  test_loads_thermal.cpp
-  test_nonlinear.cpp
   test_plasticity.cpp
   test_anisotropy.cpp
   test_logarithmic.cpp
-  test_dynamics.cpp
-  test_contact.cpp
   test_forming.cpp
   test_incompatible_modes.cpp
   test_explicit.cpp
@@ -55,7 +44,7 @@ include(Catch)
 # CPU from the ones with work. One thread per test case keeps the cores
 # busy with work instead (the forming cases under ctest -j4 on four cores:
 # 30 s instead of 78 s in all, the release case 3.9 s instead of 21.6 s).
-# The multigrid test sets its own thread counts to compare them.
+# The thread-determinism tests set their own thread counts to compare them.
 catch_discover_tests(sparlab_tests
   TEST_PREFIX "sparlab."
   PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=1"

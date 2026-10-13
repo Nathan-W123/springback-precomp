@@ -238,6 +238,23 @@ Kinematics parse_kinematics(const std::string& text) {
                     "'; expected \"finite\", \"finite_logarithmic\" or \"small_strain\"");
 }
 
+std::string to_string(MeanDilatation mode) {
+  switch (mode) {
+    case MeanDilatation::Auto: return "auto";
+    case MeanDilatation::All: return "all";
+    case MeanDilatation::None: return "none";
+  }
+  return "auto";
+}
+
+MeanDilatation parse_mean_dilatation(const std::string& text) {
+  if (text == "auto") return MeanDilatation::Auto;
+  if (text == "all") return MeanDilatation::All;
+  if (text == "none") return MeanDilatation::None;
+  throw ConfigError("unknown mean_dilatation '" + text +
+                    "'; expected \"auto\" (Q4 and Hex8), \"all\" or \"none\"");
+}
+
 int elastoplastic_points(const FemModel& model) {
   return static_cast<int>(model.element().integration_rule(model.integration()).size());
 }

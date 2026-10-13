@@ -80,27 +80,4 @@ const std::vector<QuadraturePoint1D>& gauss_legendre_line_extended(int points);
 const std::vector<QuadraturePoint3D>& gauss_legendre_box(int in_plane, int thickness,
                                                           int thickness_axis);
 
-/// Symmetric four-point rule on the reference tetrahedron
-/// \f$\{\xi,\eta,\zeta \ge 0,\ \xi+\eta+\zeta \le 1\}\f$ (volume 1/6): the
-/// points sit at barycentric coordinates \f$(\alpha,\beta,\beta,\beta)\f$ and
-/// permutations with \f$\alpha = (5+3\sqrt5)/20\f$, \f$\beta = (5-\sqrt5)/20\f$,
-/// each weighted 1/24. Exact for polynomials of degree 2, which is the
-/// integrand \f$B^T D B\f$ of a straight-sided quadratic tetrahedron.
-const std::vector<QuadraturePoint3D>& tetrahedron_rule_4();
-
-/// Collapsed Gauss rule on the reference tetrahedron with `n` Gauss-Legendre
-/// points per direction (n^3 points, supported n = 1..4): the unit cube
-/// \f$(u,v,w)\f$ is mapped onto the tetrahedron by
-/// \f$\xi = u,\ \eta = v(1-u),\ \zeta = w(1-u)(1-v)\f$, whose Jacobian
-/// \f$(1-u)^2(1-v)\f$ is folded into the weights (Stroud's conical product).
-/// Exact for polynomials of total degree \f$2n-3\f$, so it takes n >= 2
-/// to integrate even a constant exactly.
-const std::vector<QuadraturePoint3D>& collapsed_gauss_tetrahedron(int n);
-
-/// Collapsed Gauss rule on the reference triangle
-/// \f$\{\xi,\eta \ge 0,\ \xi+\eta \le 1\}\f$ (area 1/2): \f$\xi = u\f$,
-/// \f$\eta = v(1-u)\f$ with Jacobian \f$1-u\f$; n^2 points (n = 1..4), exact
-/// for polynomials of total degree \f$2n-2\f$.
-const std::vector<QuadraturePoint2D>& collapsed_gauss_triangle(int n);
-
 }  // namespace sparlab

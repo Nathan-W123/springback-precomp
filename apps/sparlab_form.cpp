@@ -87,12 +87,6 @@ int main(int argc, char** argv) {
     Timer wall;
     FemModel model = build_model(config);
     model.mesh().validate();
-    for (const LoadCaseSpec& lc : model.load_case_specs()) {
-      if (lc.has_loads()) {
-        log::warn("load case '", lc.name, "' carries loads, which the forming analysis does "
-                  "not apply: its tools and prescribed displacements drive it");
-      }
-    }
     Assembler assembler(model);
     log::info("forming '", config.name, "': ", model.mesh().num_elements(), " ",
               to_string(model.mesh().element_type()), " elements, ", model.dofs().num_dofs(),

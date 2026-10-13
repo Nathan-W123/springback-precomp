@@ -13,8 +13,6 @@
 
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
-#include "sparlab/fem/NonlinearStatic.hpp"
-#include "sparlab/io/CalculixWriter.hpp"
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/material/Plasticity.hpp"
@@ -466,20 +464,16 @@ TEST_CASE("a temperature change enters as a free strain", "[plasticity][material
 
 namespace {
 
-/// A single-element model of each type, distorted, with a plastic material.
+/// A distorted Hex8 model (the cells of `type`) with a plastic material.
 FemModel one_element(ElementType type, StressState state, const IsotropicMaterial& m) {
   StructuredMeshSpec spec;
   spec.nx = spec.ny = spec.nz = 2;
   spec.lx = 1.0;
   spec.ly = 0.8;
   spec.lz = 0.6;
-  Mesh mesh = type == ElementType::Quad4   ? make_perturbed_quad_mesh(spec, 0.2)
-              : type == ElementType::Tri3  ? make_perturbed_tri_mesh(spec, 0.2)
-              : type == ElementType::Hex8  ? make_perturbed_hex_mesh(spec, 0.2)
-              : type == ElementType::Tet4  ? make_perturbed_tet_mesh(spec, 0.2)
-                                           : make_perturbed_tet10_mesh(spec, 0.2);
-  const Scalar thickness = mesh.dim() == 2 ? 0.05 : 1.0;
-  return FemModel(std::move(mesh), m, thickness, state, IntegrationOptions());
+  Mesh mesh = make_perturbed_hex_mesh(spec, 0.2);
+  REQUIRE(mesh.element_type() == type);
+  return FemModel(std::move(mesh), m, 1.0, state, IntegrationOptions());
 }
 
 Vector element_displacement(const FemModel& model, Index e, Scalar amplitude, unsigned seed) {
@@ -507,11 +501,7 @@ TEST_CASE("the elastoplastic element tangent is the derivative of its internal f
     ElementType type;
     StressState state;
   };
-  const std::vector<Case> cases = {
-      {ElementType::Quad4, StressState::PlaneStrain}, {ElementType::Quad4, StressState::PlaneStress},
-      {ElementType::Tri3, StressState::PlaneStrain},  {ElementType::Hex8, StressState::ThreeDimensional},
-      {ElementType::Tet4, StressState::ThreeDimensional},
-      {ElementType::Tet10, StressState::ThreeDimensional}};
+  const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional}};
   for (const Case& c : cases) {
     FemModel model = one_element(c.type, c.state, m);
     for (const bool bbar : {false, true}) {
@@ -552,10 +542,8 @@ TEST_CASE("the element's thermal load rate is the derivative of its internal for
           "[plasticity][element]") {
   IsotropicMaterial m = plastic_steel(2.0e9);
   m.set_thermal(1.2e-5, 20.0, 50.0);
-  for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-    for (const StressState state :
-         {StressState::PlaneStress, StressState::PlaneStrain, StressState::ThreeDimensional}) {
-      if ((type == ElementType::Quad4) != (state != StressState::ThreeDimensional)) continue;
+  for (const ElementType type : {ElementType::Hex8}) {
+    for (const StressState state : {StressState::ThreeDimensional}) {
       FemModel model = one_element(type, state, m);
       Vector temperature(model.mesh().num_nodes());
       for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
@@ -594,9 +582,8 @@ TEST_CASE("an elastic element is the linear element, and mean dilatation leaves 
           "dilatation alone",
           "[plasticity][element]") {
   const IsotropicMaterial elastic(200.0e9, 0.3, 7800.0, "elastic");
-  for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-    const StressState state =
-        type == ElementType::Quad4 ? StressState::PlaneStrain : StressState::ThreeDimensional;
+  for (const ElementType type : {ElementType::Hex8}) {
+    const StressState state = StressState::ThreeDimensional;
     FemModel model = one_element(type, state, elastic);
     const std::vector<PlasticState> virgin(static_cast<std::size_t>(elastoplastic_points(model)));
     const Vector ue = element_displacement(model, 0, 1.0e-3, 5u);
@@ -640,10 +627,7 @@ TEST_CASE("the finite-kinematics elastoplastic tangent is the derivative of its 
     ElementType type;
     StressState state;
   };
-  const std::vector<Case> cases = {
-      {ElementType::Quad4, StressState::PlaneStrain}, {ElementType::Quad4, StressState::PlaneStress},
-      {ElementType::Tri3, StressState::PlaneStrain},  {ElementType::Hex8, StressState::ThreeDimensional},
-      {ElementType::Tet10, StressState::ThreeDimensional}};
+  const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional}};
   for (const Case& c : cases) {
     FemModel model = one_element(c.type, c.state, m);
     const int dim = model.dim();
@@ -693,9 +677,8 @@ TEST_CASE("the finite-kinematics elastoplastic tangent is the derivative of its 
 TEST_CASE("finite-kinematics plasticity is objective and tends to the linear stiffness",
           "[plasticity][element]") {
   const IsotropicMaterial m = plastic_steel(2.0e9, 1.0e9);
-  for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-    const StressState state =
-        type == ElementType::Quad4 ? StressState::PlaneStrain : StressState::ThreeDimensional;
+  for (const ElementType type : {ElementType::Hex8}) {
+    const StressState state = StressState::ThreeDimensional;
     FemModel model = one_element(type, state, m);
     const int dim = model.dim();
     const Matrix x0 = model.mesh().element_coordinates(0);
@@ -747,656 +730,32 @@ TEST_CASE("finite-kinematics plasticity is objective and tends to the linear sti
   }
 }
 
-namespace {
-
-constexpr Scalar kInf = std::numeric_limits<Scalar>::infinity();
-
-SelectorGroup box(Scalar xmin, Scalar xmax, Scalar ymin = -kInf, Scalar ymax = kInf,
-                  Scalar zmin = -kInf, Scalar zmax = kInf) {
-  SelectorGroup g;
-  Selector s;
-  s.kind = SelectorKind::Box;
-  s.xmin = xmin;
-  s.xmax = xmax;
-  s.ymin = ymin;
-  s.ymax = ymax;
-  s.zmin = zmin;
-  s.zmax = zmax;
-  g.members.push_back(s);
-  g.name = "box";
-  return g;
-}
-
-/// A bar along x on a distorted mesh: x held on the left face, rigid
-/// motion removed at points of it that the uniform lateral contraction
-/// leaves in place.
-FemModel bar(ElementType type, const IsotropicMaterial& m, Scalar length, Scalar height,
-             Scalar width) {
-  StructuredMeshSpec spec;
-  spec.nx = 4;
-  spec.ny = 2;
-  spec.nz = 2;
-  spec.lx = length;
-  spec.ly = height;
-  spec.lz = width;
-  Mesh mesh = type == ElementType::Quad4  ? make_perturbed_quad_mesh(spec, 0.25)
-              : type == ElementType::Hex8 ? make_perturbed_hex_mesh(spec, 0.25)
-                                          : make_perturbed_tet10_mesh(spec, 0.25);
-  const int dim = mesh.dim();
-  FemModel model(std::move(mesh), m, dim == 2 ? width : 1.0,
-                 dim == 2 ? StressState::PlaneStress : StressState::ThreeDimensional,
-                 IntegrationOptions());
-  DisplacementConstraint left;
-  left.region = box(-kInf, 0.0);
-  left.fix_x = true;
-  model.constraints().push_back(left);
-  DisplacementConstraint origin;
-  origin.region = box(-kInf, 0.0, -kInf, 0.0, -kInf, 0.0);
-  origin.fix_y = true;
-  origin.fix_z = dim == 3;
-  model.constraints().push_back(origin);
-  if (dim == 3) {
-    DisplacementConstraint turn;
-    turn.region = box(-kInf, 0.0, height, kInf, -kInf, 0.0);
-    turn.fix_z = true;
-    model.constraints().push_back(turn);
-  }
-  return model;
-}
-
-NonlinearMonitor right_reaction(Scalar length) {
-  NonlinearMonitor mon;
-  mon.name = "force";
-  mon.region = box(length, kInf);
-  mon.component = 0;
-  mon.quantity = NonlinearMonitor::Quantity::Reaction;
-  return mon;
-}
-
-}  // namespace
-
-TEST_CASE("a bar pulled and pushed back follows the exact cyclic curve on distorted meshes",
-          "[plasticity][solver]") {
-  // Uniaxial stress under a prescribed end displacement along the load path
-  // 0 -> 1 -> -1 with kinematic hardening: elastic, plastic, elastic
-  // unloading to the Bauschinger reverse yield H_kin eps_p1 - sigma_y, and
-  // reverse plastic flow. A homogeneous state is exact on any mesh, so
-  // every step's end force and every element's stress must match.
-  const Scalar hk = 10.0e9;
-  const IsotropicMaterial m = plastic_steel(0.0, hk);
-  const Scalar e = m.youngs_modulus();
-  const Scalar sy = 250.0e6;
-  const Scalar length = 1.0;
-  const Scalar height = 0.2;
-  const Scalar width = 0.1;
-  const Scalar e1 = 0.01;
-  const Scalar s1 = e * (sy + hk * e1) / (e + hk);
-  const Scalar ep1 = e1 - s1 / e;
-  const auto exact = [&](Scalar strain, bool reversed) {
-    if (!reversed) return strain * e <= sy ? e * strain : e * (sy + hk * strain) / (e + hk);
-    const Scalar elastic = s1 - e * (e1 - strain);
-    return elastic >= hk * ep1 - sy ? elastic : e * (hk * strain - sy) / (e + hk);
-  };
-  for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-    {
-      const Kinematics kin = Kinematics::SmallStrain;
-      FemModel model = bar(type, m, length, height, width);
-      DisplacementConstraint pull;
-      pull.region = box(length, kInf);
-      pull.set(0, true, e1 * length);
-      model.constraints().push_back(pull);
-      LoadCaseSpec lc;
-      lc.name = "cycle";
-      lc.prescribed_displacement_only = true;
-      model.load_case_specs().push_back(lc);
-      model.finalize();
-      Assembler assembler(model);
-      NonlinearOptions options;
-      options.kinematics = kin;
-      options.steps = 8;
-      options.load_path = {1.0, -1.0};
-      options.residual_tolerance = 1.0e-11;
-      options.displacement_tolerance = 1.0e-11;
-      options.monitors.push_back(right_reaction(length));
-      NonlinearStaticAnalysis analysis(model, assembler, options);
-      const NonlinearResult r = analysis.solve(0);
-      INFO(to_string(type));
-      REQUIRE(r.completed);
-      REQUIRE(r.load_factor == -1.0);
-      REQUIRE(r.plastic);
-      const Scalar area = height * width;
-      bool reversed = false;
-      int reverse_yield_steps = 0;
-      for (const NonlinearStep& s : r.steps) {
-        if (s.load_factor == 1.0) reversed = true;
-        const Scalar expected = exact(s.load_factor * e1, reversed && s.load_factor < 1.0);
-        REQUIRE(s.monitors[0] == Approx(expected * area).epsilon(1e-9));
-        if (reversed && s.load_factor < 1.0 && s.yielding_points > 0) ++reverse_yield_steps;
-      }
-      REQUIRE(reverse_yield_steps > 0);
-      const Scalar final_stress = exact(-e1, true);
-      for (Index el = 0; el < model.mesh().num_elements(); ++el) {
-        REQUIRE(r.element_cauchy(0, el) == Approx(final_stress).epsilon(1e-9));
-        REQUIRE(std::abs(r.element_cauchy(1, el)) <= 1.0e-8 * std::abs(final_stress));
-      }
-      REQUIRE(r.plastic_points == r.total_points);
-      // eps_p at the end: the strain less the elastic part.
-      REQUIRE(r.max_plastic_strain ==
-              Approx(ep1 + (ep1 - (-e1 - final_stress / e))).epsilon(1e-8));
-    }
-  }
-}
-
-TEST_CASE("a homogeneous finite elastoplastic deformation is exact on distorted meshes",
-          "[plasticity][solver]") {
-  // Every boundary node carries u = lambda (F - I) X with a 3 % stretch, a
-  // shear and a rigid turn of 0.1 rad. The interior must follow, and every
-  // point must hold the return of the same Green strains in the solver's
-  // own steps. (A larger turn is no test: lambda (F - I) runs along the
-  // chord of the rotation, which compresses the body - by 3 % at mid-path
-  // for 0.5 rad, a pressure of 5 GPa whose geometric stiffness outweighs the
-  // plastic tangent, and the homogeneous state is rightly found unstable.)
-  const IsotropicMaterial m = plastic_steel(1.0e9, 2.0e9, 60.0e6, 30.0);
-  for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-    StructuredMeshSpec spec;
-    spec.nx = spec.ny = spec.nz = 3;
-    Mesh mesh = type == ElementType::Quad4  ? make_perturbed_quad_mesh(spec, 0.25)
-                : type == ElementType::Hex8 ? make_perturbed_hex_mesh(spec, 0.25)
-                                            : make_perturbed_tet10_mesh(spec, 0.25);
-    const int dim = mesh.dim();
-    const StressState state = dim == 2 ? StressState::PlaneStrain : StressState::ThreeDimensional;
-    Matrix stretch = Matrix::Identity(dim, dim);
-    stretch(0, 0) = 1.03;
-    stretch(1, 1) = 0.985;
-    stretch(0, 1) = 0.01;
-    if (dim == 3) stretch(2, 2) = 1.005;
-    Matrix rot = Matrix::Identity(dim, dim);
-    rot(0, 0) = rot(1, 1) = std::cos(0.1);
-    rot(0, 1) = -std::sin(0.1);
-    rot(1, 0) = std::sin(0.1);
-    const Matrix f = rot * stretch;
-    FemModel model(mesh, m, 1.0, state, IntegrationOptions());
-    std::vector<char> on_boundary(static_cast<std::size_t>(model.mesh().num_nodes()), 0);
-    for (const Mesh::BoundaryFace& face : model.mesh().boundary_faces()) {
-      for (Index node : face.nodes) on_boundary[static_cast<std::size_t>(node)] = 1;
-    }
-    for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-      if (!on_boundary[static_cast<std::size_t>(node)]) continue;
-      const Vector x = model.mesh().coordinates().col(node);
-      const Vector target = (f - Matrix::Identity(dim, dim)) * x;
-      DisplacementConstraint bc;
-      Selector s;
-      s.kind = SelectorKind::NodeIds;
-      s.ids.assign(1, node);
-      bc.region.members.push_back(s);
-      for (int k = 0; k < dim; ++k) bc.set(k, true, target(k));
-      model.constraints().push_back(bc);
-    }
-    LoadCaseSpec lc;
-    lc.name = "patch";
-    lc.prescribed_displacement_only = true;
-    model.load_case_specs().push_back(lc);
-    model.finalize();
-    Assembler assembler(model);
-    NonlinearOptions options;
-    options.steps = 4;
-    options.residual_tolerance = 1.0e-11;
-    options.displacement_tolerance = 1.0e-11;
-    NonlinearStaticAnalysis analysis(model, assembler, options);
-    const NonlinearResult r = analysis.solve(0);
-    INFO(to_string(type));
-    REQUIRE(r.completed);
-    // By default Q4 (plane strain) and Hex8 average the dilatation, Tet10 not.
-    REQUIRE(r.mean_dilatation == (type != ElementType::Tet10));
-    Scalar err = 0.0;
-    for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-      const Vector x = model.mesh().coordinates().col(node);
-      err = std::max(err, (r.displacement.segment(node * dim, dim) -
-                           (f - Matrix::Identity(dim, dim)) * x)
-                              .norm());
-    }
-    REQUIRE(err <= 1.0e-10);
-    // The point history along the solver's steps.
-    PlasticState point;
-    PlasticResponse response;
-    Matrix h;
-    for (const NonlinearStep& s : r.steps) {
-      h = s.load_factor * (f - Matrix::Identity(dim, dim));
-      Matrix e_t = 0.5 * (h + h.transpose() + h.transpose() * h);
-      Vector6 e6 = Vector6::Zero();
-      e6(0) = e_t(0, 0);
-      e6(1) = e_t(1, 1);
-      e6(3) = 2.0 * e_t(0, 1);
-      if (dim == 3) {
-        e6(2) = e_t(2, 2);
-        e6(4) = 2.0 * e_t(1, 2);
-        e6(5) = 2.0 * e_t(2, 0);
-      }
-      response = j2_return(m, state, e6, point);
-      point = response.state;
-    }
-    REQUIRE(response.yielding);
-    Matrix3 f3 = Matrix3::Identity();
-    f3.topLeftCorner(dim, dim) += h;
-    Matrix3 s3;
-    const Vector6& sv = response.stress;
-    s3 << sv(0), sv(3), sv(5), sv(3), sv(1), sv(4), sv(5), sv(4), sv(2);
-    const Matrix3 cauchy = f3 * s3 * f3.transpose() / f3.determinant();
-    for (Index el = 0; el < model.mesh().num_elements(); ++el) {
-      REQUIRE(r.element_cauchy(0, el) == Approx(cauchy(0, 0)).epsilon(1e-8));
-      REQUIRE(r.element_cauchy(1, el) == Approx(cauchy(1, 1)).epsilon(1e-8));
-      REQUIRE(r.element_plastic_strain(el) ==
-              Approx(point.equivalent_plastic_strain).epsilon(1e-8));
-    }
-    REQUIRE(r.equilibrium.relative_force_error <= 1.0e-10);
-  }
-}
-
-TEST_CASE("heated with finite kinematics a free body expands stress-free and a homogeneous "
-          "state holds the exact return",
-          "[plasticity][solver][thermal]") {
-  // With finite kinematics the return takes away the Green strain of the free
-  // thermal stretch 1 + alpha dT, alpha dT (1 + alpha dT / 2), so a body
-  // heated on statically determinate supports takes u = alpha dT x without
-  // stress; a linear thermal strain would leave its stretch 1.8e-5 short
-  // here. Moved homogeneously as well, every point holds the return of the
-  // same Green strain less that thermal strain - which, volumetric, sets the
-  // pressure.
-  const Scalar alpha = 1.2e-5;
-  const Scalar t_ref = 20.0;
-  const Scalar dt = 500.0;
-  IsotropicMaterial m = plastic_steel(1.0e9, 2.0e9, 60.0e6, 30.0);
-  m.set_thermal(alpha, t_ref, 50.0);
-  const auto heat = [&]() {
-    LoadCaseSpec lc;
-    lc.name = "heat";
-    lc.temperature.source = TemperatureSpec::Source::Uniform;
-    lc.temperature.uniform = t_ref + dt;
-    return lc;
-  };
-  const auto hold = [](const Vector& x, int dim, const Vector& value, const std::array<bool, 3>& on) {
-    DisplacementConstraint bc;
-    Selector s;
-    s.kind = SelectorKind::NearestNode;
-    s.point = Vector3::Zero();
-    s.point.head(dim) = x;
-    bc.region.members.push_back(s);
-    for (int k = 0; k < dim; ++k) {
-      if (on[static_cast<std::size_t>(k)]) bc.set(k, true, value(k));
-    }
-    return bc;
-  };
-  NonlinearOptions options;
-  options.kinematics = Kinematics::Finite;
-  options.steps = 4;
-  options.residual_tolerance = 1.0e-11;
-  options.displacement_tolerance = 1.0e-11;
-  for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-    INFO(to_string(type));
-    StructuredMeshSpec spec;
-    spec.nx = spec.ny = spec.nz = 3;
-    const auto mesh = [&]() {
-      return type == ElementType::Quad4  ? make_perturbed_quad_mesh(spec, 0.25)
-             : type == ElementType::Hex8 ? make_perturbed_hex_mesh(spec, 0.25)
-                                         : make_perturbed_tet10_mesh(spec, 0.25);
-    };
-    {
-      // Free expansion (plane stress for the Q4: its thickness is free too).
-      FemModel model(mesh(), m, type == ElementType::Quad4 ? 0.01 : 1.0,
-                     type == ElementType::Quad4 ? StressState::PlaneStress
-                                                : StressState::ThreeDimensional,
-                     IntegrationOptions());
-      const int dim = model.dim();
-      const Vector zero = Vector::Zero(dim);
-      model.constraints().push_back(hold(Vector::Zero(dim), dim, zero, {true, true, true}));
-      Vector corner = Vector::Zero(dim);
-      corner(0) = 1.0;
-      model.constraints().push_back(hold(corner, dim, zero, {false, true, true}));
-      if (dim == 3) {
-        corner.setZero();
-        corner(1) = 1.0;
-        model.constraints().push_back(hold(corner, dim, zero, {false, false, true}));
-      }
-      model.load_case_specs().push_back(heat());
-      model.finalize();
-      Assembler assembler(model);
-      const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, options).solve(0);
-      REQUIRE(r.completed);
-      REQUIRE(r.plastic);
-      for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-        const Vector3 x = model.mesh().node(node);
-        for (int k = 0; k < dim; ++k) {
-          REQUIRE(r.displacement(dim * node + k) == Approx(alpha * dt * x(k)).margin(1.0e-12));
-        }
-      }
-      REQUIRE(r.plastic_points == 0);
-      REQUIRE(r.element_von_mises.cwiseAbs().maxCoeff() <= 1.0);
-    }
-    {
-      // The heated homogeneous deformation: a 3 % stretch, a shear and a turn
-      // of 0.1 rad on the boundary, the temperature rising with the load.
-      FemModel model(mesh(), m, 1.0,
-                     type == ElementType::Quad4 ? StressState::PlaneStrain
-                                                : StressState::ThreeDimensional,
-                     IntegrationOptions());
-      const int dim = model.dim();
-      const StressState state = model.stress_state();
-      Matrix stretch = Matrix::Identity(dim, dim);
-      stretch(0, 0) = 1.03;
-      stretch(1, 1) = 0.985;
-      stretch(0, 1) = 0.01;
-      if (dim == 3) stretch(2, 2) = 1.005;
-      Matrix rot = Matrix::Identity(dim, dim);
-      rot(0, 0) = rot(1, 1) = std::cos(0.1);
-      rot(0, 1) = -std::sin(0.1);
-      rot(1, 0) = std::sin(0.1);
-      const Matrix f = rot * stretch;
-      std::vector<char> on_boundary(static_cast<std::size_t>(model.mesh().num_nodes()), 0);
-      for (const Mesh::BoundaryFace& face : model.mesh().boundary_faces()) {
-        for (Index node : face.nodes) on_boundary[static_cast<std::size_t>(node)] = 1;
-      }
-      for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-        if (!on_boundary[static_cast<std::size_t>(node)]) continue;
-        const Vector x = model.mesh().coordinates().col(node);
-        DisplacementConstraint bc;
-        Selector s;
-        s.kind = SelectorKind::NodeIds;
-        s.ids.assign(1, node);
-        bc.region.members.push_back(s);
-        const Vector target = (f - Matrix::Identity(dim, dim)) * x;
-        for (int k = 0; k < dim; ++k) bc.set(k, true, target(k));
-        model.constraints().push_back(bc);
-      }
-      model.load_case_specs().push_back(heat());
-      model.finalize();
-      Assembler assembler(model);
-      const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, options).solve(0);
-      REQUIRE(r.completed);
-      Scalar err = 0.0;
-      for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-        const Vector x = model.mesh().coordinates().col(node);
-        err = std::max(err, (r.displacement.segment(node * dim, dim) -
-                             (f - Matrix::Identity(dim, dim)) * x)
-                                .norm());
-      }
-      REQUIRE(err <= 1.0e-10);
-      // The point history along the solver's steps, the temperature change
-      // lambda dT entering as the Green strain of its stretch.
-      PlasticState point;
-      PlasticResponse response;
-      Matrix h;
-      for (const NonlinearStep& s : r.steps) {
-        h = s.load_factor * (f - Matrix::Identity(dim, dim));
-        const Matrix e_t = 0.5 * (h + h.transpose() + h.transpose() * h);
-        Vector6 e6 = Vector6::Zero();
-        e6(0) = e_t(0, 0);
-        e6(1) = e_t(1, 1);
-        e6(3) = 2.0 * e_t(0, 1);
-        if (dim == 3) {
-          e6(2) = e_t(2, 2);
-          e6(4) = 2.0 * e_t(1, 2);
-          e6(5) = 2.0 * e_t(2, 0);
-        }
-        const Scalar change = s.load_factor * dt;
-        const Scalar green_change = ((1.0 + alpha * change) * (1.0 + alpha * change) - 1.0) /
-                                    (2.0 * alpha);
-        response = j2_return(m, state, e6, point, green_change);
-        point = response.state;
-      }
-      REQUIRE(response.yielding);
-      Matrix3 f3 = Matrix3::Identity();
-      f3.topLeftCorner(dim, dim) += h;
-      Matrix3 s3;
-      const Vector6& sv = response.stress;
-      s3 << sv(0), sv(3), sv(5), sv(3), sv(1), sv(4), sv(5), sv(4), sv(2);
-      const Matrix3 cauchy = f3 * s3 * f3.transpose() / f3.determinant();
-      for (Index el = 0; el < model.mesh().num_elements(); ++el) {
-        REQUIRE(r.element_cauchy(0, el) == Approx(cauchy(0, 0)).epsilon(1e-8));
-        REQUIRE(r.element_cauchy(1, el) == Approx(cauchy(1, 1)).epsilon(1e-8));
-        REQUIRE(r.element_plastic_strain(el) ==
-                Approx(point.equivalent_plastic_strain).epsilon(1e-8));
-      }
-    }
-  }
-}
-
-TEST_CASE("load control stops at a plastic collapse and arc length agrees with it below",
-          "[plasticity][solver]") {
-  // A perfectly plastic bar under an end traction of 1.2 sigma_y collapses
-  // at lambda = 1 / 1.2: beyond it there is no equilibrium.
-  const IsotropicMaterial perfect = plastic_steel();
-  const Scalar length = 1.0;
-  const auto pulled = [&](const IsotropicMaterial& m, Scalar traction) {
-    FemModel model = bar(ElementType::Quad4, m, length, 0.2, 0.1);
-    LoadCaseSpec lc;
-    lc.name = "pull";
-    TractionLoadSpec t;
-    t.region = box(length, kInf);
-    t.traction = Vector3(traction, 0.0, 0.0);
-    lc.tractions.push_back(t);
-    model.load_case_specs().push_back(lc);
-    model.finalize();
-    return model;
-  };
-  {
-    FemModel model = pulled(perfect, 1.2 * 250.0e6);
-    Assembler assembler(model);
-    NonlinearOptions options;
-    options.kinematics = Kinematics::SmallStrain;
-    NonlinearStaticAnalysis analysis(model, assembler, options);
-    const NonlinearResult r = analysis.solve(0);
-    REQUIRE_FALSE(r.completed);
-    const Scalar collapse = 1.0 / 1.2;
-    REQUIRE(r.load_factor <= collapse * (1.0 + 1e-12));
-    // The collapse shows as the tangent losing its definiteness (singular
-    // at collapse, round-off tips it) or as steps that cannot converge;
-    // either way the run brackets it.
-    const Scalar bound =
-        std::isnan(r.critical_bound) ? r.unreached_load_factor : r.critical_bound;
-    REQUIRE(bound >= collapse);
-    REQUIRE(bound - r.load_factor <= 0.01);
-    REQUIRE(r.termination.find("plastic collapse") != std::string::npos);
-    REQUIRE(r.steps.size() < 100);
-  }
-  // With hardening the same bar carries the load; arc length and load
-  // control end in the same (path-independent, uniaxial) state.
-  const IsotropicMaterial hardening = plastic_steel(3.0e9);
-  FemModel model = pulled(hardening, 1.2 * 250.0e6);
-  Assembler assembler(model);
-  NonlinearOptions options;
-  options.kinematics = Kinematics::SmallStrain;
-  options.residual_tolerance = 1.0e-11;
-  options.displacement_tolerance = 1.0e-11;
-  const NonlinearResult lc = NonlinearStaticAnalysis(model, assembler, options).solve(0);
-  options.method = NonlinearOptions::Method::ArcLength;
-  const NonlinearResult al = NonlinearStaticAnalysis(model, assembler, options).solve(0);
-  REQUIRE(lc.completed);
-  REQUIRE(al.completed);
-  REQUIRE((lc.displacement - al.displacement).norm() <= 1.0e-9 * lc.displacement.norm());
-  // sigma = 1.2 sigma_y, eps_p = (sigma - sigma_y) / H.
-  REQUIRE(lc.max_plastic_strain == Approx(0.2 * 250.0e6 / 3.0e9).epsilon(1e-9));
-}
-
-TEST_CASE("small-strain kinematics with elastic materials is the linear analysis",
-          "[plasticity][solver]") {
-  CantileverCase c;
-  c.poisson = 0.3;
-  c.tip_load = -3.0e5;  // a large deflection, which small strain must ignore
-  FemModel model = make_cantilever(c, 20, 4);
-  Assembler assembler(model);
-  StaticAnalysis linear(model, assembler);
-  const Vector ul = linear.solve_all().front().displacement;
-  NonlinearOptions options;
-  options.kinematics = Kinematics::SmallStrain;
-  options.steps = 3;
-  options.residual_tolerance = 1.0e-12;
-  options.displacement_tolerance = 1.0e-12;
-  const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, options).solve(0);
-  REQUIRE(r.completed);
-  REQUIRE_FALSE(r.plastic);
-  REQUIRE((r.displacement - ul).norm() <= 1.0e-10 * ul.norm());
-  for (const NonlinearStep& s : r.steps) REQUIRE(s.iterations == 1);
-  // It reports what it neglects: a rotation large enough to warn about.
-  REQUIRE(r.max_rotation > 0.05);
-  REQUIRE_FALSE(r.warnings.empty());
-  // The neo-Hookean law needs finite kinematics.
-  options.law = HyperelasticModel::NeoHookean;
-  REQUIRE_THROWS_AS(NonlinearStaticAnalysis(model, assembler, options), ConfigError);
-}
-
-TEST_CASE("the plasticity block and the non-linear keys of a deck parse and validate",
-          "[plasticity][config]") {
-  // A plane-strain strip 1 m x 0.1 m of plastic steel under a tip force.
-  const auto deck = [](const std::string& plasticity, const std::string& nonlinear) {
+TEST_CASE("the plasticity block of a deck parses and validates", "[plasticity][config]") {
+  const auto deck = [](const std::string& plasticity) {
     return json::parse(R"({
-      "mesh": { "type": "structured_quad", "nx": 20, "ny": 2, "lx": 1.0, "ly": 0.1 },
+      "mesh": { "type": "structured_hex", "nx": 20, "ny": 2, "nz": 1, "lx": 1.0, "ly": 0.1,
+                "lz": 0.01 },
       "material": { "youngs_modulus": 200e9, "poisson_ratio": 0.3,
                     "plasticity": )" + plasticity + R"( },
-      "model": { "thickness": 0.01, "stress_state": "plane_strain" },
-      "boundary_conditions": [ { "fix": ["x", "y"], "region": { "box": { "xmax": 0.0 } } } ],
-      "load_cases": [ { "name": "tip", "point_loads": [ { "force": [0.0, -8000.0],
-            "region": { "box": { "xmin": 1.0 } } } ] } ],
-      "nonlinear": )" + nonlinear + "}");
+      "boundary_conditions": [ { "fix": ["x", "y", "z"], "region": { "box": { "xmax": 0.0 } } } ]
+    })");
   };
   const std::string steel = R"({ "yield_stress": 250e6, "hardening_modulus": 2e9,
       "kinematic_hardening_modulus": 1e9, "saturation_stress": 80e6, "saturation_rate": 20 })";
-  const Configuration config = parse_configuration(
-      deck(steel, R"({ "enabled": true, "kinematics": "small_strain", "mean_dilatation": "all",
-                       "steps": 4, "load_path": [1.0, 0.0] })"),
-      "inline", true);
+  const Configuration config = parse_configuration(deck(steel), "inline", true);
   const PlasticityParameters& p = config.material().plasticity();
   REQUIRE(p.yield_stress == 250.0e6);
   REQUIRE(p.hardening_modulus == 2.0e9);
   REQUIRE(p.kinematic_hardening_modulus == 1.0e9);
   REQUIRE(p.saturation_stress == 80.0e6);
   REQUIRE(p.saturation_rate == 20.0);
-  const NonlinearOptions& o = config.nonlinear.options;
-  REQUIRE(o.kinematics == Kinematics::SmallStrain);
-  REQUIRE(o.mean_dilatation == MeanDilatation::All);
-  REQUIRE(o.load_path == std::vector<Scalar>{1.0, 0.0});
-  // Booleans stand for "all" and "none"; the default is "auto".
-  REQUIRE(parse_configuration(deck(steel, R"({ "enabled": true, "mean_dilatation": false })"),
-                              "inline", true)
-              .nonlinear.options.mean_dilatation == MeanDilatation::None);
-  REQUIRE(parse_configuration(deck(steel, R"({ "enabled": true })"), "inline", true)
-              .nonlinear.options.mean_dilatation == MeanDilatation::Auto);
+  REQUIRE(build_model(config).material().plasticity().enabled());
 
-  // The run loads the strip past yield and unloads it: a permanent set,
-  // plastic points, and the load path's end.
-  FemModel model = build_model(config);
-  Assembler assembler(model);
-  const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, o).solve(0);
-  REQUIRE(r.completed);
-  REQUIRE(r.load_factor == 0.0);
-  REQUIRE(r.plastic);
-  REQUIRE(r.plastic_points > 0);
-  REQUIRE(r.max_plastic_strain > 0.0);
-  REQUIRE(r.displacement.cwiseAbs().maxCoeff() > 0.0);  // the permanent set
-  REQUIRE(r.steps.size() == 8);
-
-  const auto refuses = [&](const std::string& plasticity, const std::string& nonlinear) {
-    REQUIRE_THROWS_AS(parse_configuration(deck(plasticity, nonlinear), "inline", true),
-                      ConfigError);
+  const auto refuses = [&](const std::string& plasticity) {
+    REQUIRE_THROWS_AS(parse_configuration(deck(plasticity), "inline", true), ConfigError);
   };
-  const std::string on = R"({ "enabled": true })";
-  refuses(R"({ "yield_stress": -1.0 })", on);
-  refuses(R"({ "hardening_modulus": 1e9 })", on);  // no yield stress
-  refuses(R"({ "yield_stress": 250e6, "saturation_stress": 50e6 })", on);  // no rate
-  refuses(R"({ "yield_stress": 250e6, "hardening": 1e9 })", on);  // unknown key
-  refuses(steel, R"({ "enabled": true, "kinematics": "moderate" })");
-  refuses(steel, R"({ "enabled": true, "mean_dilatation": "some" })");
-  refuses(steel, R"({ "enabled": true, "load_path": [0.0, 1.0] })");   // starts where it is
-  refuses(steel, R"({ "enabled": true, "load_path": [1.0, 1.0] })");   // no leg
-  refuses(steel, R"({ "enabled": true, "method": "arc_length", "load_path": [1.0, 0.0] })");
-  refuses(steel, R"({ "enabled": true, "load_path": [1.0, 0.0], "load_factors": [0.5] })");
-  refuses(steel, R"({ "enabled": true, "kinematics": "small_strain",
-                      "follower_pressure": true })");
-  refuses(steel, R"({ "enabled": true, "kinematics": "small_strain",
-                      "material_model": "neo_hookean" })");
-  refuses(steel, R"({ "enabled": true, "material_model": "neo_hookean" })");  // plastic
-}
-
-TEST_CASE("the CalculiX export writes the hardening curve and one step per leg",
-          "[plasticity][io]") {
-  StructuredMeshSpec spec;
-  spec.nx = 4;
-  spec.ny = 2;
-  spec.nz = 2;
-  spec.lx = 0.4;
-  spec.ly = 0.1;
-  spec.lz = 0.1;
-  IsotropicMaterial steel(200.0e9, 0.3, 7800.0, "steel");
-  PlasticityParameters p;
-  p.yield_stress = 250.0e6;
-  p.hardening_modulus = 2.0e9;
-  p.saturation_stress = 100.0e6;
-  p.saturation_rate = 25.0;
-  steel.set_plasticity(p);
-  FemModel model(make_structured_hex_mesh(spec), steel, 1.0, StressState::ThreeDimensional,
-                 IntegrationOptions());
-  DisplacementConstraint root;
-  root.region = box(-kInf, 0.0);
-  root.fix_x = root.fix_y = root.fix_z = true;
-  model.constraints().push_back(root);
-  DisplacementConstraint tip;
-  tip.region = box(0.4, kInf);
-  tip.set(1, true, -0.004);
-  model.constraints().push_back(tip);
-  LoadCaseSpec lc;
-  lc.name = "bend";
-  lc.prescribed_displacement_only = true;
-  model.load_case_specs().push_back(lc);
-  model.finalize();
-
-  CalculixNonlinearExport nl;
-  nl.load_cases = {0};
-  nl.increments = 6;
-  nl.nlgeom = false;
-  nl.load_path = {1.0, -0.5};
-  ensure_directory("results/_test_tmp");
-  const std::vector<std::string> decks =
-      write_calculix_decks(model, "results/_test_tmp/plastic", "unit", &nl);
-  REQUIRE(decks.size() == 2);
-  REQUIRE(decks[1].find("_small_strain.inp") != std::string::npos);
-  std::ifstream in(decks[1]);
-  std::stringstream buffer;
-  buffer << in.rdbuf();
-  const std::string text = buffer.str();
-  // Two steps without NLGEOM, each of 6 fixed increments.
-  REQUIRE(text.find("NLGEOM") == std::string::npos);
-  std::size_t steps = 0;
-  for (std::size_t at = text.find("*STATIC, DIRECT"); at != std::string::npos;
-       at = text.find("*STATIC, DIRECT", at + 1)) {
-    ++steps;
-  }
-  REQUIRE(steps == 2);
-  // The second leg drives the tip to -0.5 of the prescribed value.
-  REQUIRE(text.find(", 2, 2, 0.002") != std::string::npos);
-  // The hardening table: exact nodes of sigma_y(alpha), from alpha = 0, up
-  // to 10, with chords within 1e-4 Q of the curve.
-  const std::size_t start = text.find("*PLASTIC\n");
-  REQUIRE(start != std::string::npos);
-  std::istringstream table(text.substr(start + 9));
-  std::string line;
-  std::vector<std::pair<Scalar, Scalar>> points;
-  while (std::getline(table, line) && line[0] != '*') {
-    const std::size_t comma = line.find(',');
-    points.emplace_back(std::stod(line.substr(0, comma)), std::stod(line.substr(comma + 1)));
-  }
-  REQUIRE(points.size() > 10);
-  REQUIRE(points.front().second == 0.0);
-  REQUIRE(points.back().second == Approx(10.0));
-  Scalar worst = 0.0;
-  for (std::size_t i = 0; i < points.size(); ++i) {
-    REQUIRE(points[i].first == Approx(steel.plasticity().yield(points[i].second)).epsilon(1e-9));
-    if (i == 0) continue;
-    // The chord's largest departure, sampled.
-    for (int k = 1; k < 10; ++k) {
-      const Scalar s = k / 10.0;
-      const Scalar a = points[i - 1].second + s * (points[i].second - points[i - 1].second);
-      const Scalar chord = points[i - 1].first + s * (points[i].first - points[i - 1].first);
-      worst = std::max(worst, std::abs(chord - steel.plasticity().yield(a)));
-    }
-  }
-  REQUIRE(worst <= 1.0e-4 * p.saturation_stress);
+  refuses(R"({ "yield_stress": -1.0 })");
+  refuses(R"({ "hardening_modulus": 1e9 })");  // no yield stress
+  refuses(R"({ "yield_stress": 250e6, "saturation_stress": 50e6 })");  // no rate
+  refuses(R"({ "yield_stress": 250e6, "hardening": 1e9 })");  // unknown key
 }

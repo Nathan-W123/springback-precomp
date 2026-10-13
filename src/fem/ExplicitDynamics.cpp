@@ -346,8 +346,7 @@ std::vector<Vector> lumped_element_masses(const FemModel& model, const Assembler
 }
 
 /// The characteristic length of an element at its current coordinates x
-/// (dim x npe): volume over the largest face area (3-D), area over the
-/// longest edge (2-D) [m].
+/// (dim x npe): volume over the largest face area [m].
 Scalar characteristic_length(ElementType type, const Matrix& x) {
   switch (type) {
     case ElementType::Hex8: {
@@ -362,37 +361,10 @@ Scalar characteristic_length(ElementType type, const Matrix& x) {
       }
       return volume / largest;
     }
-    case ElementType::Tet4: {
-      const Vector3 a = x.col(1) - x.col(0);
-      const Vector3 b = x.col(2) - x.col(0);
-      const Vector3 c = x.col(3) - x.col(0);
-      const Scalar volume = std::abs(a.dot(b.cross(c))) / 6.0;
-      static constexpr int faces[4][3] = {{0, 1, 2}, {0, 1, 3}, {0, 2, 3}, {1, 2, 3}};
-      Scalar largest = 0.0;
-      for (const auto& f : faces) {
-        const Vector3 p = x.col(f[1]) - x.col(f[0]);
-        const Vector3 q = x.col(f[2]) - x.col(f[0]);
-        largest = std::max(largest, 0.5 * p.cross(q).norm());
-      }
-      return 3.0 * volume / largest;
-    }
-    case ElementType::Quad4:
-    case ElementType::Tri3: {
-      const int n = type == ElementType::Quad4 ? 4 : 3;
-      Scalar area = 0.0;
-      Scalar longest = 0.0;
-      for (int a = 0; a < n; ++a) {
-        const int b = (a + 1) % n;
-        area += x(0, a) * x(1, b) - x(0, b) * x(1, a);
-        longest = std::max(longest, (x.col(b) - x.col(a)).norm());
-      }
-      area = 0.5 * std::abs(area);
-      return (n == 3 ? 2.0 : 1.0) * area / longest;
-    }
     default: break;
   }
-  throw ConfigError("the element-length time step is written for linear elements (Q4, Tri3, "
-                    "Hex8, Tet4); use the element eigenvalue estimate");
+  throw ConfigError("the element-length time step is written for the Hex8; use the element "
+                    "eigenvalue estimate");
 }
 
 /// Per node, the thickness of its thinnest element in the reference
@@ -401,8 +373,7 @@ Scalar characteristic_length(ElementType type, const Matrix& x) {
 std::vector<Scalar> node_thickness(const FemModel& model) {
   const Mesh& mesh = model.mesh();
   const ElementType type = mesh.element_type();
-  const bool linear = type == ElementType::Hex8 || type == ElementType::Tet4 ||
-                      type == ElementType::Quad4 || type == ElementType::Tri3;
+  const bool linear = type == ElementType::Hex8;
   const int npe = mesh.nodes_per_elem();
   std::vector<Scalar> out(static_cast<std::size_t>(mesh.num_nodes()),
                           std::numeric_limits<Scalar>::infinity());
@@ -578,17 +549,12 @@ ExplicitTimeMap ExplicitTimeMap::tool_speed(const std::vector<const ToolTrajecto
 // ---------------------------------------------------------------------------
 ExplicitDynamics::ExplicitDynamics(const FemModel& model, const Assembler& assembler,
                                    const NonlinearOptions& nonlinear,
-                                   std::vector<RigidTool> tools, ExplicitOptions options,
-                                   int load_case)
+                                   std::vector<RigidTool> tools, ExplicitOptions options)
     : model_(model), assembler_(assembler), nonlinear_(nonlinear), tools_(std::move(tools)),
-      options_(options), load_case_(load_case) {
+      options_(options) {
   if (!model.finalized()) throw ModelError("the model must be finalised before a solve");
   if (model.dofs_per_node() != model.dim()) {
     throw ConfigError("the explicit integrator is written for continuum elements");
-  }
-  if (load_case >= static_cast<int>(model.load_case_specs().size())) {
-    throw ConfigError("explicit dynamics: load case " + std::to_string(load_case) +
-                      " does not exist");
   }
   options_.validate();
   for (const IsotropicMaterial& m : model.materials()) {
@@ -601,7 +567,7 @@ ExplicitDynamics::ExplicitDynamics(const FemModel& model, const Assembler& assem
     (void)characteristic_length(model.mesh().element_type(),
                                 model.mesh().element_coordinates(0));
   }
-  force_ = std::make_unique<ExplicitInternalForce>(model, assembler, nonlinear_, load_case,
+  force_ = std::make_unique<ExplicitInternalForce>(model, assembler, nonlinear_,
                                                    options_.dedicated_kernel);
 }
 
@@ -758,12 +724,7 @@ ExplicitResult ExplicitDynamics::run(const ExplicitDrive& drive, const ExplicitS
   if (drive.active.size() != nt) {
     throw ConfigError("an explicit drive needs one activity flag per tool");
   }
-  const bool linear_ramp = drive.ramp.kind == Amplitude::Kind::Table && drive.ramp.times.empty();
-  if (!linear_ramp) drive.ramp.validate();
-  const auto ramp = [&](Scalar tau) -> Scalar {
-    if (linear_ramp) return std::clamp(tau / duration, 0.0, 1.0);
-    return drive.ramp.value(tau);
-  };
+  const auto ramp = [&](Scalar tau) -> Scalar { return std::clamp(tau / duration, 0.0, 1.0); };
   bool any_tool = false;
   for (char a : drive.active) any_tool = any_tool || a;
   const auto pseudo = [&](Scalar tau) { return drive.time_map.pseudo_time(tau); };

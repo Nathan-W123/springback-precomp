@@ -3,18 +3,15 @@
 ///
 /// The mesh owns nodal coordinates, element connectivity and optional named
 /// node and element sets, and nothing else: materials, loads and degrees of
-/// freedom live in separate components. A mesh is either two-dimensional
-/// (Q4 or Tri3 cells, coordinates are 2 x n) or three-dimensional (Hex8, Tet4
-/// or Tet10 cells, coordinates are 3 x n); the dimension is a runtime property read from
-/// the coordinate array, and every consumer keys on `dim()` rather than on a
-/// compile-time constant. A mesh carries a single element type, but the
-/// connectivity is stored as a flat array with an explicit stride, so
-/// mixed-topology meshes only require replacing the stride with a per-element
-/// offset table.
+/// freedom live in separate components. Its cells are Hex8 (coordinates are
+/// 3 x n); the dimension is a runtime property read from the coordinate
+/// array, and every consumer keys on `dim()` rather than on a compile-time
+/// constant. The connectivity is stored as a flat array with an explicit
+/// stride.
 ///
-/// Named sets come from mesh files (Gmsh physical groups, Abaqus/CalculiX
-/// *NSET / *ELSET) and let a deck address a curved hole or a CAD face by name
-/// where a geometric box would not fit.
+/// Named sets come from mesh files (Abaqus/CalculiX *NSET / *ELSET) and let a
+/// deck address a part of the mesh by name where a geometric box would not
+/// fit.
 #pragma once
 
 #include "sparlab/core/Types.hpp"
@@ -28,52 +25,31 @@ namespace sparlab {
 
 /// Supported element topologies.
 enum class ElementType {
-  Quad4,  ///< Four-node bilinear isoparametric quadrilateral (2-D).
-  Hex8,   ///< Eight-node trilinear isoparametric hexahedron (3-D).
-  Tri3,   ///< Three-node linear triangle, constant strain (2-D).
-  Tet4,   ///< Four-node linear tetrahedron, constant strain (3-D).
-  Tet10   ///< Ten-node quadratic tetrahedron, linear strain (3-D).
+  Hex8  ///< Eight-node trilinear isoparametric hexahedron (3-D).
 };
 
 /// Number of nodes carried by an element topology.
 int nodes_per_element(ElementType type);
 
-/// Spatial dimension of an element topology (2 or 3).
+/// Spatial dimension of an element topology (3).
 int element_dimension(ElementType type);
 
-/// True for the triangles and tetrahedra (Tri3, Tet4, Tet10).
-bool is_simplex(ElementType type);
-
-/// Number of corner (vertex) nodes: 4 for a Tet10, whose other six nodes sit
-/// on its edges, and every node of a linear element. The corners come first
-/// in the connectivity of every topology.
-int corner_nodes(ElementType type);
-
-/// Number of corner nodes on one boundary face (2 for an edge, 3 for a
-/// triangle, 4 for a quadrilateral); they lead each face list of
-/// `element_local_faces`, and they alone identify a face shared by two cells.
+/// Number of corner nodes on one boundary face (4 for the quadrilateral face
+/// of a Hex8); they lead each face list of `element_local_faces`, and they
+/// alone identify a face shared by two cells.
 int face_corner_nodes(ElementType type);
 
 /// Human-readable name, also used in VTK output.
 std::string to_string(ElementType type);
 
-/// Local node lists of the boundary entities of a topology, each wound so its
-/// right-hand normal points out of the element: the edges of a Q4 or Tri3
-/// (two nodes each, counter-clockwise), the six quadrilateral faces of a Hex8
-/// (VTK hexahedron face convention), the four triangular faces of a Tet4, or
-/// the four 6-node faces of a Tet10 (the Tet4 corners, then the edge nodes of
-/// corner pairs 0-1, 1-2, 2-0 of the face). "Face" is used for all of them
-/// throughout the code base; in 2-D a face is an edge.
+/// Local node lists of the boundary faces of a topology, each wound so its
+/// right-hand normal points out of the element: the six quadrilateral faces
+/// of a Hex8 (VTK hexahedron face convention).
 const std::vector<std::vector<int>>& element_local_faces(ElementType type);
 
 /// Summary of element shape quality. The metric is 1 for an ideal cell and
 /// falls towards 0 as the cell degenerates: the minimum scaled Jacobian over
-/// the corners for Q4 and Hex8 (angle distortion), and the normalised
-/// measure-to-edge ratio for Tri3 (4 sqrt(3) A / sum l^2) and Tet4
-/// (6 sqrt(2) V / l_rms^3), which also capture slivers and needles. A Tet10
-/// scores the Tet4 metric of its corners times the ratio of the smallest to
-/// the largest Jacobian determinant over its nodes, which is 1 for straight
-/// edges and falls as curved edges distort the cell.
+/// the corners of a Hex8 (angle distortion).
 struct MeshQuality {
   std::string metric;
   Scalar min = 0.0;
@@ -109,12 +85,10 @@ class Mesh {
   Mesh() = default;
 
   /// \param coords dim x num_nodes matrix of nodal coordinates [m], with dim
-  ///        equal to 2 or 3 and matching the element type.
+  ///        matching the element type (3).
   /// \param connectivity flat, row-major connectivity with
-  ///        `nodes_per_element(type)` entries per element: counter-clockwise
-  ///        for Q4 and Tri3, VTK hexahedron ordering for Hex8, and positive
-  ///        orientation ((x1-x0) x (x2-x0) . (x3-x0) > 0) for Tet4 and for the
-  ///        corners of a Tet10, whose edge nodes follow in VTK order.
+  ///        `nodes_per_element(type)` entries per element, in the VTK
+  ///        hexahedron ordering.
   Mesh(Matrix coords, std::vector<Index> connectivity, ElementType type);
 
   Index num_nodes() const { return static_cast<Index>(coords_.cols()); }
@@ -150,20 +124,9 @@ class Mesh {
   /// Geometric centroid of element `e` (average of its nodes) [m]; z = 0 in 2-D.
   Vector3 element_centroid(Index e) const;
 
-  /// Measure of element `e`: signed area [m^2] via the shoelace formula in
-  /// 2-D (positive for counter-clockwise node ordering), signed volume [m^3]
-  /// in 3-D (from the trilinear Jacobian for a Hex8, the triple product for a
-  /// Tet4, the integrated Jacobian of the quadratic map for a Tet10, which
-  /// includes the bulge of curved edges; positive for correctly ordered
-  /// cells).
+  /// Measure of element `e`: its signed volume [m^3] from the trilinear
+  /// Jacobian (positive for correctly ordered cells).
   Scalar element_measure(Index e) const;
-
-  /// Characteristic cell size [m] used to express lengths "in elements" (the
-  /// filter radius): the side of the square / cube with the mean cell measure
-  /// for Q4 and Hex8, and the mean edge length for Tri3, Tet4 and Tet10 (the
-  /// corner-to-corner edges), which is what a mesh generator's size parameter
-  /// means for simplices.
-  Scalar mean_element_size() const;
 
   /// Shape-quality statistics of every element (see MeshQuality).
   MeshQuality quality() const;
@@ -189,9 +152,8 @@ class Mesh {
   void set_node_set(const std::string& name, std::vector<Index> nodes);
   void set_element_set(const std::string& name, std::vector<Index> elements);
 
-  /// Boundary entity of the mesh: an edge (2-D) or a face (3-D) referenced by
-  /// exactly one element, with its nodes in the element's local order (all
-  /// of them, edge nodes included for a Tet10).
+  /// Boundary face of the mesh, referenced by exactly one element, with its
+  /// nodes in the element's local order.
   struct BoundaryFace {
     std::vector<Index> nodes;
     Index element = 0;
@@ -202,40 +164,19 @@ class Mesh {
   /// Computed on demand; O(num_elements * faces per element * log).
   std::vector<BoundaryFace> boundary_faces() const;
 
-  /// Length [m] of a boundary edge (2-D) or area [m^2] of a boundary face
-  /// (3-D: a bilinear quadrilateral integrated with a 2 x 2 rule, a flat
-  /// triangle, or the curved 6-node triangle of a Tet10).
+  /// Area [m^2] of a boundary face: a bilinear quadrilateral integrated with
+  /// a 2 x 2 rule.
   Scalar face_measure(const BoundaryFace& face) const;
 
  private:
   Matrix coords_;
   std::vector<Index> connectivity_;
-  ElementType type_ = ElementType::Quad4;
-  int nodes_per_element_ = 4;
-  int dim_ = 2;
+  ElementType type_ = ElementType::Hex8;
+  int nodes_per_element_ = 8;
+  int dim_ = 3;
   std::optional<StructuredGridInfo> structured_;
   std::map<std::string, std::vector<Index>> node_sets_;
   std::map<std::string, std::vector<Index>> element_sets_;
 };
-
-/// Quadratic tetrahedron mesh from a linear one: every Tet4 edge gets a node
-/// at its midpoint, shared by the cells around the edge, so each cell becomes
-/// a straight-sided Tet10 with the same corners (and the same volume). The
-/// original nodes keep their indices and the edge nodes follow, numbered in
-/// order of first appearance, so the result is deterministic; elements keep
-/// their indices too. Named element sets carry over unchanged. An edge node
-/// joins a named node set when (a) the set is also an element set and the edge
-/// belongs to one of its cells, (b) the edge lies on a boundary face whose
-/// three corners are all in the set (a surface group), or (c) the set holds no
-/// complete boundary face - a curve or a point group - and the edge is a
-/// boundary edge with both ends in the set. Edges on a curved CAD surface stay
-/// straight: a mesh generator's own second-order output (Gmsh
-/// Mesh.ElementOrder = 2) places edge nodes on the true geometry instead.
-/// 	hrows MeshError unless `linear` is a Tet4 mesh.
-Mesh elevate_to_tet10(const Mesh& linear);
-
-/// Signed volume of a tetrahedron from its 3 x 4 nodal coordinates [m^3]:
-/// \f$ V = \tfrac{1}{6} (x_1 - x_0) \cdot [(x_2 - x_0) \times (x_3 - x_0)] \f$.
-Scalar tet4_volume(const Matrix& coords);
 
 }  // namespace sparlab

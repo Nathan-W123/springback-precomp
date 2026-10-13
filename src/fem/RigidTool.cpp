@@ -276,11 +276,6 @@ ToolContact::ToolContact(const FemModel& model, std::vector<RigidTool> tools,
   const Mesh& mesh = model.mesh();
   const int dim = mesh.dim();
   const ElementType type = mesh.element_type();
-  if (type == ElementType::Tet10) {
-    throw ConfigError("tool contact needs linear elements (Q4, Tri3, Hex8, Tet4): the "
-                      "corner weights int N dA of a six-node Tet10 face vanish, so its "
-                      "corner nodes would carry no contact force");
-  }
   std::set<std::string> names;
   for (const RigidTool& t : tools_) {
     t.validate(dim);
@@ -303,7 +298,7 @@ ToolContact::ToolContact(const FemModel& model, std::vector<RigidTool> tools,
     const std::vector<std::vector<int>>& table = element_local_faces(type);
     for (const Mesh::BoundaryFace& f : faces) {
       const Matrix coords = element_face_coordinates(mesh, f.element, f.local_face);
-      const Vector w = face_shape_integrals(shape, coords, thickness, 3);
+      const Vector w = face_shape_integrals(shape, coords, 3);
       const Index* en = mesh.element_nodes(f.element);
       const std::vector<int>& local = table[static_cast<std::size_t>(f.local_face)];
       const Scalar e = model.material_of(f.element).youngs_modulus();

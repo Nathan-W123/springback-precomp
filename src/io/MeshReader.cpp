@@ -23,10 +23,12 @@ namespace sparlab {
 namespace {
 
 // ---------------------------------------------------------------------------
-// Element kinds shared by both formats
+// Element kinds
 // ---------------------------------------------------------------------------
 
-enum class Kind { Point, Line, Tri3, Quad4, Tet4, Hex8, Tet10, Unsupported };
+/// Lines and plane / surface elements serve as boundary elements of a solid
+/// mesh (they name node sets); the cells must be hexahedra.
+enum class Kind { Line, Tri3, Quad4, Hex8, Unsupported };
 
 struct KindInfo {
   Kind kind = Kind::Unsupported;
@@ -36,14 +38,9 @@ struct KindInfo {
   std::string advice;     ///< how to avoid it, for unsupported cells
 };
 
-const char* kSecondOrderAdvice =
-    "SparLab's only second-order element is the 10-node tetrahedron; re-export the "
-    "mesh with linear elements (Gmsh: Mesh.ElementOrder = 1; Abaqus/CalculiX: "
-    "C3D4/C3D8, CPS3/CPS4) or, for a solid, with quadratic tetrahedra (Gmsh: "
-    "Mesh.ElementOrder = 2 on a tetrahedral mesh; Abaqus/CalculiX: C3D10)";
-const char* kPrismAdvice =
-    "SparLab supports tetrahedra or hexahedra only; re-mesh the volume with "
-    "tetrahedra (Gmsh: Mesh.RecombineAll = 0, no Recombine in extrusions)";
+const char* kHexAdvice =
+    "SparLab's element is the 8-node hexahedron; re-mesh the volume with linear "
+    "hexahedra (Abaqus/CalculiX: C3D8)";
 
 KindInfo make_kind(Kind kind, int dim, int nodes, std::string name, std::string advice = "") {
   KindInfo info;
@@ -53,49 +50,6 @@ KindInfo make_kind(Kind kind, int dim, int nodes, std::string name, std::string 
   info.name = std::move(name);
   info.advice = std::move(advice);
   return info;
-}
-
-/// Gmsh element type codes (see the Gmsh reference manual, "MSH file format").
-KindInfo gmsh_kind(int code) {
-  switch (code) {
-    case 1: return make_kind(Kind::Line, 1, 2, "2-node line");
-    case 2: return make_kind(Kind::Tri3, 2, 3, "3-node triangle");
-    case 3: return make_kind(Kind::Quad4, 2, 4, "4-node quadrilateral");
-    case 4: return make_kind(Kind::Tet4, 3, 4, "4-node tetrahedron");
-    case 5: return make_kind(Kind::Hex8, 3, 8, "8-node hexahedron");
-    case 6: return make_kind(Kind::Unsupported, 3, 6, "6-node prism", kPrismAdvice);
-    case 7: return make_kind(Kind::Unsupported, 3, 5, "5-node pyramid", kPrismAdvice);
-    case 8: return make_kind(Kind::Line, 1, 3, "3-node line");
-    case 9: return make_kind(Kind::Unsupported, 2, 6, "6-node triangle", kSecondOrderAdvice);
-    case 10: return make_kind(Kind::Unsupported, 2, 9, "9-node quadrilateral", kSecondOrderAdvice);
-    case 11: return make_kind(Kind::Tet10, 3, 10, "10-node tetrahedron");
-    case 12: return make_kind(Kind::Unsupported, 3, 27, "27-node hexahedron", kSecondOrderAdvice);
-    case 13: return make_kind(Kind::Unsupported, 3, 18, "18-node prism", kPrismAdvice);
-    case 14: return make_kind(Kind::Unsupported, 3, 14, "14-node pyramid", kPrismAdvice);
-    case 15: return make_kind(Kind::Point, 0, 1, "point");
-    case 16: return make_kind(Kind::Unsupported, 2, 8, "8-node quadrilateral", kSecondOrderAdvice);
-    case 17: return make_kind(Kind::Unsupported, 3, 20, "20-node hexahedron", kSecondOrderAdvice);
-    case 18: return make_kind(Kind::Unsupported, 3, 15, "15-node prism", kPrismAdvice);
-    case 19: return make_kind(Kind::Unsupported, 3, 13, "13-node pyramid", kPrismAdvice);
-    case 20: return make_kind(Kind::Unsupported, 2, 9, "9-node triangle", kSecondOrderAdvice);
-    case 21: return make_kind(Kind::Unsupported, 2, 10, "10-node triangle", kSecondOrderAdvice);
-    case 22: return make_kind(Kind::Unsupported, 2, 12, "12-node triangle", kSecondOrderAdvice);
-    case 23: return make_kind(Kind::Unsupported, 2, 15, "15-node triangle", kSecondOrderAdvice);
-    case 24: return make_kind(Kind::Unsupported, 2, 15, "15-node triangle", kSecondOrderAdvice);
-    case 25: return make_kind(Kind::Unsupported, 2, 21, "21-node triangle", kSecondOrderAdvice);
-    case 26: return make_kind(Kind::Line, 1, 4, "4-node line");
-    case 27: return make_kind(Kind::Line, 1, 5, "5-node line");
-    case 28: return make_kind(Kind::Line, 1, 6, "6-node line");
-    case 29: return make_kind(Kind::Unsupported, 3, 20, "20-node tetrahedron", kSecondOrderAdvice);
-    case 30: return make_kind(Kind::Unsupported, 3, 35, "35-node tetrahedron", kSecondOrderAdvice);
-    case 31: return make_kind(Kind::Unsupported, 3, 56, "56-node tetrahedron", kSecondOrderAdvice);
-    case 92: return make_kind(Kind::Unsupported, 3, 64, "64-node hexahedron", kSecondOrderAdvice);
-    case 93: return make_kind(Kind::Unsupported, 3, 125, "125-node hexahedron", kSecondOrderAdvice);
-    default: break;
-  }
-  std::ostringstream os;
-  os << "Gmsh element type " << code << " is not recognised";
-  throw IoError(os.str());
 }
 
 std::string upper(std::string s) {
@@ -135,31 +89,21 @@ KindInfo abaqus_kind(const std::string& type_in) {
     const int n = std::atoi(digits.c_str());
     if (f.dim == 1) return make_kind(Kind::Line, 1, -1, type + " line element");
     if (f.dim == 3) {
-      if (n == 4) return make_kind(Kind::Tet4, 3, 4, type + " (4-node tetrahedron)");
       if (n == 8) return make_kind(Kind::Hex8, 3, 8, type + " (8-node hexahedron)");
-      if (n == 10) return make_kind(Kind::Tet10, 3, 10, type + " (10-node tetrahedron)");
-      if (n == 6 || n == 15 || n == 5 || n == 13) {
-        return make_kind(Kind::Unsupported, 3, n, type + " (prism / pyramid)", kPrismAdvice);
+      if (n == 4 || n == 10) {
+        return make_kind(Kind::Unsupported, 3, n, type + " (tetrahedron)", kHexAdvice);
       }
-      return make_kind(Kind::Unsupported, 3, n, type + " (second-order solid)",
-                       kSecondOrderAdvice);
+      if (n == 6 || n == 15 || n == 5 || n == 13) {
+        return make_kind(Kind::Unsupported, 3, n, type + " (prism / pyramid)", kHexAdvice);
+      }
+      return make_kind(Kind::Unsupported, 3, n, type + " (second-order solid)", kHexAdvice);
     }
     // Plane, axisymmetric, shell, membrane and rigid surface elements.
     if (n == 3) return make_kind(Kind::Tri3, 2, 3, type + " (3-node triangle)");
     if (n == 4) return make_kind(Kind::Quad4, 2, 4, type + " (4-node quadrilateral)");
-    return make_kind(Kind::Unsupported, 2, n, type + " (second-order surface)",
-                     kSecondOrderAdvice);
+    return make_kind(Kind::Unsupported, 2, n, type + " (second-order surface)", kHexAdvice);
   }
   throw IoError("Abaqus element type '" + type_in + "' is not recognised");
-}
-
-std::string dimension_prefix(int dim) {
-  switch (dim) {
-    case 0: return "point:";
-    case 1: return "curve:";
-    case 2: return "surface:";
-    default: return "volume:";
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,14 +132,6 @@ void trim(std::string& s) {
   const auto not_space = [](unsigned char c) { return !std::isspace(c); };
   s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
   s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
-}
-
-std::vector<std::string> split_whitespace(const std::string& line) {
-  std::vector<std::string> out;
-  std::istringstream is(line);
-  std::string token;
-  while (is >> token) out.push_back(token);
-  return out;
 }
 
 long long to_integer(const std::string& token, const std::string& where) {
@@ -243,8 +179,7 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
   for (const RawElement& e : raw.elements) dim = std::max(dim, e.info.dim);
   if (dim < 2) {
     throw MeshError(src + " contains only points and lines; SparLab needs cells: "
-                          "triangles or quadrilaterals for a plane model, tetrahedra or "
-                          "hexahedra for a solid");
+                          "hexahedra");
   }
 
   // The cells are the elements of the highest dimension, all of one type.
@@ -260,14 +195,8 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
       os << (first ? "" : ", ") << entry.second << " x " << entry.first;
       first = false;
     }
-    os << "); a SparLab mesh carries one cell type. ";
-    if (dim == 2) {
-      os << "Mesh it all-triangle (Gmsh: Mesh.RecombineAll = 0) or all-quadrilateral "
-            "(Gmsh: Mesh.RecombineAll = 1 with Mesh.SubdivisionAlgorithm = 1)";
-    } else {
-      os << "Mesh the volume with tetrahedra only, or with hexahedra only (extruded or "
-            "transfinite volumes)";
-    }
+    os << "); a SparLab mesh carries one cell type. Mesh the volume with hexahedra only "
+          "(extruded or transfinite volumes)";
     throw MeshError(os.str());
   }
   const RawElement* sample = nullptr;
@@ -282,15 +211,10 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
     throw MeshError(src + " is made of " + cell.name + " cells, which SparLab does not "
                     "implement. " + cell.advice);
   }
-  ElementType type = ElementType::Tri3;
-  switch (cell.kind) {
-    case Kind::Tri3: type = ElementType::Tri3; break;
-    case Kind::Quad4: type = ElementType::Quad4; break;
-    case Kind::Tet4: type = ElementType::Tet4; break;
-    case Kind::Hex8: type = ElementType::Hex8; break;
-    case Kind::Tet10: type = ElementType::Tet10; break;
-    default: throw MeshError(src + ": unexpected cell kind");
+  if (cell.kind != Kind::Hex8) {
+    throw MeshError(src + " is made of " + cell.name + " cells. " + kHexAdvice);
   }
+  const ElementType type = ElementType::Hex8;
   const int npe = nodes_per_element(type);
   report.dimension = dim;
   report.element_type = type;
@@ -316,10 +240,7 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
     return it->second;
   };
 
-  // Cells, in file order, in SparLab's node order: a Gmsh 10-node
-  // tetrahedron lists the edge nodes of 2-3 and 1-3 the other way round from
-  // the VTK / Abaqus order the Tet10 uses.
-  const bool gmsh_tet10 = type == ElementType::Tet10 && report.format == "gmsh";
+  // Cells, in file order.
   std::vector<std::array<Index, 10>> cells;
   std::vector<long long> cell_tags;
   std::vector<char> used(raw.node_tags.size(), 0);
@@ -336,7 +257,6 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
       c[static_cast<std::size_t>(a)] = file_index(e.nodes[static_cast<std::size_t>(a)], e.tag);
       used[static_cast<std::size_t>(c[static_cast<std::size_t>(a)])] = 1;
     }
-    if (gmsh_tet10) std::swap(c[8], c[9]);
     cells.push_back(c);
     cell_tags.push_back(e.tag);
   }
@@ -368,16 +288,6 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
     hi = hi.cwiseMax(x);
   }
   const Scalar diagonal = (hi - lo).norm();
-  if (dim == 2) {
-    const Scalar zspan = std::max(std::abs(lo.z()), std::abs(hi.z()));
-    if (zspan > 1.0e-9 * std::max(diagonal, 1.0e-300)) {
-      std::ostringstream os;
-      os << src << " is a 2-D mesh but its nodes reach z = " << (std::abs(lo.z()) > std::abs(hi.z()) ? lo.z() : hi.z())
-         << " m; a plane model must lie in the z = 0 plane. Draw the geometry in the x-y "
-            "plane, or mesh the part as a solid";
-      throw MeshError(os.str());
-    }
-  }
   if (diagonal > 20.0) {
     std::ostringstream os;
     os << "the mesh spans " << diagonal << " m corner to corner; if the geometry was drawn "
@@ -463,47 +373,14 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
     }
     for (int a = 0; a < npe; ++a) xe.col(a) = coords.col(n[static_cast<std::size_t>(a)]);
     bool flipped = false;
-    if (type == ElementType::Tri3) {
-      const Scalar twice = (xe(0, 1) - xe(0, 0)) * (xe(1, 2) - xe(1, 0)) -
-                           (xe(0, 2) - xe(0, 0)) * (xe(1, 1) - xe(1, 0));
-      if (twice < 0.0) {
-        std::swap(n[1], n[2]);
-        flipped = true;
-      }
-    } else if (type == ElementType::Quad4) {
-      Scalar twice = 0.0;
-      for (int a = 0; a < 4; ++a) {
-        const int b = (a + 1) % 4;
-        twice += xe(0, a) * xe(1, b) - xe(0, b) * xe(1, a);
-      }
-      if (twice < 0.0) {
-        std::swap(n[1], n[3]);
-        flipped = true;
-      }
-    } else if (type == ElementType::Tet4 || type == ElementType::Tet10) {
-      const Vector3 a = xe.col(1) - xe.col(0);
-      const Vector3 b = xe.col(2) - xe.col(0);
-      const Vector3 d = xe.col(3) - xe.col(0);
-      if (a.dot(b.cross(d)) < 0.0) {
-        // Swapping corners 1 and 2 turns the edges 0-1, 2-0 and 1-3, 2-3
-        // into one another.
-        std::swap(n[1], n[2]);
-        if (type == ElementType::Tet10) {
-          std::swap(n[4], n[6]);
-          std::swap(n[8], n[9]);
-        }
-        flipped = true;
-      }
-    } else {
-      Scalar min_det = 0.0;
-      const Scalar volume = hex8_volume(xe, &min_det);
-      if (volume < 0.0) {
-        // A mirrored hexahedron lists both faces clockwise; reversing each
-        // face (0 3 2 1 / 4 7 6 5) restores the VTK ordering.
-        std::swap(n[1], n[3]);
-        std::swap(n[5], n[7]);
-        flipped = true;
-      }
+    Scalar min_det = 0.0;
+    const Scalar volume = hex8_volume(xe, &min_det);
+    if (volume < 0.0) {
+      // A mirrored hexahedron lists both faces clockwise; reversing each
+      // face (0 3 2 1 / 4 7 6 5) restores the VTK ordering.
+      std::swap(n[1], n[3]);
+      std::swap(n[5], n[7]);
+      flipped = true;
     }
     if (flipped) ++report.reoriented;
     for (int a = 0; a < npe; ++a) connectivity.push_back(n[static_cast<std::size_t>(a)]);
@@ -666,293 +543,8 @@ Mesh build_mesh(RawMesh& raw, const MeshReadOptions& options, MeshReadReport& re
 }
 
 // ---------------------------------------------------------------------------
-// Gmsh
-// ---------------------------------------------------------------------------
-
-class LineReader {
- public:
-  LineReader(std::istream& in, std::string source) : in_(in), source_(std::move(source)) {}
-
-  /// Next non-empty line (trimmed); false at end of input.
-  bool next(std::string& line) {
-    while (std::getline(in_, line)) {
-      ++number_;
-      trim(line);
-      if (!line.empty()) return true;
-    }
-    return false;
-  }
-
-  std::string require(const std::string& what) {
-    std::string line;
-    if (!next(line)) throw IoError(source_ + ": unexpected end of file while reading " + what);
-    return line;
-  }
-
-  std::string where() const { return context(source_, number_); }
-  const std::string& source() const { return source_; }
-
- private:
-  std::istream& in_;
-  std::string source_;
-  long long number_ = 0;
-};
-
-void expect_end(LineReader& reader, const std::string& section) {
-  const std::string line = reader.require("$End" + section);
-  if (line != "$End" + section) {
-    throw IoError(reader.where() + ": expected $End" + section + ", found '" + line + "'");
-  }
-}
-
-void skip_section(LineReader& reader, const std::string& section) {
-  std::string line;
-  while (reader.next(line)) {
-    if (line == "$End" + section) return;
-  }
-  throw IoError(reader.source() + ": section $" + section + " is not terminated");
-}
-
-}  // namespace
-
-Mesh read_gmsh(std::istream& in, const std::string& source, const MeshReadOptions& options,
-               MeshReadReport* report_out) {
-  MeshReadReport local;
-  MeshReadReport& report = report_out ? *report_out : local;
-  report = MeshReadReport();
-  report.path = source;
-  report.format = "gmsh";
-
-  RawMesh raw;
-  raw.source = source;
-  LineReader reader(in, source);
-
-  std::string version;
-  std::map<std::pair<int, long long>, std::string> physical_names;
-  std::map<std::pair<int, long long>, std::vector<long long>> entity_physicals;
-  bool have_nodes = false;
-  bool have_elements = false;
-
-  const auto group_name = [&](int dim, long long tag) {
-    const auto it = physical_names.find({dim, tag});
-    if (it != physical_names.end()) return it->second;
-    return dimension_prefix(dim) + std::to_string(tag);
-  };
-
-  std::string line;
-  while (reader.next(line)) {
-    if (line == "$MeshFormat") {
-      const std::vector<std::string> t = split_whitespace(reader.require("the format line"));
-      if (t.size() < 3) throw IoError(reader.where() + ": malformed $MeshFormat line");
-      version = t[0];
-      if (t[1] != "0") {
-        throw IoError(source + " is a binary Gmsh file; export it as ASCII "
-                               "(Gmsh: Mesh.Binary = 0)");
-      }
-      if (version != "2.2" && version.rfind("4.1", 0) != 0 && version != "2.1" &&
-          version != "2.0") {
-        throw IoError(source + " uses MSH format version " + version +
-                      "; SparLab reads versions 2.2 and 4.1 (Gmsh: Mesh.MshFileVersion = "
-                      "4.1 or 2.2)");
-      }
-      expect_end(reader, "MeshFormat");
-    } else if (line == "$PhysicalNames") {
-      const long long n = to_integer(reader.require("the physical-name count"), reader.where());
-      for (long long i = 0; i < n; ++i) {
-        const std::string entry = reader.require("a physical name");
-        std::istringstream is(entry);
-        int dim = 0;
-        long long tag = 0;
-        if (!(is >> dim >> tag)) throw IoError(reader.where() + ": malformed physical name");
-        std::string rest;
-        std::getline(is, rest);
-        trim(rest);
-        if (rest.size() >= 2 && rest.front() == '"' && rest.back() == '"') {
-          rest = rest.substr(1, rest.size() - 2);
-        }
-        if (rest.empty()) rest = dimension_prefix(dim) + std::to_string(tag);
-        physical_names[{dim, tag}] = rest;
-      }
-      expect_end(reader, "PhysicalNames");
-    } else if (line == "$Entities") {
-      if (version.rfind("4", 0) != 0) {
-        skip_section(reader, "Entities");
-        continue;
-      }
-      const std::vector<std::string> counts = split_whitespace(reader.require("entity counts"));
-      if (counts.size() < 4) throw IoError(reader.where() + ": malformed $Entities header");
-      for (int dim = 0; dim <= 3; ++dim) {
-        const long long n = to_integer(counts[static_cast<std::size_t>(dim)], reader.where());
-        for (long long i = 0; i < n; ++i) {
-          const std::vector<std::string> t = split_whitespace(reader.require("an entity"));
-          // points: tag x y z nphys phys...; others: tag 6 bbox values nphys phys...
-          const std::size_t phys_at = dim == 0 ? 4 : 7;
-          if (t.size() <= phys_at) throw IoError(reader.where() + ": malformed entity line");
-          const long long tag = to_integer(t[0], reader.where());
-          const long long nphys = to_integer(t[phys_at], reader.where());
-          if (t.size() < phys_at + 1 + static_cast<std::size_t>(nphys)) {
-            throw IoError(reader.where() + ": entity lists fewer physical tags than declared");
-          }
-          std::vector<long long> phys;
-          for (long long k = 0; k < nphys; ++k) {
-            phys.push_back(std::llabs(to_integer(t[phys_at + 1 + static_cast<std::size_t>(k)], reader.where())));
-          }
-          entity_physicals[{dim, tag}] = phys;
-        }
-      }
-      expect_end(reader, "Entities");
-    } else if (line == "$Nodes") {
-      if (version.empty()) throw IoError(source + ": $Nodes appears before $MeshFormat");
-      have_nodes = true;
-      if (version.rfind("4", 0) == 0) {
-        const std::vector<std::string> h = split_whitespace(reader.require("the node header"));
-        if (h.size() < 4) throw IoError(reader.where() + ": malformed $Nodes header");
-        const long long blocks = to_integer(h[0], reader.where());
-        const long long total = to_integer(h[1], reader.where());
-        raw.node_tags.reserve(static_cast<std::size_t>(total));
-        raw.node_coords.reserve(static_cast<std::size_t>(total));
-        for (long long b = 0; b < blocks; ++b) {
-          const std::vector<std::string> bh = split_whitespace(reader.require("a node block"));
-          if (bh.size() < 4) throw IoError(reader.where() + ": malformed node block header");
-          const int edim = static_cast<int>(to_integer(bh[0], reader.where()));
-          const bool parametric = to_integer(bh[2], reader.where()) != 0;
-          const long long count = to_integer(bh[3], reader.where());
-          const std::size_t first = raw.node_tags.size();
-          for (long long k = 0; k < count; ++k) {
-            raw.node_tags.push_back(to_integer(reader.require("a node tag"), reader.where()));
-          }
-          for (long long k = 0; k < count; ++k) {
-            const std::vector<std::string> c = split_whitespace(reader.require("node coordinates"));
-            const std::size_t need = 3 + (parametric ? static_cast<std::size_t>(std::max(edim, 0)) : 0);
-            if (c.size() < need) throw IoError(reader.where() + ": malformed node coordinates");
-            raw.node_coords.emplace_back(to_real(c[0], reader.where()),
-                                         to_real(c[1], reader.where()),
-                                         to_real(c[2], reader.where()));
-          }
-          (void)first;
-        }
-        if (static_cast<long long>(raw.node_tags.size()) != total) {
-          throw IoError(source + ": $Nodes declares " + std::to_string(total) +
-                        " nodes but its blocks hold " + std::to_string(raw.node_tags.size()));
-        }
-      } else {
-        const long long total = to_integer(reader.require("the node count"), reader.where());
-        raw.node_tags.reserve(static_cast<std::size_t>(total));
-        raw.node_coords.reserve(static_cast<std::size_t>(total));
-        for (long long k = 0; k < total; ++k) {
-          const std::vector<std::string> c = split_whitespace(reader.require("a node"));
-          if (c.size() < 4) throw IoError(reader.where() + ": malformed node line");
-          raw.node_tags.push_back(to_integer(c[0], reader.where()));
-          raw.node_coords.emplace_back(to_real(c[1], reader.where()),
-                                       to_real(c[2], reader.where()),
-                                       to_real(c[3], reader.where()));
-        }
-      }
-      expect_end(reader, "Nodes");
-    } else if (line == "$Elements") {
-      if (version.empty()) throw IoError(source + ": $Elements appears before $MeshFormat");
-      have_elements = true;
-      if (version.rfind("4", 0) == 0) {
-        const std::vector<std::string> h = split_whitespace(reader.require("the element header"));
-        if (h.size() < 4) throw IoError(reader.where() + ": malformed $Elements header");
-        const long long blocks = to_integer(h[0], reader.where());
-        const long long total = to_integer(h[1], reader.where());
-        raw.elements.reserve(static_cast<std::size_t>(total));
-        for (long long b = 0; b < blocks; ++b) {
-          const std::vector<std::string> bh = split_whitespace(reader.require("an element block"));
-          if (bh.size() < 4) throw IoError(reader.where() + ": malformed element block header");
-          const int edim = static_cast<int>(to_integer(bh[0], reader.where()));
-          const long long etag = to_integer(bh[1], reader.where());
-          const KindInfo info = gmsh_kind(static_cast<int>(to_integer(bh[2], reader.where())));
-          const long long count = to_integer(bh[3], reader.where());
-          std::vector<std::string> groups;
-          const auto phys = entity_physicals.find({edim, etag});
-          if (phys != entity_physicals.end()) {
-            for (long long p : phys->second) groups.push_back(group_name(edim, p));
-          }
-          for (long long k = 0; k < count; ++k) {
-            const std::vector<std::string> t = split_whitespace(reader.require("an element"));
-            if (t.size() != static_cast<std::size_t>(1 + info.nodes)) {
-              throw IoError(reader.where() + ": " + info.name + " element lists " +
-                            std::to_string(t.size() - 1) + " nodes");
-            }
-            RawElement e;
-            e.tag = to_integer(t[0], reader.where());
-            e.info = info;
-            e.groups = groups;
-            e.nodes.reserve(t.size() - 1);
-            for (std::size_t a = 1; a < t.size(); ++a) {
-              e.nodes.push_back(to_integer(t[a], reader.where()));
-            }
-            raw.elements.push_back(std::move(e));
-          }
-        }
-      } else {
-        const long long total = to_integer(reader.require("the element count"), reader.where());
-        raw.elements.reserve(static_cast<std::size_t>(total));
-        for (long long k = 0; k < total; ++k) {
-          const std::vector<std::string> t = split_whitespace(reader.require("an element"));
-          if (t.size() < 3) throw IoError(reader.where() + ": malformed element line");
-          RawElement e;
-          e.tag = to_integer(t[0], reader.where());
-          e.info = gmsh_kind(static_cast<int>(to_integer(t[1], reader.where())));
-          const std::size_t ntags = static_cast<std::size_t>(to_integer(t[2], reader.where()));
-          if (t.size() != 3 + ntags + static_cast<std::size_t>(e.info.nodes)) {
-            throw IoError(reader.where() + ": " + e.info.name + " element has " +
-                          std::to_string(t.size()) + " fields, expected " +
-                          std::to_string(3 + ntags + static_cast<std::size_t>(e.info.nodes)));
-          }
-          if (ntags >= 1) {
-            const long long phys = to_integer(t[3], reader.where());
-            if (phys != 0) e.groups.push_back(group_name(e.info.dim, phys));
-          }
-          for (std::size_t a = 3 + ntags; a < t.size(); ++a) {
-            e.nodes.push_back(to_integer(t[a], reader.where()));
-          }
-          raw.elements.push_back(std::move(e));
-        }
-      }
-      expect_end(reader, "Elements");
-    } else if (!line.empty() && line.front() == '$') {
-      const std::string section = line.substr(1);
-      ++raw.ignored["$" + section + " section"];
-      skip_section(reader, section);
-    } else {
-      throw IoError(reader.where() + ": unexpected content '" + line.substr(0, 40) +
-                    "' outside a $Section; is this a Gmsh .msh file?");
-    }
-  }
-
-  if (version.empty()) {
-    throw IoError(source + " has no $MeshFormat section; it is not a Gmsh mesh file");
-  }
-  if (!have_nodes || !have_elements) {
-    throw IoError(source + " lacks a $Nodes or $Elements section");
-  }
-  report.version = version;
-  // Gmsh saves only the elements of physical groups once any group is defined
-  // (unless Mesh.SaveAll = 1), which silently loses the volume when only the
-  // boundary groups were declared.
-  {
-    int top = -1;
-    for (const RawElement& e : raw.elements) top = std::max(top, e.info.dim);
-    bool any_group = false;
-    for (const RawElement& e : raw.elements) any_group = any_group || !e.groups.empty();
-    if (top >= 0 && top < 2 && any_group) {
-      throw MeshError(source + " holds only boundary elements: Gmsh writes only the "
-                               "elements of physical groups once any group is defined. "
-                               "Add a physical surface (2-D) or volume (3-D), or set "
-                               "Mesh.SaveAll = 1");
-    }
-  }
-  return build_mesh(raw, options, report);
-}
-
-// ---------------------------------------------------------------------------
 // Abaqus / CalculiX
 // ---------------------------------------------------------------------------
-
-namespace {
 
 struct InpState {
   enum class Block { None, Node, Element, Nset, Elset, Ignored } block = Block::None;
@@ -1205,25 +797,24 @@ Mesh read_mesh_file(const std::string& path, const MeshReadOptions& options,
   if (format.empty() || format == "auto") {
     const std::size_t dot = path.find_last_of('.');
     const std::string ext = dot == std::string::npos ? "" : upper(path.substr(dot + 1));
-    if (ext == "MSH") {
-      format = "gmsh";
-    } else if (ext == "INP") {
+    if (ext == "INP") {
       format = "abaqus";
     } else {
       throw ConfigError("cannot infer the mesh format of '" + path +
-                        "' from its extension; set mesh.format to \"gmsh\" or \"abaqus\"");
+                        "' from its extension; SparLab reads Abaqus/CalculiX .inp files "
+                        "(set mesh.format to \"abaqus\")");
     }
+  }
+  if (format != "abaqus" && format != "calculix" && format != "inp") {
+    throw ConfigError("mesh.format must be \"auto\" or \"abaqus\", got \"" + format + "\"");
   }
   std::ifstream in(path);
   if (!in) throw IoError("cannot open mesh file '" + path + "'");
-  if (format == "gmsh") return read_gmsh(in, path, options, report);
-  if (format == "abaqus" || format == "calculix" || format == "inp") {
+  {
     const std::size_t slash = path.find_last_of('/');
     return read_abaqus_inp(in, path, slash == std::string::npos ? "." : path.substr(0, slash),
                            options, report);
   }
-  throw ConfigError("mesh.format must be \"auto\", \"gmsh\" or \"abaqus\", got \"" + format +
-                    "\"");
 }
 
 }  // namespace sparlab

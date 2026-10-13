@@ -1,7 +1,6 @@
 /// \file test_dofs.cpp
 /// \brief Degrees of freedom per node: the DOF manager's numbering, gather and
-///        scatter with rotational DOFs, and the refusal of rotations and
-///        moments on a model whose nodes carry translations only.
+///        scatter with rotational DOFs.
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
@@ -12,20 +11,6 @@
 
 using namespace sparlab;
 using namespace sparlab::testing;
-
-namespace {
-
-SelectorGroup nearest(const Vector3& x) {
-  SelectorGroup group;
-  Selector s;
-  s.kind = SelectorKind::NearestNode;
-  s.point = x;
-  group.members.push_back(s);
-  group.name = "nearest";
-  return group;
-}
-
-}  // namespace
 
 TEST_CASE("the DOF manager numbers six DOFs per node node-major", "[dofs]") {
   DofManager dofs(4, kMaxDofsPerNode);
@@ -70,31 +55,4 @@ TEST_CASE("displacement constraints carry six components", "[dofs]") {
   REQUIRE_FALSE(bc.fixes(4));
   REQUIRE(bc.fixes_rotation());
   REQUIRE_THROWS_AS(bc.set(6, true), ModelError);
-}
-
-TEST_CASE("a continuum model refuses rotations and moments", "[dofs][diagnostics]") {
-  CantileverCase c;
-  FemModel model = make_cantilever(c, 8, 2);
-  REQUIRE(model.dofs_per_node() == 2);
-
-  // A rotation constraint on a model without rotational DOFs.
-  {
-    DofManager dofs(model.mesh().num_nodes(), 2);
-    DisplacementConstraint bc;
-    bc.region = nearest(Vector3::Zero());
-    bc.fix_rz = true;
-    REQUIRE_THROWS_AS(apply_constraints(model.mesh(), {bc}, dofs), ConfigError);
-  }
-  // A nodal moment on a continuum mesh.
-  {
-    LoadCaseSpec load;
-    load.name = "moment";
-    PointLoadSpec p;
-    p.region = nearest(Vector3(c.length, 0.0, 0.0));
-    p.moment = Vector3(0.0, 0.0, 10.0);
-    load.point_loads.push_back(p);
-    REQUIRE_THROWS_AS(assemble_load_vector(model.mesh(), model.element(), load,
-                                           c.thickness, IntegrationOptions()),
-                      ConfigError);
-  }
 }

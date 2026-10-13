@@ -4,7 +4,6 @@
 
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/core/Logging.hpp"
-#include "sparlab/fem/StressRecovery.hpp"
 #include "sparlab/fem/TotalLagrangian.hpp"
 
 #include <Eigen/Dense>
@@ -27,6 +26,41 @@ namespace sparlab {
 namespace {
 
 using namespace detail;
+
+/// The von Mises stress of a plane stress state with the out-of-plane
+/// normal stress sz [Pa].
+Scalar von_mises_plane(Scalar sx, Scalar sy, Scalar sxy, Scalar sz) {
+  const Scalar j = 0.5 * ((sx - sy) * (sx - sy) + (sy - sz) * (sy - sz) + (sz - sx) * (sz - sx)) +
+                   3.0 * sxy * sxy;
+  return std::sqrt(std::max(j, 0.0));
+}
+
+/// The von Mises stress of a Voigt stress (3 entries in 2-D, the plane
+/// strain sz from the Poisson ratio; 6 in 3-D) [Pa].
+Scalar von_mises(const Vector& s, StressState state, Scalar poisson) {
+  if (s.size() == 3) {
+    const Scalar sx = s(0);
+    const Scalar sy = s(1);
+    const Scalar sxy = s(2);
+    const Scalar sz = (state == StressState::PlaneStrain) ? poisson * (sx + sy) : 0.0;
+    const Scalar j = 0.5 * ((sx - sy) * (sx - sy) + (sy - sz) * (sy - sz) +
+                            (sz - sx) * (sz - sx)) +
+                     3.0 * sxy * sxy;
+    return std::sqrt(std::max(j, 0.0));
+  }
+  if (s.size() == 6) {
+    const Scalar sx = s(0);
+    const Scalar sy = s(1);
+    const Scalar sz = s(2);
+    const Scalar j = 0.5 * ((sx - sy) * (sx - sy) + (sy - sz) * (sy - sz) +
+                            (sz - sx) * (sz - sx)) +
+                     3.0 * (s(3) * s(3) + s(4) * s(4) + s(5) * s(5));
+    return std::sqrt(std::max(j, 0.0));
+  }
+  std::ostringstream os;
+  os << "von_mises expects a Voigt vector of 3 or 6 components, received " << s.size();
+  throw ModelError(os.str());
+}
 
 #ifdef SPARLAB_HAVE_CHOLMOD
 constexpr bool kHaveSuiteSparse = true;
@@ -969,7 +1003,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
         return std::max(options_.displacement_tolerance * std::max(increment, 1.0e-300),
                         64.0 * eps * (x.norm() + coordinates));
       };
-      // Line search on the energy along du (see NonlinearStatic.cpp), with
+      // Line search on the energy along du, with
       // g(1) already known (NaN: the full step was invalid - an inverted
       // element or a node through a tool - and is halved).
       const auto line_search = [&](const Vector& x, const Vector& du, Scalar g0,

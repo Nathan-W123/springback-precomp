@@ -11,12 +11,11 @@
 /// where the previous one ended (or from an `AnalysisState` given to `run`,
 /// a restart) and commits its history only at converged increments, so a
 /// cut increment leaves no trace. The model's elements, kinematics
-/// (`finite`, the total Lagrangian formulation, or `small_strain`) and J2
-/// plasticity are those of the non-linear static analysis
-/// (NonlinearStatic.hpp): internal forces, tangent, the pure-evaluate /
-/// commit-on-convergence history and the mean dilatation of Q4 and Hex8 are
-/// its `NonlinearSystem`. No load case acts: the tools and the prescribed
-/// displacements drive the model.
+/// (`finite`, the total Lagrangian formulation, `finite_logarithmic` or
+/// `small_strain`, Elastoplastic.hpp) and plasticity are evaluated by the
+/// library's `NonlinearSystem`: internal forces, tangent, the pure-evaluate /
+/// commit-on-convergence history and the mean dilatation of Hex8. No load
+/// acts: the tools and the prescribed displacements drive the model.
 ///
 /// **Constraints per step.** Each step has its own Dirichlet partition, a
 /// list of displacement constraints (region, fixed components) with a mode:
@@ -110,7 +109,7 @@
 /// **Assumptions and limits.** Quasi-static (no inertia), isothermal; the
 /// penalty leaves a penetration of about \f$p\,h/(sE)\f$; the elastoplastic
 /// law is the additive split of the Green-Lagrange strain, meant for small
-/// elastic strains (NonlinearStatic.hpp) - plastic strains of order one in
+/// elastic strains (Elastoplastic.hpp) - plastic strains of order one in
 /// forming are beyond its accuracy for the stress, not for equilibrium; the
 /// mesh is never refined, trimmed or remapped.
 #pragma once
@@ -122,7 +121,6 @@
 #include "sparlab/fem/Elastoplastic.hpp"
 #include "sparlab/fem/ExplicitDynamics.hpp"
 #include "sparlab/fem/FemModel.hpp"
-#include "sparlab/fem/NonlinearStatic.hpp"
 #include "sparlab/fem/RigidTool.hpp"
 #include "sparlab/material/Hyperelastic.hpp"
 #include "sparlab/material/Plasticity.hpp"

@@ -121,6 +121,7 @@
 
 #include "sparlab/core/Types.hpp"
 #include "sparlab/fem/FemModel.hpp"
+#include "sparlab/material/Hyperelastic.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
 #include <string>
@@ -140,6 +141,32 @@ enum class Kinematics {
 std::string to_string(Kinematics kinematics);
 /// "finite", "small_strain" or "finite_logarithmic".
 Kinematics parse_kinematics(const std::string& text);
+
+/// Which elements of an elastoplastic material average their dilatation (see
+/// above); elastic materials always keep their plain operator, and plane
+/// stress and one-point elements have nothing to average.
+enum class MeanDilatation {
+  /// Q4 and Hex8, whose full integration locks under isochoric plastic flow.
+  Auto,
+  All,   ///< every element with several integration points
+  None
+};
+
+std::string to_string(MeanDilatation mode);
+/// "auto", "all" or "none".
+MeanDilatation parse_mean_dilatation(const std::string& text);
+
+/// How the elements of a non-linear system are evaluated (NonlinearSystem.hpp,
+/// the forming analysis and the explicit integrator).
+struct NonlinearOptions {
+  /// The elastic law with finite kinematics (small strain is linear
+  /// elasticity, logarithmic kinematics Hencky's law, which leaves it at its
+  /// default); an elastoplastic material takes the Saint Venant-Kirchhoff
+  /// form.
+  HyperelasticModel law = HyperelasticModel::SaintVenantKirchhoff;
+  Kinematics kinematics = Kinematics::Finite;
+  MeanDilatation mean_dilatation = MeanDilatation::Auto;
+};
 
 struct ElastoplasticElement {
   Vector internal_force;               ///< \f$f_e\f$ [N]

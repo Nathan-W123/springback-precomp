@@ -2,8 +2,8 @@
 /// \brief Hill48 anisotropic plasticity and Chaboche (multi-backstress
 ///        Armstrong-Frederick) kinematic hardening: the coefficients and the
 ///        material frame, the general closest-point return at a material
-///        point, the elastoplastic element with its non-symmetric tangent,
-///        and the solver's history.
+///        point, and the elastoplastic element with its non-symmetric
+///        tangent.
 ///
 /// Every check is exact or a derivative check. Uniaxial stress along any
 /// direction of the sheet is a proportional path for Hill48 with isotropic
@@ -20,14 +20,8 @@
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/core/Timer.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
-#include "sparlab/fem/ModelDiagnostics.hpp"
-#include "sparlab/fem/NonlinearStatic.hpp"
-#include "sparlab/io/CalculixWriter.hpp"
 #include "sparlab/io/Config.hpp"
-#include "sparlab/io/CsvWriter.hpp"
-#include "sparlab/io/ResultWriter.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -1001,8 +995,7 @@ TEST_CASE("the general return leaves its state on the yield surface to round-off
   }
 }
 
-TEST_CASE("a plane model refuses a Hill48 frame whose axes miss z, at the return and before "
-          "the solver's first step",
+TEST_CASE("a plane model refuses a Hill48 frame whose axes miss z at the return",
           "[plasticity][anisotropy][material]") {
   // A plane model has no out-of-plane shear strain; with z off the axes the
   // return would couple it to the in-plane flow (sigma_23, gamma^p_23 != 0).
@@ -1027,28 +1020,6 @@ TEST_CASE("a plane model refuses a Hill48 frame whose axes miss z, at the return
   const IsotropicMaterial aligned = make(section);
   REQUIRE(aligned.plasticity().plane_compatible());
   REQUIRE(plastic_return(aligned, StressState::PlaneStrain, strain, PlasticState()).yielding);
-  // The non-linear analysis of a plane model built with it (not through a
-  // deck, which refuses it already) stops before its first step.
-  StructuredMeshSpec spec;
-  spec.nx = spec.ny = 2;
-  FemModel model(make_perturbed_quad_mesh(spec, 0.1), tilted, 0.01, StressState::PlaneStress,
-                 IntegrationOptions());
-  DisplacementConstraint bc;
-  Selector s;
-  s.kind = SelectorKind::NodeIds;
-  s.ids.assign(1, 0);
-  bc.region.members.push_back(s);
-  bc.set(0, true, 1.0e-3);
-  bc.set(1, true, 0.0);
-  model.constraints().push_back(bc);
-  LoadCaseSpec lc;
-  lc.name = "pull";
-  lc.prescribed_displacement_only = true;
-  model.load_case_specs().push_back(lc);
-  model.finalize();
-  Assembler assembler(model);
-  REQUIRE_THROWS_AS(NonlinearStaticAnalysis(model, assembler, NonlinearOptions()).solve(0),
-                    ConfigError);
 }
 
 namespace {
@@ -1278,18 +1249,16 @@ TEST_CASE("Hill48 with recovering backstresses converges at first order to an in
 
 namespace {
 
-/// A single distorted element of each type.
+/// A distorted Hex8 element.
 FemModel one_element(ElementType type, StressState state, const IsotropicMaterial& m) {
   StructuredMeshSpec spec;
   spec.nx = spec.ny = spec.nz = 2;
   spec.lx = 1.0;
   spec.ly = 0.8;
   spec.lz = 0.6;
-  Mesh mesh = type == ElementType::Quad4  ? make_perturbed_quad_mesh(spec, 0.2)
-              : type == ElementType::Hex8 ? make_perturbed_hex_mesh(spec, 0.2)
-                                          : make_perturbed_tet10_mesh(spec, 0.2);
-  const Scalar thickness = mesh.dim() == 2 ? 0.05 : 1.0;
-  return FemModel(std::move(mesh), m, thickness, state, IntegrationOptions());
+  Mesh mesh = make_perturbed_hex_mesh(spec, 0.2);
+  REQUIRE(mesh.element_type() == type);
+  return FemModel(std::move(mesh), m, 1.0, state, IntegrationOptions());
 }
 
 Vector element_displacement(const FemModel& model, Index e, Scalar amplitude, unsigned seed) {
@@ -1337,10 +1306,7 @@ TEST_CASE("the element tangent of Hill48 with recovering backstresses is the non
     ElementType type;
     StressState state;
   };
-  const std::vector<Case> cases = {{ElementType::Quad4, StressState::PlaneStrain},
-                                   {ElementType::Quad4, StressState::PlaneStress},
-                                   {ElementType::Hex8, StressState::ThreeDimensional},
-                                   {ElementType::Tet10, StressState::ThreeDimensional}};
+  const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional}};
   for (const Case& c : cases) {
     FemModel model = one_element(c.type, c.state, m);
     for (const Kinematics kinematics : {Kinematics::SmallStrain, Kinematics::Finite}) {
@@ -1402,7 +1368,7 @@ TEST_CASE("finite-kinematics Hill48 plasticity is objective: the material frame 
   law.back = {{30.0e9, 300.0}};
   law.h = 1.0e9;
   const IsotropicMaterial m = make(law);
-  for (const ElementType type : {ElementType::Hex8, ElementType::Tet10}) {
+  for (const ElementType type : {ElementType::Hex8}) {
     FemModel model = one_element(type, StressState::ThreeDimensional, m);
     const Matrix x0 = model.mesh().element_coordinates(0);
     const std::vector<PlasticState> virgin(static_cast<std::size_t>(elastoplastic_points(model)));
@@ -1440,164 +1406,16 @@ TEST_CASE("finite-kinematics Hill48 plasticity is objective: the material frame 
   }
 }
 
-TEST_CASE("a homogeneous deformation of Hill48 with Chaboche hardening is exact on distorted "
-          "meshes, through the non-symmetric tangent",
-          "[plasticity][anisotropy][solver]") {
-  // Every boundary node carries u = lambda (F - I) X; the interior must
-  // follow, and every point hold the return of the same strain along the
-  // solver's own steps, loaded and unloaded past reverse yield.
-  for (const Kinematics kinematics : {Kinematics::SmallStrain, Kinematics::Finite}) {
-    for (const ElementType type : {ElementType::Quad4, ElementType::Hex8, ElementType::Tet10}) {
-      StructuredMeshSpec spec;
-      spec.nx = spec.ny = spec.nz = 3;
-      Mesh mesh = type == ElementType::Quad4  ? make_perturbed_quad_mesh(spec, 0.25)
-                  : type == ElementType::Hex8 ? make_perturbed_hex_mesh(spec, 0.25)
-                                              : make_perturbed_tet10_mesh(spec, 0.25);
-      const int dim = mesh.dim();
-      Law law = hill_law(0.0);
-      if (dim == 3) {
-        law.rd = Vector3(1.0, 0.4, 0.3);
-        law.nd = Vector3(-0.3, 0.1, 1.0);
-      } else {
-        law.rd = in_plane(35.0);
-      }
-      law.back = {{30.0e9, 300.0}, {2.0e9, 0.0}};
-      law.q = 60.0e6;
-      law.delta = 30.0;
-      const IsotropicMaterial m = make(law);
-      const StressState state =
-          dim == 2 ? StressState::PlaneStrain : StressState::ThreeDimensional;
-      Matrix f = Matrix::Identity(dim, dim);
-      f(0, 0) = 1.012;
-      f(1, 1) = 0.994;
-      f(0, 1) = 0.004;
-      if (dim == 3) f(2, 2) = 1.002;
-      if (kinematics == Kinematics::Finite) {
-        Matrix rot = Matrix::Identity(dim, dim);
-        rot(0, 0) = rot(1, 1) = std::cos(0.1);
-        rot(0, 1) = -std::sin(0.1);
-        rot(1, 0) = std::sin(0.1);
-        f = rot * f;
-      }
-      FemModel model(mesh, m, 1.0, state, IntegrationOptions());
-      std::vector<char> on_boundary(static_cast<std::size_t>(model.mesh().num_nodes()), 0);
-      for (const Mesh::BoundaryFace& face : model.mesh().boundary_faces()) {
-        for (Index node : face.nodes) on_boundary[static_cast<std::size_t>(node)] = 1;
-      }
-      for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-        if (!on_boundary[static_cast<std::size_t>(node)]) continue;
-        const Vector x = model.mesh().coordinates().col(node);
-        const Vector target = (f - Matrix::Identity(dim, dim)) * x;
-        DisplacementConstraint bc;
-        Selector s;
-        s.kind = SelectorKind::NodeIds;
-        s.ids.assign(1, node);
-        bc.region.members.push_back(s);
-        for (int k = 0; k < dim; ++k) bc.set(k, true, target(k));
-        model.constraints().push_back(bc);
-      }
-      LoadCaseSpec lc;
-      lc.name = "patch";
-      lc.prescribed_displacement_only = true;
-      model.load_case_specs().push_back(lc);
-      model.finalize();
-      Assembler assembler(model);
-      NonlinearOptions options;
-      options.kinematics = kinematics;
-      options.steps = 4;
-      options.load_path = {1.0, -0.2};
-      options.residual_tolerance = 1.0e-11;
-      options.displacement_tolerance = 1.0e-11;
-      const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, options).solve(0);
-      INFO(to_string(type) << " " << to_string(kinematics));
-      REQUIRE(r.completed);
-      REQUIRE(r.plastic);
-      Scalar err = 0.0;
-      for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-        const Vector x = model.mesh().coordinates().col(node);
-        err = std::max(err, (r.displacement.segment(node * dim, dim) -
-                             r.load_factor * (f - Matrix::Identity(dim, dim)) * x)
-                                .norm());
-      }
-      REQUIRE(err <= 1.0e-12);
-      PlasticState point;
-      PlasticResponse response;
-      Matrix h;
-      int reversed = 0;
-      for (const NonlinearStep& s : r.steps) {
-        h = s.load_factor * (f - Matrix::Identity(dim, dim));
-        const Matrix e_t = kinematics == Kinematics::Finite
-                               ? Matrix(0.5 * (h + h.transpose() + h.transpose() * h))
-                               : Matrix(0.5 * (h + h.transpose()));
-        Vector6 e6 = Vector6::Zero();
-        e6(0) = e_t(0, 0);
-        e6(1) = e_t(1, 1);
-        e6(3) = 2.0 * e_t(0, 1);
-        if (dim == 3) {
-          e6(2) = e_t(2, 2);
-          e6(4) = 2.0 * e_t(1, 2);
-          e6(5) = 2.0 * e_t(2, 0);
-        }
-        response = plastic_return(m, state, e6, point);
-        if (s.load_factor < 1.0 && response.yielding) ++reversed;
-        point = response.state;
-      }
-      REQUIRE(reversed > 0);  // reverse plastic flow on the way back
-      Matrix3 f3 = Matrix3::Identity();
-      f3.topLeftCorner(dim, dim) += h;
-      const Matrix3 s3 = stress_tensor(response.stress);
-      const Matrix3 cauchy = kinematics == Kinematics::Finite
-                                 ? Matrix3(f3 * s3 * f3.transpose() / f3.determinant())
-                                 : s3;
-      // Every stress component (sigma_33 of plane strain too) and the
-      // accumulated plastic strain of every element.
-      const Vector6 expected = stress_voigt(cauchy);
-      Vector own(dim == 3 ? 6 : 3);
-      if (dim == 3) {
-        own = expected;
-      } else {
-        own << expected(0), expected(1), expected(3);
-      }
-      Scalar stress_error = 0.0;
-      Scalar plastic_error = 0.0;
-      for (Index el = 0; el < model.mesh().num_elements(); ++el) {
-        stress_error =
-            std::max(stress_error, (r.element_cauchy.col(el) - own).cwiseAbs().maxCoeff());
-        if (dim == 2) {
-          stress_error = std::max(stress_error, std::abs(r.element_cauchy_zz(el) - expected(2)));
-        }
-        plastic_error = std::max(plastic_error, std::abs(r.element_plastic_strain(el) -
-                                                         point.equivalent_plastic_strain));
-      }
-      REQUIRE(stress_error <= 1.0e-11 * expected.cwiseAbs().maxCoeff());
-      REQUIRE(plastic_error <= 1.0e-11 * point.equivalent_plastic_strain);
-      REQUIRE(r.equilibrium.relative_force_error <= 1.0e-10);
-    }
-  }
-}
-
-TEST_CASE("the Hill48 and Chaboche keys of a deck parse, validate, run and are reported",
+TEST_CASE("the Hill48 and Chaboche keys of a deck parse and validate",
           "[plasticity][anisotropy][config]") {
-  // A plane-strain strip - a sheet section, normal y, so the model's z is
-  // the transverse direction - loaded and unloaded by a tip force, or a
-  // block of Hex8.
-  const auto deck = [](const std::string& plasticity, bool solid) {
-    const std::string mesh =
-        solid ? R"("mesh": { "type": "structured_hex", "nx": 4, "ny": 1, "nz": 1,
-                             "lx": 1.0, "ly": 0.1, "lz": 0.1 },)"
-              : R"("mesh": { "type": "structured_quad", "nx": 20, "ny": 2, "lx": 1.0,
-                             "ly": 0.1 },
-                   "model": { "thickness": 0.01, "stress_state": "plane_strain" },)";
-    return json::parse("{" + mesh + R"(
+  const auto deck = [](const std::string& plasticity) {
+    return json::parse(R"({
+      "mesh": { "type": "structured_hex", "nx": 4, "ny": 1, "nz": 1, "lx": 1.0, "ly": 0.1,
+                "lz": 0.1 },
       "material": { "youngs_modulus": 200e9, "poisson_ratio": 0.3,
                     "plasticity": )" + plasticity + R"( },
-      "boundary_conditions": [ { "fix": )" + (solid ? R"(["x", "y", "z"])" : R"(["x", "y"])") +
-                       R"(, "region": { "box": { "xmax": 0.0 } } } ],
-      "load_cases": [ { "name": "tip", "point_loads": [ { "force": )" +
-                       (solid ? R"([0.0, -30000.0, 0.0])" : R"([0.0, -8000.0])") + R"(,
-            "region": { "box": { "xmin": 1.0 } } } ] } ],
-      "nonlinear": { "enabled": true, "kinematics": "small_strain", "steps": 4,
-                     "load_path": [1.0, 0.0] } })");
+      "boundary_conditions": [ { "fix": ["x", "y", "z"], "region": { "box": { "xmax": 0.0 } } } ]
+    })");
   };
   const std::string sheet = R"({ "yield_stress": 170e6, "saturation_stress": 90e6,
       "saturation_rate": 12, "kinematic_hardening_modulus": 1e9,
@@ -1607,7 +1425,7 @@ TEST_CASE("the Hill48 and Chaboche keys of a deck parse, validate, run and are r
       "backstresses": [ { "modulus": 60e9, "recovery": 600 }, { "modulus": 8e9, "recovery": 60 },
                         { "modulus": 1e9 } ],
       "kinematic_integration": "backward_euler" })";
-  const Configuration config = parse_configuration(deck(sheet, false), "inline", true);
+  const Configuration config = parse_configuration(deck(sheet), "inline", true);
   const PlasticityParameters& p = config.material().plasticity();
   REQUIRE(p.criterion == YieldCriterion::Hill48);
   REQUIRE(p.hill.calibration == HillCalibration::RValues);
@@ -1624,93 +1442,14 @@ TEST_CASE("the Hill48 and Chaboche keys of a deck parse, validate, run and are r
   REQUIRE(p.kinematic_integration == KinematicIntegration::BackwardEuler);
   REQUIRE_FALSE(p.symmetric_tangent());
 
-  // The run loads the strip past yield and unloads it through the
-  // non-symmetric tangent.
-  {
-    FemModel model = build_model(config);
-    Assembler assembler(model);
-    const NonlinearResult r =
-        NonlinearStaticAnalysis(model, assembler, config.nonlinear.options).solve(0);
-    REQUIRE(r.completed);
-    REQUIRE(r.load_factor == 0.0);
-    REQUIRE(r.plastic_points > 0);
-    REQUIRE(r.displacement.cwiseAbs().maxCoeff() > 0.0);  // the permanent set
-    // Newton converges quadratically on the consistent, non-symmetric
-    // tangent: a few iterations per step.
-    int most = 0;
-    for (const NonlinearStep& s : r.steps) most = std::max(most, s.iterations);
-    REQUIRE(most <= 6);
-    // The system is declared non-symmetric: the iterations of a plastic step
-    // factorise the tangent by LU, which reports no inertia (-1). (The last
-    // step's count is the final factorisation's, of the tangent at the
-    // converged state: the continuum one, symmetric.)
-    int lu_steps = 0;
-    for (std::size_t i = 0; i + 1 < r.steps.size(); ++i) {
-      if (r.steps[i].yielding_points <= 0) continue;
-      REQUIRE(r.steps[i].negative_pivots == -1);
-      ++lu_steps;
-    }
-    REQUIRE(lu_steps > 0);
-    // Without recovery the same run keeps LDL^T and its inertia throughout.
-    {
-      Configuration symmetric = config;
-      PlasticityParameters linear = p;
-      for (Backstress& b : linear.backstresses) b.recovery = 0.0;
-      IsotropicMaterial mat = symmetric.material();
-      mat.set_plasticity(linear);
-      symmetric.set_material(mat);
-      FemModel sym_model = build_model(symmetric);
-      Assembler sym_assembler(sym_model);
-      const NonlinearResult rs =
-          NonlinearStaticAnalysis(sym_model, sym_assembler, config.nonlinear.options).solve(0);
-      REQUIRE(rs.completed);
-      REQUIRE(rs.plastic_points > 0);
-      for (const NonlinearStep& s : rs.steps) REQUIRE(s.negative_pivots >= 0);
-    }
-    // The summary reports the law.
-    TimingLedger timings;
-    const json::Value summary =
-        make_static_summary(config, model, diagnose_model(model), {}, {}, nullptr, timings);
-    const json::Value& plasticity = *summary.find("material")->find("plasticity");
-    REQUIRE(plasticity.find("yield_criterion")->string_value() == "hill48");
-    const json::Value& hill = *plasticity.find("anisotropy");
-    REQUIRE(hill.find("calibration")->string_value() == "r_values");
-    REQUIRE(hill.find("r90")->number_value() == 2.3);
-    REQUIRE(hill.find("coefficients")->find("F")->number_value() == Approx(p.hill.F));
-    REQUIRE(hill.find("sheet_normal")->array_items()[1].number_value() == 1.0);
-    REQUIRE(plasticity.find("backstresses")->array_items().size() == 3);
-    REQUIRE(plasticity.find("backstresses")->array_items()[0].find("recovery")->number_value() ==
-            600.0);
-    REQUIRE(plasticity.find("kinematic_integration")->string_value() == "backward_euler");
-    // CalculiX has no counterpart: the non-linear export is refused, with
-    // the reason.
-    REQUIRE(calculix_plasticity_obstacle(model.material()).find("Hill") != std::string::npos);
-    CalculixNonlinearExport nl;
-    nl.load_cases = {0};
-    nl.nlgeom = false;
-    ensure_directory("results/_test_tmp");
-    REQUIRE_THROWS_AS(write_calculix_decks(model, "results/_test_tmp/hill", "unit", &nl),
-                      IoError);
-    REQUIRE(write_calculix_decks(model, "results/_test_tmp/hill", "unit").size() == 1);
-  }
-  const auto obstacle = [&](const std::string& plasticity) {
-    return calculix_plasticity_obstacle(
-        parse_configuration(deck(plasticity, true), "inline", true).material());
-  };
-  REQUIRE(obstacle(R"({ "yield_stress": 250e6, "hardening_modulus": 1e9 })").empty());
-  REQUIRE(obstacle(R"({ "yield_stress": 250e6, "backstresses": [ { "modulus": 5e9,
-                        "recovery": 50 } ] })")
-              .find("recovery") != std::string::npos);
-  REQUIRE(obstacle(R"({ "yield_stress": 250e6, "backstresses": [ { "modulus": 5e9 } ] })")
-              .find("KINEMATIC") != std::string::npos);
+  REQUIRE(build_model(config).material().plasticity().criterion == YieldCriterion::Hill48);
 
   // The other calibrations, and the rolling angle.
   const Configuration ratios = parse_configuration(
       deck(R"({ "yield_stress": 250e6, "yield_criterion": "hill48",
                 "anisotropy": { "stress_ratios": { "sigma_45": 1.05, "sigma_90": 1.02,
                                                    "sigma_biaxial": 1.1 },
-                                "rolling_angle": 30 } })",
-           false),
+                                "rolling_angle": 30 } })"),
       "inline", true);
   const Hill48Parameters& hr = ratios.material().plasticity().hill;
   REQUIRE(hr.calibration == HillCalibration::StressRatios);
@@ -1724,8 +1463,7 @@ TEST_CASE("the Hill48 and Chaboche keys of a deck parse, validate, run and are r
                 "anisotropy": { "coefficients": { "F": 0.3, "G": 0.4, "H": 0.6, "L": 1.5,
                                                   "M": 1.5, "N": 1.4 },
                                 "rolling_direction": [1, 1, 0], "sheet_normal": [0, 0, 2] },
-                "backstresses": [ { "modulus": 5e9, "recovery": 50 } ] })",
-           true),
+                "backstresses": [ { "modulus": 5e9, "recovery": 50 } ] })"),
       "inline", true);
   const PlasticityParameters& pc = coefficients.material().plasticity();
   REQUIRE(pc.hill.calibration == HillCalibration::Coefficients);
@@ -1733,9 +1471,9 @@ TEST_CASE("the Hill48 and Chaboche keys of a deck parse, validate, run and are r
   REQUIRE(pc.hill.axes(0, 1) == Approx(std::sqrt(0.5)).epsilon(1e-15));
   REQUIRE(pc.kinematic_integration == KinematicIntegration::Exponential);  // the default
 
-  const auto refuses = [&](const std::string& plasticity, bool solid = true) {
+  const auto refuses = [&](const std::string& plasticity) {
     INFO(plasticity);
-    REQUIRE_THROWS_AS(parse_configuration(deck(plasticity, solid), "inline", true), ConfigError);
+    REQUIRE_THROWS_AS(parse_configuration(deck(plasticity), "inline", true), ConfigError);
   };
   const std::string y = R"("yield_stress": 250e6, )";
   const std::string hill48 = y + R"("yield_criterion": "hill48", )";
@@ -1761,15 +1499,6 @@ TEST_CASE("the Hill48 and Chaboche keys of a deck parse, validate, run and are r
   refuses("{" + hill48 + R"("anisotropy": { "r0": 2, "r45": 1, "r90": 2,
       "sheet_normal": [1, 0, 0] } })");  // parallel to the default rolling direction
   refuses("{" + hill48 + R"("anisotropy": { "r0": 2, "r45": 1, "r90": 2, "r_45": 1 } })");
-  // A plane model needs z along an axis of the frame.
-  refuses("{" + hill48 + R"("anisotropy": { "r0": 2, "r45": 1, "r90": 2,
-      "rolling_direction": [1, 0, 1], "sheet_normal": [0, 1, 0] } })",
-          false);
-  REQUIRE_NOTHROW(parse_configuration(
-      deck("{" + hill48 + R"("anisotropy": { "r0": 2, "r45": 1, "r90": 2,
-           "rolling_direction": [0, 0, 1], "sheet_normal": [0, 1, 0] } })",
-           false),
-      "inline", true));
   const std::string four =
       R"({ "modulus": 1e9, "recovery": 10 }, { "modulus": 1e9, "recovery": 10 },
          { "modulus": 1e9, "recovery": 10 }, { "modulus": 1e9, "recovery": 10 })";
@@ -1777,7 +1506,7 @@ TEST_CASE("the Hill48 and Chaboche keys of a deck parse, validate, run and are r
   refuses("{" + y + R"("kinematic_hardening_modulus": 1e9, "backstresses": [ )" + four +
           " ] }");
   REQUIRE_NOTHROW(
-      parse_configuration(deck("{" + y + R"("backstresses": [ )" + four + " ] }", true),
+      parse_configuration(deck("{" + y + R"("backstresses": [ )" + four + " ] }"),
                           "inline", true));
   refuses("{" + y + R"("backstresses": [ { "recovery": 10 } ] })");  // no modulus
   refuses("{" + y + R"("backstresses": [ { "modulus": 1e9, "recovery": -1 } ] })");

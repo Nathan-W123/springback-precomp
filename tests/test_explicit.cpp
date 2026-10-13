@@ -146,7 +146,9 @@ Mesh hex_block(Index nx, Index ny, Index nz, Scalar lx, Scalar ly, Scalar lz, Sc
 /// cell size (deterministically): no two cells alike.
 Mesh distorted(const Mesh& mesh, Scalar amount) {
   Matrix x = mesh.coordinates();
-  const Scalar h = mesh.mean_element_size();
+  Scalar measure = 0.0;
+  for (Index e = 0; e < mesh.num_elements(); ++e) measure += mesh.element_measure(e);
+  const Scalar h = std::cbrt(measure / static_cast<Scalar>(mesh.num_elements()));
   std::mt19937 rng(7);
   std::uniform_real_distribution<Scalar> d(-1.0, 1.0);
   for (Index j = 0; j < x.cols(); ++j) {
@@ -165,7 +167,6 @@ FemModel finalised(Mesh mesh, const IsotropicMaterial& m,
   } else {
     LoadCaseSpec lc;
     lc.name = "none";
-    lc.prescribed_displacement_only = true;
     model.load_case_specs().push_back(lc);
   }
   model.finalize();
@@ -722,7 +723,7 @@ TEST_CASE("the dedicated kernel's logarithmic strain holds at equal and nearly e
   WARN("largest relative difference at equal stretches: " << worst);
 }
 
-TEST_CASE("other elements, laws and kinematics take the generic element dispatch",
+TEST_CASE("other laws and kinematics take the generic element dispatch",
           "[explicit]") {
   const FemModel model = finalised(hex_block(2, 1, 1, 0.002, 0.001, 0.001), j2_material(),
                                    {clamp(box(-kInf, 1.0e-9))});
@@ -741,23 +742,6 @@ TEST_CASE("other elements, laws and kinematics take the generic element dispatch
   NonlinearOptions neo;
   neo.law = HyperelasticModel::NeoHookean;
   REQUIRE_FALSE(ExplicitDynamics(elastic, elastic_assembler, neo, {}, ExplicitOptions()).dedicated());
-  // A Q4 mesh.
-  StructuredMeshSpec spec;
-  spec.nx = 2;
-  spec.ny = 1;
-  spec.lx = 0.002;
-  spec.ly = 0.001;
-  FemModel quad(make_structured_quad_mesh(spec), default_material(), 0.001,
-                StressState::PlaneStrain, IntegrationOptions());
-  quad.constraints() = {clamp(box(-kInf, 1.0e-9), {0, 1})};
-  LoadCaseSpec none;
-  none.name = "none";
-  none.prescribed_displacement_only = true;
-  quad.load_case_specs().push_back(none);
-  quad.finalize();
-  const Assembler quad_assembler(quad);
-  REQUIRE_FALSE(ExplicitDynamics(quad, quad_assembler, small_strain(), {}, ExplicitOptions())
-                    .dedicated());
   ExplicitOptions off;
   off.dedicated_kernel = false;
   ExplicitDynamics generic(model, assembler, small_strain(), {}, off);

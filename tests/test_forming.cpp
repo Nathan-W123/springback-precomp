@@ -106,7 +106,6 @@ FemModel finalised(Mesh mesh, const IsotropicMaterial& m, Scalar thickness = 1.0
   model.constraints() = bcs;
   LoadCaseSpec lc;
   lc.name = "none";
-  lc.prescribed_displacement_only = true;
   model.load_case_specs().push_back(lc);
   model.finalize();
   return model;
@@ -326,36 +325,6 @@ TEST_CASE("the penalty contact tangent is the exact derivative of its forces, wi
       }
       if (shape == RigidTool::Shape::Plane) CHECK(lowest >= -1.0e-12 * top);
     }
-  }
-
-  // 2-D: a circle on a plane-strain strip, sliding with friction.
-  {
-    StructuredMeshSpec spec;
-    spec.nx = 24;
-    spec.ny = 2;
-    spec.lx = 0.012;
-    spec.ly = 0.002;
-    spec.y0 = -0.002;
-    FemModel model = finalised(make_structured_quad_mesh(spec), m, 0.01, StressState::PlaneStrain);
-    RigidTool tool;
-    tool.radius = 0.004;
-    tool.surface = box(-kInf, kInf, 0.0, kInf);
-    tool.friction = 0.2;
-    const Vector3 c(0.0061, 0.004 - 1.0e-4, 0.0);
-    tool.trajectory = path({0.0, 1.0}, {c, c + Vector3(1e-3, 0, 0)});
-    ToolContact contact(model, {tool});
-    Vector u = Vector::Zero(model.dofs().num_dofs());
-    contact.begin_increment(u, 0.0, 0.0, {1}, 1.0e-3);
-    for (Index d = 0; d < u.size(); d += 2) u(d) = 3.0e-5;  // slides the strip along x
-    int active = 0;
-    int slipping = 0;
-    bool symmetric = true;
-    const Scalar err2 = tangent_error(contact, model, u, 0.0, active, slipping, symmetric);
-    log::info("contact tangent vs central differences, 2-D circle, slip: ", err2, " (", active,
-              " node(s) in contact, ", slipping, " slipping)");
-    CHECK(err2 < 1.0e-6);
-    CHECK(active >= 2);
-    CHECK(slipping == active);
   }
 }
 
@@ -957,7 +926,7 @@ Scalar curvature(const Mesh& mesh, const Vector& u, Scalar length, Scalar h, Sca
     if (std::abs(x.y() - 0.5 * h) > 1.0e-12 || x.x() < margin || x.x() > length - margin) continue;
     const Scalar s = x.x() - 0.5 * length;
     rows.push_back({1.0, s, s * s});
-    values.push_back(u(2 * n + 1));
+    values.push_back(u(3 * n + 1));
   }
   Matrix a(static_cast<Eigen::Index>(rows.size()), 3);
   Vector y(static_cast<Eigen::Index>(rows.size()));
@@ -975,12 +944,13 @@ Scalar curvature(const Mesh& mesh, const Vector& u, Scalar length, Scalar h, Sca
 
 TEST_CASE("an elastoplastic beam bent past yield springs back by the exact elastic unloading",
           "[forming]") {
-  // A plane-stress beam L = 8 h (E = 200 GPa, sigma_y = 250 MPa, no
-  // hardening), small strain, bent by end displacements
-  // u_x = -k1 (x - L/2)(y - h/2) to k1 = 3 k_y in step 1 - the section in
-  // uniaxial stress, M(k1) = M_p (1 - (k_y/k1)^2/3) - then released onto
-  // 3-2-1 supports (a node fixed in x and y at the left end's mid-depth, one
-  // in y at the right end's) in step 2, which ramps out the end forces. The
+  // A beam L = 8 h of one Hex8 layer through its thickness t, free faces
+  // (E = 200 GPa, sigma_y = 250 MPa, no hardening), small strain, bent by
+  // end displacements u_x = -k1 (x - L/2)(y - h/2) to k1 = 3 k_y in step 1 -
+  // the section in uniaxial stress, M(k1) = M_p (1 - (k_y/k1)^2/3) - then
+  // released onto 3-2-1 supports (the left end's mid-depth node on z = 0
+  // fixed in x, y and z, the right end's in y and z, the left end's on z = t
+  // in y) in step 2, which ramps out the end forces. The
   // unloading is elastic (the outer fibre reverses by 1.44 sigma_y, short of
   // reverse yield at 2 sigma_y), so the curvature springs back by
   // M(k1) / (E I). Measured in the central half (the end forces' self-
@@ -1003,10 +973,12 @@ TEST_CASE("an elastoplastic beam bent past yield springs back by the exact elast
     StructuredMeshSpec spec;
     spec.nx = 8 * ny;
     spec.ny = ny;
+    spec.nz = 1;
     spec.lx = length;
     spec.ly = h;
-    const Mesh mesh = make_structured_quad_mesh(spec);
-    FemModel model = finalised(mesh, material, t, StressState::PlaneStress);
+    spec.lz = t;
+    const Mesh mesh = make_structured_hex_mesh(spec);
+    FemModel model = finalised(mesh, material);
     Assembler assembler(model);
     FormingOptions o;
     o.kinematics = Kinematics::SmallStrain;
@@ -1016,6 +988,7 @@ TEST_CASE("an elastoplastic beam bent past yield springs back by the exact elast
     bend.name = "bend";
     bend.increments = 10;
     Index left_mid = -1;
+    Index left_top = -1;
     Index right_mid = -1;
     for (Index n = 0; n < mesh.num_nodes(); ++n) {
       const Vector3 x = mesh.node(n);
@@ -1023,9 +996,13 @@ TEST_CASE("an elastoplastic beam bent past yield springs back by the exact elast
       const bool right = x.x() >= length - 1.0e-12;
       if (!left && !right) continue;
       const bool mid = std::abs(x.y() - 0.5 * h) < 1.0e-12;
-      if (mid) (left ? left_mid : right_mid) = n;
+      const bool bottom = x.z() <= 1.0e-12;
+      if (mid && bottom) (left ? left_mid : right_mid) = n;
+      if (mid && left && !bottom) left_top = n;
       bend.constraints.push_back(constraint(
-          node_set({n}), left && mid ? std::vector<int>{0, 1} : std::vector<int>{0},
+          node_set({n}),
+          left && mid ? (bottom ? std::vector<int>{0, 1, 2} : std::vector<int>{0, 1})
+                      : std::vector<int>{0},
           StepConstraint::Mode::Absolute,
           Vector3(-k1 * (x.x() - 0.5 * length) * (x.y() - 0.5 * h), 0.0, 0.0)));
     }
@@ -1033,8 +1010,9 @@ TEST_CASE("an elastoplastic beam bent past yield springs back by the exact elast
     FormingStep release;
     release.name = "release";
     release.type = FormingStep::Type::Release;
-    release.constraints = {constraint(node_set({left_mid}, "A"), {0, 1}),
-                           constraint(node_set({right_mid}, "B"), {1})};
+    release.constraints = {constraint(node_set({left_mid}, "A"), {0, 1, 2}),
+                           constraint(node_set({right_mid}, "B"), {1, 2}),
+                           constraint(node_set({left_top}, "C"), {1})};
     o.steps.push_back(release);
     const FormingResult r = FormingAnalysis(model, assembler, o).run();
     REQUIRE(r.completed);
@@ -1272,7 +1250,7 @@ TEST_CASE("the forming block of a deck is read in full, strictly, and refused wh
   CHECK(c.forming.snapshots == FormingConfig::Snapshots::Stride);
   // No load case in the deck: one empty case is supplied.
   REQUIRE(c.load_cases.size() == 1);
-  CHECK(c.load_cases[0].prescribed_displacement_only);
+  CHECK(c.load_cases[0].name == "forming");
 
   // A trajectory file resolves against the deck's directory.
   const std::filesystem::path dir =
