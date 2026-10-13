@@ -62,7 +62,7 @@ slightly worse.
   -0.22 mm with a single tool. The rim sag falls from -0.99 mm to -0.44 mm on
   the plate and to -0.22 mm with DSIF. DSIF is better than the plate on 5 of
   8 parts uncompensated, and 0.027 mm better on average. As on the cone of
-  `benchmarks/support_cone`, its error moves rather than goes: the deeper
+  `benchmarks/support_cone` (removed in the cleanup; at commit 7d571e6), its error moves rather than goes: the deeper
   part comes out 0.17 mm too shallow. The sine law gives a 0.78 mm gap
   (median over the walls), while the model's wall is 0.96 mm thick (median),
   so the support squeezes the wall wherever it reaches its opposite

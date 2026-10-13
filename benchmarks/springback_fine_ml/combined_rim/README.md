@@ -52,7 +52,7 @@ Picked per family among the TRAIN parts whose penalty-3 data run took at most th
 | truncated_cone-s2026-0010 | holdout | 17.06 | 3.21 | 31.9 | ok | 2750.509 | 0.229 | 0.064 | 0.275 |
 | truncated_cone-s2026-0015 | fit | 16.34 | 2.18 | 50.2 | ok | 4033.888 | 0.392 | 0.024 | 0.493 |
 
-Made by `python/scripts/combined_rim_ml.py` (rim-pass setup = `smoke_optimizer_edge.edge_setup(True)`: benchmarks/springback_fine's dsif strategy with benchmarks/support_cone's dsif_rim). Data set: benchmarks/springback_fine_ml/work/data_rim (kept apart from the plate data).
+Made by `python/scripts/combined_rim_ml.py` (rim-pass setup = `edge_setup(True)`: benchmarks/springback_fine's dsif strategy with the edge pass). Data set: benchmarks/springback_fine_ml/work/data_rim (kept apart from the plate data).
 
 ## All 8 test parts (run_all8.sh)
 
