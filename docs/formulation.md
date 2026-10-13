@@ -191,11 +191,11 @@ shape-function gradients elsewhere). The mass is that of the Hex8: the modes
 carry no inertia.
 
 **Non-linear analysis** (the forming analysis; small strain, `finite`,
-`finite_logarithmic`; elastic, neo-Hookean, J2, Hill48, Chaboche). The modes
-are internal, `r_alpha(u, alpha) = 0`, and on every evaluation of an element
-the parameters are found by Newton's method from the parameters committed
-at the last converged step, with every point's return from its committed
-state:
+`finite_logarithmic`; J2, Hill48, Chaboche, and elastic with small
+strain). The modes are internal, `r_alpha(u, alpha) = 0`, and on every
+evaluation of an element the parameters are found by Newton's method from
+the parameters committed at the last converged step, with every point's
+return from its committed state:
 
 ```
   alpha_0 = alpha_n,      alpha_{i+1} = alpha_i + s_i d_i,      d_i = -K_aa^-1 r_alpha
@@ -266,24 +266,21 @@ locks.
 **Hourglassing in compression.** The enhanced elements of finite
 deformation can lose stability under large compression although the
 material and the compatible element are stable (Wriggers and Reese 1996,
-*A note on enhanced strain methods for large deformations*, CMAME 135). On
-a neo-Hookean unit cube (`nu = 0.3`) in homogeneous uniaxial compression,
-the condensed tangent of the compression test loses definiteness between
-the stretches 0.66 and 0.65 in a spurious hourglass mode, while the
-standard Hex8's stays positive definite to 0.3 (unit test). A plastic
-material hourglasses much sooner, since its tangent keeps little deviatoric
-stiffness against the geometric stress term: a J2 cube (`E = 70 GPa`,
-`sigma_y = 100 MPa`, logarithmic strains) loses definiteness between the
-stretches 0.80 and 0.79 without hardening (about 21 % compression, plastic
-strain 0.23) and between 0.62 and 0.61 with `H = 300 MPa`; before that its
-smallest eigenvalue is 3 (hardening) to 20 (none) times below the standard
-element's (unit test). The onset thus depends on the hardening left, which
-saturating (Voce) hardening runs out of in forming. The thinning of a sheet
-under equibiaxial stretch - tensile stress - stays stable to a thickness
-stretch below 0.5. Springback (small elastic strains) is far from it; a
-formed part in in-plane compression of some 20 % (a flange, a wrinkle, a
-tool's contact zone) is not, and should be checked against the standard
-element there.
+*A note on enhanced strain methods for large deformations*, CMAME 135). A
+plastic material hourglasses early, since its tangent keeps little
+deviatoric stiffness against the geometric stress term: on a J2 unit cube
+(`E = 70 GPa`, `sigma_y = 100 MPa`, logarithmic strains) in homogeneous
+uniaxial compression, the condensed tangent of the compression test loses
+definiteness in a spurious hourglass mode between the stretches 0.80 and
+0.79 without hardening (about 21 % compression, plastic strain 0.23) and
+between 0.62 and 0.61 with `H = 300 MPa`, while the standard Hex8's stays
+positive definite to 0.55; before that its smallest eigenvalue is 3
+(hardening) to 20 (none) times below the standard element's (unit test).
+The onset thus depends on the hardening left, which saturating (Voce)
+hardening runs out of in forming. Springback (small elastic strains) is far
+from it; a formed part in in-plane compression of some 20 % (a flange, a
+wrinkle, a tool's contact zone) is not, and should be checked against the
+standard element there.
 
 **Limits.** The Taylor-corrected modes are exact in pure bending on
 affine cells (boxes, parallelepipeds) and lose much of their effect on
@@ -380,7 +377,7 @@ step factorises nothing (section 8).
 
 ## 6. Geometrically non-linear statics
 
-`fem/TotalLagrangian.cpp`, `material/Hyperelastic.cpp`,
+`fem/TotalLagrangian.cpp`, `fem/Elastoplastic.cpp`,
 `fem/NonlinearSystem.hpp`. The implicit steps of the forming analysis are
 quasi-static, with large displacement and rotation written on the reference
 configuration (total Lagrangian). With `H = grad_X u` the displacement
@@ -389,42 +386,34 @@ gradient, `F = I + H` the deformation gradient and
 
 ```
   R(u, t)  = f_int(u) - f_c(u, t) = 0 ,
-  f_int,e  = integral B_NL^T S dV0 ,       S = dW/dE  (second Piola-Kirchhoff)
+  f_int,e  = integral B_NL^T S dV0 ,       S: second Piola-Kirchhoff, section 7
   K_T,e    = integral ( B_NL^T D_T B_NL + G^T S G ) dV0 ,
 ```
 
 `f_c` the contact forces of the tools (`docs/forming.md`, section 1.2), where
 `B_NL` maps nodal displacement variations to `delta E` (its rows are
 `F_ki N_a,i` on the normal components, `F_ki N_a,j + F_kj N_a,i` on the
-engineering shears), `D_T = dS/dE` is the material tangent, and the second
-term is the initial-stress stiffness with the current `S`, `G` the matrix of
-shape-function gradients. The element's stiffness quadrature integrates
-everything.
+engineering shears), `D_T = dS/dE` is the consistent material tangent, and
+the second term is the initial-stress stiffness with the current `S`, `G`
+the matrix of shape-function gradients. The element's stiffness quadrature
+integrates everything.
 
-**Materials.** An elastic element takes one of two laws
-(`forming.material_model`); an elastoplastic one the return of section 7.
-
-- *Saint Venant-Kirchhoff*: `S = D E`, `W = 1/2 E : D : E`, with the linear
-  elasticity matrix `D` - large rotation, small strain. It is the simplest
-  frame-invariant extension of the linear law and reduces to it as the
-  strains vanish, but under compression its force falls again below a
-  stretch of `1/sqrt(3)`, so it is not a large-strain law.
-- *Compressible neo-Hookean*: `W = mu/2 (tr C - 3) - mu ln J + lambda/2 (ln J)^2`,
-  `S = mu (I - C^-1) + lambda ln J C^-1`,
-  `D_T,ijkl = lambda C^-1_ij C^-1_kl + (mu - lambda ln J)(C^-1_ik C^-1_jl + C^-1_il C^-1_jk)`,
-  with `C = F^T F`, `J = det F` and the Lame constants of `E` and `nu`, so it
-  too reduces to linear elasticity at small strain. `J - 1` is formed from the
-  invariants of `H` and `ln J` by `log1p`, without the cancellation of
-  `det F - 1` at small strain. The forming analysis takes it with `finite`
-  kinematics and elastic materials only. An inverted point (`J <= 0`) is an
-  error, which halves the line-search step or cuts the increment.
+**Materials.** Every element takes the return of section 7: `sparlab_form`
+models elastoplastic sheets, so under `finite` and `finite_logarithmic`
+kinematics every material - the deck's and every material region's - needs
+a `plasticity` block, and one without it is refused when the analysis is
+built. (The elastic large-strain laws, Saint Venant-Kirchhoff and
+neo-Hookean, and their deck key `forming.material_model` were removed.)
+The elastic part of the return is linear elasticity in the Green-Lagrange
+strain, `S = D E_e` - large rotation, small elastic strain - and Hencky's
+law in the logarithmic strain with `finite_logarithmic`.
 
 **Kinematics.** `finite` is the formulation above; `finite_logarithmic`
-takes the logarithmic strain for the elastic and the plastic law (section
-7); `small_strain` keeps the linear strain on the undeformed geometry, with
-no geometric stiffness - with elastic materials it reproduces the linear
-element (unit-tested), with plastic ones it is the classical small-strain
-elastoplastic analysis.
+takes the logarithmic strain for the plastic law (section 7);
+`small_strain` keeps the linear strain on the undeformed geometry, with no
+geometric stiffness - the one kinematics that takes an elastic material,
+where it reproduces the linear element (unit-tested); with plastic ones it
+is the classical small-strain elastoplastic analysis.
 
 **Newton's method.** Each increment of a forming step solves its residual
 by Newton's method with the consistent tangent - the elements, the contact
@@ -568,10 +557,10 @@ dilatation by the element's volume average,
 
 **Finite kinematics.** With `kinematics: finite` the return takes the
 Green-Lagrange strain `E` for the strain and gives the second
-Piola-Kirchhoff stress `S`: `E = E_e + E_p` with `S = D E_e`, the
-elastoplastic counterpart of the Saint Venant-Kirchhoff law, exact under
-any rigid rotation and meant for strains that stay small (at large
-displacement and rotation with small strain the materially non-linear
+Piola-Kirchhoff stress `S`: `E = E_e + E_p` with `S = D E_e` (linear
+elasticity in the Green-Lagrange strain, the Saint Venant-Kirchhoff form),
+exact under any rigid rotation and meant for strains that stay small (at
+large displacement and rotation with small strain the materially non-linear
 relations may be written between `S` and `E`; Bathe, *Finite Element
 Procedures*, 1996, ch. 6). The element takes `B_NL` of section 6,
 `f = int B_NL^T S dV_0`, `K = int B_NL^T C B_NL dV_0 + int (G^T S G) x I dV_0`.
@@ -649,15 +638,14 @@ eigenvalues, two equal, `C = I`, `C = s^2 I`, and gaps of `1e-9`, `1e-7`,
 `1e-4` (two and three eigenvalues) and on both sides of the series threshold
 (`P` to `4.1e-12`, `T : L` to `4.3e-12`: the differences' own accuracy).
 
-The elasticity is Hencky's, quadratic in `E_log`, for elastic elements too
-(the `material_model` is then not used; `neo_hookean` is refused).
+The elasticity is Hencky's, quadratic in `E_log`.
 
 `E_log` sees only `C = F^T F`, which is positive definite at an inverted
 point (`det F < 0`) too, where `E_log`, the energy and `tr E_log =
 ln |det F|` are those of a valid state with one axis reflected - an
 equilibrium the solver would otherwise accept. Each point therefore checks
-the sign of `det F`, and an inverted one fails the evaluation as with the
-neo-Hookean law: the line search shortens a step into it and an increment
+the sign of `det F`, and an inverted one fails the evaluation: the line
+search shortens a step into it and an increment
 that ends there is cut, so a block crushed to zero volume stops short of it
 instead of converging on the far side.
 

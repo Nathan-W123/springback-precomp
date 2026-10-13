@@ -68,7 +68,7 @@ SCHEMA = {
     "model": {"thickness": None, "stress_state": None, "integration": None},
     "boundary_conditions": [{"name": None, "fix": None, "value": None, "region": _REGION}],
     "forming": {
-        "kinematics": None, "material_model": None, "mean_dilatation": None,
+        "kinematics": None, "mean_dilatation": None,
         "friction_tangent": None, "solver": None,
         "tools": [{"name": None, "shape": None, "radius": None, "normal": None, "axis": None,
                    "surface": _REGION, "friction": None, "penalty": None,

@@ -47,10 +47,13 @@ What it does not do:
   makes the tangent non-symmetric, which then takes LU;
 * the backward-Euler return is first-order accurate on a non-proportional
   path, whatever the law;
-* the elastic laws for finite kinematics (`forming.material_model`) are Saint
-  Venant-Kirchhoff, valid for small strain only, and a compressible
-  neo-Hookean law for elastic models; the neo-Hookean law does not combine
-  with plasticity or with the logarithmic kinematics.
+* no purely elastic model at large rotation or strain: `finite` and
+  `finite_logarithmic` kinematics take elastoplastic materials only (every
+  material and material region needs a `plasticity` block; an elastic one
+  is refused), and an elastic material runs with `small_strain` kinematics
+  only, as linear elasticity. The elastic large-strain laws (Saint
+  Venant-Kirchhoff, neo-Hookean) and their deck key `forming.material_model`
+  were removed.
 
 **No temperature.** The material block still accepts thermal expansion,
 reference temperature and conductivity (precomp writes them), but the forming

@@ -214,7 +214,6 @@ refuses unknown ones).
 ```jsonc
 "forming": {
   "kinematics": "finite",                  // or "finite_logarithmic", "small_strain"
-  "material_model": "saint_venant_kirchhoff",
   "mean_dilatation": "auto",               // "auto" | "all" | "none" | true | false
   "friction_tangent": "exact",             // or "symmetric"
   "solver": "auto",                        // or "eigen"
@@ -243,8 +242,7 @@ refuses unknown ones).
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `kinematics` | `"finite"` | `"finite"` (total Lagrangian in the Green-Lagrange strain: large rotation, small strain), `"finite_logarithmic"` (total Lagrangian in the logarithmic strain: large-strain plasticity, as in `nonlinear`, `docs/configuration.md`) or `"small_strain"` |
-| `material_model` | `"saint_venant_kirchhoff"` | elastic law with finite kinematics (`"neo_hookean"` for elastic models only) |
+| `kinematics` | `"finite"` | `"finite"` (total Lagrangian in the Green-Lagrange strain: large rotation, small strain), `"finite_logarithmic"` (total Lagrangian in the logarithmic strain: large-strain plasticity, as in `nonlinear`, `docs/configuration.md`) or `"small_strain"`. `sparlab_form` models elastoplastic sheets: with `"finite"` or `"finite_logarithmic"` every material (and every material region's) needs a `plasticity` block, and an elastic one is refused when the analysis is built; only `"small_strain"` takes an elastic material (linear elasticity). The elastic large-strain laws and their key `material_model` were removed (`--strict-config` refuses the key) |
 | `mean_dilatation` | `"auto"` | B-bar of the elastoplastic standard Hex8 |
 | `friction_tangent` | `"exact"` | `"exact"` (consistent, LU) or `"symmetric"` (a positive semi-definite friction stiffness: Cholesky, linear convergence where nodes slip) |
 | `solver` | `"auto"` | `"auto"`: SuiteSparse when built in; `"eigen"`: Eigen's factorisations |
@@ -572,14 +570,13 @@ analysis, which gives the springback.
   reserves `s_c max(1, tangential_penalty)`, the stiffer of the two springs
   (a share of 4 or more is refused).
 * **Internal forces.** A dedicated Hex8 kernel (finite, logarithmic or small
-  strain; elastic Saint Venant-Kirchhoff or elastoplastic through the return
-  of `Plasticity.hpp` - with the logarithmic kinematics elastoplastic only;
-  mean dilatation) caches the reference gradients and
-  weights, updates the history in place, gathers the element forces per node
-  in ascending element order (the order of the serial assembly), and
-  allocates nothing. It is checked against the generic element dispatch
-  (`NonlinearSystem::evaluate`) at the start of every run and falls back to
-  it above a relative difference of `1e-10`; every other element,
+  strain; elastoplastic through the return of `Plasticity.hpp`, elastic
+  elements with small strain only; mean dilatation) caches the reference
+  gradients and weights, updates the history in place, gathers the element
+  forces per node in ascending element order (the order of the serial
+  assembly), and allocates nothing. It is checked against the generic element
+  dispatch (`NonlinearSystem::evaluate`) at the start of every run and falls
+  back to it above a relative difference of `1e-10`; every other element,
   formulation, kinematics or material takes the generic dispatch - the single
   entry point of the element technologies, so a new one works in explicit
   steps unchanged. The results are the same, bit for bit, on any number of
@@ -928,23 +925,21 @@ convergence check (halving the speed once) is the sufficient one.
   balance (10 time steps after the first contact) and the closed-form
   eigensolver's acceptance (64 units of round-off) are fixed, not settings.
 * **The dedicated kernel** covers Hex8 with the 2 x 2 x 2 rule in 3-D, finite
-  (Green-Lagrange), logarithmic (elastoplastic elements) or small-strain
-  kinematics, Saint Venant-Kirchhoff or the elastoplastic laws, no
-  temperature, follower pressure or centrifugal load; everything else (other
-  elements, the neo-Hookean law, an element technology added to the element
-  dispatch) runs through the generic dispatch - correct, but about 35 times
-  slower (a plastic 20 x 20 x 2 sheet on one thread: 21 us an element and
-  step against 0.59 us; it allocates its buffers at every step and forms
-  the plastic moduli it does not need). The logarithmic kinematics cost
-  3.6 us an element and step in the kernel on one thread (the cone's first
-  1 518 time steps, load 3.3; 4.0 us before the closed-form eigensolver,
-  which is accepted only where its residual shows it accurate - the gain,
-  10 %, is smaller than the solver's own 2-fold speed-up in isolation,
-  whose fallback rate on a real run was not measured; 30 us through the
-  dispatch): about 6 times the
-  Green-Lagrange kernel (section 7.4). No
-  reduced integration with hourglass control is provided: a fully
-  integrated Hex8 costs about 3 000 instructions a step in the kernel.
+  (Green-Lagrange), logarithmic or small-strain kinematics, the elastoplastic
+  laws (and linear elasticity with small strain), no temperature, follower
+  pressure or centrifugal load; everything else (other elements, an element
+  technology added to the element dispatch) runs through the generic
+  dispatch - correct, but about 35 times slower (a plastic 20 x 20 x 2 sheet
+  on one thread: 21 us an element and step against 0.59 us; it allocates its
+  buffers at every step and forms the plastic moduli it does not need). The
+  logarithmic kinematics cost 3.6 us an element and step in the kernel on one
+  thread (the cone's first 1 518 time steps, load 3.3; 4.0 us before the
+  closed-form eigensolver, which is accepted only where its residual shows it
+  accurate - the gain, 10 %, is smaller than the solver's own 2-fold speed-up
+  in isolation, whose fallback rate on a real run was not measured; 30 us
+  through the dispatch): about 6 times the Green-Lagrange kernel
+  (section 7.4). No reduced integration with hourglass control is provided: a
+  fully integrated Hex8 costs about 3 000 instructions a step in the kernel.
 * **Bulk viscosity** is not provided (it matters for shocks, not for
   quasi-static forming); tools translate (no spin); the time step is uniform
   over the model.
