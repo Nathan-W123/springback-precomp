@@ -12,7 +12,7 @@ features     the versioned per-node feature schema (FEATURE_SCHEMA_VERSION,
 dataset      Sample, the on-disk Dataset, feature tables
 generate     design of experiments, commanded-shape variants, SparlabSimulator,
              data generation
-models       GBMEnsemble, MLPEnsemble, TransferModel
+models       MLPEnsemble (the five-network ensemble), TransferModel
 uncertainty  grouped split-conformal calibration
 ood          the training envelope (Mahalanobis + kNN, point and part level)
 surrogate    DeviationSurrogate (model + features + calibration + envelope),
@@ -33,7 +33,7 @@ from .features import (FEATURE_SCHEMA_VERSION, FeatureConfig, FeatureSpec, featu
                        global_features, region_labels)
 from .generate import (DesignPoint, DesignSpace, PerturbationSpec, SparlabSimulator,
                        design_points, generate)
-from .models import GBMEnsemble, MLPEnsemble, TransferModel, model_from_state
+from .models import MLPEnsemble, TransferModel, model_from_state
 from .ood import OODEnvelope
 from .registry import load_model, read_manifest, save_model
 from .surrogate import DeviationSurrogate, train_surrogate, transfer_surrogate
@@ -45,7 +45,7 @@ __all__ = [
     "Sample", "Dataset", "Table", "build_table", "source_label", "SOURCE_LABELS",
     "DesignSpace", "DesignPoint", "design_points", "PerturbationSpec", "SparlabSimulator",
     "generate",
-    "GBMEnsemble", "MLPEnsemble", "TransferModel",
+    "MLPEnsemble", "TransferModel",
     "model_from_state",
     "ConformalCalibrator", "OODEnvelope",
     "DeviationSurrogate", "train_surrogate", "transfer_surrogate",

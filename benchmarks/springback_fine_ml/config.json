@@ -24,10 +24,6 @@
     "clearance": 0.001
   },
   "surrogate": {
-    "gbm": {
-      "max_iter": 300,
-      "n_members": 8
-    },
     "iterations": 8,
     "mlp": {
       "epochs": 40,

@@ -310,12 +310,9 @@ def stage_da(test_points, cfg, work: Path, workers: int) -> Dict[str, Dict[str, 
 
 
 def make_model(name: str, cfg: Dict[str, Any]):
-    from precomp.ml import GBMEnsemble, MLPEnsemble
+    from precomp.ml import MLPEnsemble
 
     sc = cfg["surrogate"]
-    if name == "gbm":
-        g = sc["gbm"]
-        return GBMEnsemble(g["n_members"], max_iter=g["max_iter"], seed=cfg["seed"])
     if name == "mlp":
         m = sc["mlp"]
         return MLPEnsemble(m["n_members"], hidden=tuple(m["hidden"]), epochs=m["epochs"],
@@ -736,7 +733,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                      "the defaults when absent)")
     ap.add_argument("--n-per-family", type=int, required=True,
                     help="design points per family (test + calibration + train)")
-    ap.add_argument("--models", nargs="*", default=["gbm"], choices=["gbm", "mlp"])
+    ap.add_argument("--models", nargs="*", default=["mlp"], choices=["mlp"])
     ap.add_argument("--workers", type=int, default=2, help="concurrent simulations")
     ap.add_argument("--threads", type=int, default=2, help="threads for training")
     ap.add_argument("--chunk", type=int, default=4, help="design points per generate call")

@@ -16,16 +16,16 @@ from precomp.ml import surrogate_compensate
 
 
 def test_surrogate_compensation_cuts_the_verified_deviation_by_a_large_factor(
-        gbm_surrogate, proxy_split):
+        mlp_surrogate, proxy_split):
     """On held-out parts: DA on the surrogate, then the compensated shape
     formed by the proxy. The deviation from the target falls several-fold
     against forming the target itself (both measured by the proxy)."""
     parts = [s for s in proxy_split["test"] if s.kind == "uncompensated"
-             and gbm_surrogate.assess(s.target, s.setup)["in_envelope"]][:3]
+             and mlp_surrogate.assess(s.target, s.setup)["in_envelope"]][:3]
     proxy = ProxySimulator()
     factors = []
     for s in parts:
-        res = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=6)
+        res = surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=6)
         assert res.stopped in ("within_interval", "stagnation", "iterations", "tolerance")
         assert res.data_source == "proxy - not physics"
         assert res.compensated.depth > s.target.depth         # over-bent against springback
@@ -45,17 +45,17 @@ def test_surrogate_compensation_cuts_the_verified_deviation_by_a_large_factor(
     assert min(factors) > 2.5 and np.median(factors) > 4.0, factors
 
 
-def test_stopping_rules(tmp_path, gbm_surrogate, proxy_split):
-    s = next(x for x in proxy_split["test"] if gbm_surrogate.assess(x.target, x.setup)[
+def test_stopping_rules(tmp_path, mlp_surrogate, proxy_split):
+    s = next(x for x in proxy_split["test"] if mlp_surrogate.assess(x.target, x.setup)[
         "in_envelope"])
-    res = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=5, tolerance=1.0)
+    res = surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=5, tolerance=1.0)
     assert res.stopped == "tolerance" and len(res.history) == 1
-    res = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=6,
+    res = surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=6,
                                interval_stop=True)
     assert res.stopped == "within_interval"                  # the model cannot resolve less
     h = res.history[-1]
     assert h["error"]["rms"] <= h["interval_halfwidth_rms_m"]
-    res = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=3, stagnation=0.0)
+    res = surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=3, stagnation=0.0)
     assert len(res.history) <= 3 and res.best_iteration < len(res.history)
     out = res.save(tmp_path / "c")
     assert (out / "compensated.npz").is_file() and (out / "residual_upper.npz").is_file()
@@ -65,15 +65,15 @@ def test_stopping_rules(tmp_path, gbm_surrogate, proxy_split):
     assert doc["predicted_residual"]["quantity"] == "predicted residual (surrogate)"
 
 
-def test_the_envelope_is_enforced(gbm_surrogate, proxy_split):
+def test_the_envelope_is_enforced(mlp_surrogate, proxy_split):
     """A target outside the envelope is refused unless allowed; an iterate
     that leaves it ends the loop at the best iterate inside."""
-    s = next(x for x in proxy_split["test"] if gbm_surrogate.assess(x.target, x.setup)[
+    s = next(x for x in proxy_split["test"] if mlp_surrogate.assess(x.target, x.setup)[
         "in_envelope"])
     thick = s.forming_setup().replace(thickness=2.5e-3)
     with pytest.raises(PrecompError, match="outside the model's training envelope"):
-        surrogate_compensate(s.target, thick, gbm_surrogate, iterations=2)
-    res = surrogate_compensate(s.target, thick, gbm_surrogate, iterations=2,
+        surrogate_compensate(s.target, thick, mlp_surrogate, iterations=2)
+    res = surrogate_compensate(s.target, thick, mlp_surrogate, iterations=2,
                                allow_out_of_envelope=True)
     assert res.allowed_out_of_envelope and res.in_envelope is False
     assert "thickness" in res.ood_target["reasons"]
@@ -94,12 +94,12 @@ def test_the_envelope_is_enforced(gbm_surrogate, proxy_split):
             a["in_envelope"] = self.calls == 1
             return a
 
-    res = surrogate_compensate(s.target, s.setup, Shrinking(gbm_surrogate), iterations=4)
+    res = surrogate_compensate(s.target, s.setup, Shrinking(mlp_surrogate), iterations=4)
     assert res.stopped == "left_envelope" and res.best_iteration == 0
     assert len(res.history) == 2 and res.history[-1]["predicted"] is False
 
 
-def test_a_setup_outside_the_training_envelope_is_refused_unless_allowed(gbm_surrogate):
+def test_a_setup_outside_the_training_envelope_is_refused_unless_allowed(mlp_surrogate):
     """Surrogate DA refuses a setup the model was not trained on (one layer, 4 mm
     elements, 1.5 mm steps), unless allowed - and then says so."""
     setup = FormingSetup(get_material("AA5754-O"), layers=1, element_size=4e-3,
@@ -107,30 +107,30 @@ def test_a_setup_outside_the_training_envelope_is_refused_unless_allowed(gbm_sur
     target = TruncatedCone(0.045, 45.0, 0.015, 0.005, 0.005).heightmap(
         Grid.centered(setup.meshed_blank_size, 4e-3))
     with pytest.raises(PrecompError, match="setup.layers"):
-        surrogate_compensate(target, setup, gbm_surrogate, iterations=3)
-    res = surrogate_compensate(target, setup, gbm_surrogate, iterations=3,
+        surrogate_compensate(target, setup, mlp_surrogate, iterations=3)
+    res = surrogate_compensate(target, setup, mlp_surrogate, iterations=3,
                                allow_out_of_envelope=True)
     assert res.in_envelope is False and res.compensated.grid.matches(target.grid)
 
 
-def test_surrogate_compensation_passes_the_conditioning_on(gbm_surrogate, proxy_split):
+def test_surrogate_compensation_passes_the_conditioning_on(mlp_surrogate, proxy_split):
     """The support's bound and masks and the tool's reach reach every DA step."""
     from precomp.toolpath import tool_reach_surface
 
-    s = next(x for x in proxy_split["test"] if gbm_surrogate.assess(x.target, x.setup)[
+    s = next(x for x in proxy_split["test"] if mlp_surrogate.assess(x.target, x.setup)[
         "in_envelope"])
     R = s.forming_setup().tool_radius
-    res = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=3,
+    res = surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=3,
                                stagnation=0.0, tool_radius=R, upper_bound=0.0)
     assert res.best_iteration > 0          # a compensated iterate, not the target
     c = res.compensated
     np.testing.assert_allclose(tool_reach_surface(c, R).z, c.z, atol=1e-9)
     hold = np.ones(s.target.grid.shape, dtype=bool)
     with pytest.raises(ValueError, match="adjusted region is empty"):
-        surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=2, hold_mask=hold)
+        surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=2, hold_mask=hold)
 
 
-def test_the_optimiser_does_not_predict_worse_than_da(gbm_surrogate, proxy_split):
+def test_the_optimiser_does_not_predict_worse_than_da(mlp_surrogate, proxy_split):
     """`surrogate_optimize` from a surrogate DA command (one DA update): its
     predicted RMS deviation over the part is at most DA's (the start is a
     candidate, every accepted step lowers the objective) - here clearly
@@ -142,11 +142,11 @@ def test_the_optimiser_does_not_predict_worse_than_da(gbm_surrogate, proxy_split
     from precomp.ml import correction_basis, surrogate_optimize
 
     s = next(x for x in proxy_split["test"] if x.kind == "uncompensated"
-             and gbm_surrogate.assess(x.target, x.setup)["in_envelope"])
+             and mlp_surrogate.assess(x.target, x.setup)["in_envelope"])
     # one DA update (two predictions): a start the optimiser can improve on
-    da = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=2,
+    da = surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=2,
                               stagnation=0.0)
-    opt = surrogate_optimize(s.target, s.setup, gbm_surrogate, start=da,
+    opt = surrogate_optimize(s.target, s.setup, mlp_surrogate, start=da,
                              level_knots=(0.0, 0.25, 0.6, 1.0), angular_orders=(2,),
                              max_iterations=3, max_time_s=60.0)
     assert opt.stopped == "optimizer" and opt.data_source == "proxy - not physics"
@@ -168,7 +168,7 @@ def test_the_optimiser_does_not_predict_worse_than_da(gbm_surrogate, proxy_split
     assert np.all(B[:, s.target.z >= -1e-6] == 0.0)
 
 
-def test_the_optimiser_std_weight_keeps_it_where_the_model_is_sure(gbm_surrogate, proxy_split):
+def test_the_optimiser_std_weight_keeps_it_where_the_model_is_sure(mlp_surrogate, proxy_split):
     """`std_weight` (default 0.25, backward compatible) weighs the model's std
     in the objective. A wrapped surrogate whose std grows with the distance
     from the start command (a model sure only of what it has seen): without
@@ -182,19 +182,19 @@ def test_the_optimiser_std_weight_keeps_it_where_the_model_is_sure(gbm_surrogate
 
     assert inspect.signature(surrogate_optimize).parameters["std_weight"].default == 0.25
     s = next(x for x in proxy_split["test"] if x.kind == "uncompensated"
-             and gbm_surrogate.assess(x.target, x.setup)["in_envelope"])
-    da = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=2,
+             and mlp_surrogate.assess(x.target, x.setup)["in_envelope"])
+    da = surrogate_compensate(s.target, s.setup, mlp_surrogate, iterations=2,
                               stagnation=0.0)
     c0 = da.compensated
 
     class Unsure:
-        """gbm_surrogate, with std = its own + 3 x |command - start|."""
+        """mlp_surrogate, with std = its own + 3 x |command - start|."""
 
         def __getattr__(self, name):
-            return getattr(gbm_surrogate, name)
+            return getattr(mlp_surrogate, name)
 
         def predict_deviation(self, commanded, setup):
-            mu, sd = gbm_surrogate.predict_deviation(commanded, setup)
+            mu, sd = mlp_surrogate.predict_deviation(commanded, setup)
             return mu, np.sqrt(np.asarray(sd) ** 2 + (3.0 * (commanded.z - c0.z)) ** 2)
 
     kw = dict(start=da, level_knots=(0.0, 0.25, 0.6, 1.0), angular_orders=(2,),
@@ -210,4 +210,4 @@ def test_the_optimiser_std_weight_keeps_it_where_the_model_is_sure(gbm_surrogate
     assert free.compensated.metadata["compensation"]["std_weight"] == 0.0
     assert sure.compensated.metadata["compensation"]["std_weight"] == 4.0
     with pytest.raises(ValueError, match="std_weight"):
-        surrogate_optimize(s.target, s.setup, gbm_surrogate, std_weight=-1.0, **kw)
+        surrogate_optimize(s.target, s.setup, mlp_surrogate, std_weight=-1.0, **kw)

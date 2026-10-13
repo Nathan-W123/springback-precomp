@@ -3,8 +3,9 @@
 The protocol, `DeviationModel` (a point model): ``fit(X, y, groups)`` on a
 feature table (rows = grid nodes, `groups` = sample ids), ``predict(X) ->
 (mean, std)`` in metres, ``feature_names``, ``to_state()`` /
-``from_state(state)``. The implementations are `GBMEnsemble`, `MLPEnsemble`
-and `TransferModel`.
+``from_state(state)``. The implementations are `MLPEnsemble` (the five-network
+ensemble the workflow trains) and `TransferModel` (a frozen base plus a
+correction fitted on a few parts of a new process).
 
 `precomp.ml.surrogate.DeviationSurrogate` turns a model into what the
 compensation code consumes (``predict_deviation(commanded, setup)``).
@@ -12,11 +13,11 @@ compensation code consumes (``predict_deviation(commanded, setup)``).
 Determinism: every model takes a `seed`; bootstrap draws, initialisations,
 shuffles and dropout masks derive from it, so a fit on the same table with the
 same seed gives the same model (on the same library versions and hardware).
-Threads: `n_threads` caps OpenMP (scikit-learn) and torch threads during fit and
-predict; None uses $PRECOMP_ML_THREADS, else the libraries' defaults.
+Threads: `n_threads` caps OpenMP/BLAS (threadpoolctl) and torch threads during
+fit and predict; None uses $PRECOMP_ML_THREADS, else the libraries' defaults.
 
-The torch models import torch lazily and raise ImportError with the install
-command when it is missing; they run on the CPU.
+The models import torch lazily and raise ImportError with the install command
+when it is missing; they run on the CPU.
 """
 
 from __future__ import annotations
@@ -29,11 +30,6 @@ from typing import (Any, Dict, Iterator, List, Mapping, Optional, Protocol, Sequ
                     runtime_checkable)
 
 import numpy as np
-# Imported here, not lazily: threadpoolctl caps only the OpenMP runtimes that
-# are already loaded when a limit is entered, and scikit-learn loads its own
-# with this module. A lazy import inside a limited block ran unlimited and,
-# on a loaded machine, twenty times slower.
-from sklearn.ensemble import HistGradientBoostingRegressor
 
 from .._util import PrecompError
 
@@ -178,141 +174,6 @@ def _grouped_holdout(groups: np.ndarray, fraction: float, rng: np.random.Generat
 
 
 # ---------------------------------------------------------------------------
-# Gradient-boosting ensemble
-# ---------------------------------------------------------------------------
-class GBMEnsemble:
-    """M HistGradientBoostingRegressor members on bootstraps of SAMPLES.
-
-    Each member is fitted on a resample of the groups (whole samples, with
-    replacement) with its own seed; the prediction is the members' mean and
-    the std their spread - an epistemic uncertainty that conformal
-    calibration (`uncertainty.ConformalCalibrator`) scales to a coverage.
-    `quantiles` (e.g. (0.05, 0.95)) adds quantile-loss members on the whole
-    table for a direct 5/95 % band (`predict_quantiles`).
-
-    `target_scale` names a feature column the target is divided by before
-    fitting (and the prediction multiplied by): by default the elastic
-    unloading curvature 3 sigma_f(0.2) / (E t), which takes the leading
-    material and thickness dependence of springback out of what the trees
-    must learn from a few dozen parts. None fits dz as it is.
-    """
-
-    kind = "point"
-
-    def __init__(self, n_members: int = 8, *, max_iter: int = 300,
-                 learning_rate: float = 0.08, max_leaf_nodes: int = 31,
-                 min_samples_leaf: int = 40, l2_regularization: float = 1e-3,
-                 max_features: float = 0.8, quantiles: Optional[Sequence[float]] = None,
-                 target_scale: Optional[str] = DEFAULT_TARGET_SCALE,
-                 seed: int = 0, n_threads: Optional[int] = None):
-        if n_members < 1:
-            raise ValueError("n_members must be >= 1")
-        self.params = dict(n_members=int(n_members), max_iter=int(max_iter),
-                           learning_rate=float(learning_rate),
-                           max_leaf_nodes=int(max_leaf_nodes),
-                           min_samples_leaf=int(min_samples_leaf),
-                           l2_regularization=float(l2_regularization),
-                           max_features=float(max_features),
-                           quantiles=None if quantiles is None else [float(q) for q in quantiles],
-                           target_scale=target_scale, seed=int(seed))
-        for q in self.params["quantiles"] or []:
-            if not 0 < q < 1:
-                raise ValueError(f"quantiles must lie in (0, 1), got {q}")
-        self.n_threads = n_threads
-        self.feature_names: List[str] = []
-        self.members: List[Any] = []
-        self.quantile_members: Dict[float, Any] = {}
-        self.y_mean = 0.0
-        self.y_scale = 1.0
-        self.n_train_groups = 0
-
-    def _estimator(self, seed: int, **extra: Any):
-        p = self.params
-        kw = dict(max_iter=p["max_iter"], learning_rate=p["learning_rate"],
-                  max_leaf_nodes=p["max_leaf_nodes"], min_samples_leaf=p["min_samples_leaf"],
-                  l2_regularization=p["l2_regularization"], early_stopping=False,
-                  random_state=seed)
-        if p["max_features"] < 1.0:
-            kw["max_features"] = p["max_features"]
-        kw.update(extra)
-        return HistGradientBoostingRegressor(**kw)
-
-    def fit(self, X: np.ndarray, y: np.ndarray, groups: np.ndarray, *,
-            feature_names: Optional[Sequence[str]] = None) -> "GBMEnsemble":
-        X, y, groups = _check_table(X, y, groups)
-        if len(y) == 0:
-            raise ValueError("GBMEnsemble.fit: empty table")
-        self.feature_names = list(feature_names) if feature_names is not None else \
-            [f"x{i}" for i in range(X.shape[1])]
-        yn = y / _target_scale(self, X)
-        self.y_mean = float(yn.mean())
-        self.y_scale = float(yn.std()) or 1.0
-        t = (yn - self.y_mean) / self.y_scale
-        rng = np.random.default_rng(self.params["seed"])
-        self.n_train_groups = int(np.unique(groups).size)
-        self.members = []
-        with thread_limit(self.n_threads):
-            for m in range(self.params["n_members"]):
-                rows = _group_bootstrap_rows(groups, rng) if self.n_train_groups > 1 else \
-                    np.arange(len(y))
-                est = self._estimator(self.params["seed"] * 1009 + m)
-                est.fit(X[rows], t[rows])
-                self.members.append(est)
-            self.quantile_members = {}
-            for q in self.params["quantiles"] or []:
-                est = self._estimator(self.params["seed"] * 1009 + 997, loss="quantile",
-                                      quantile=q)
-                est.fit(X, t)
-                self.quantile_members[q] = est
-        return self
-
-    def _require_fitted(self) -> None:
-        if not self.members:
-            raise PrecompError("GBMEnsemble is not fitted")
-
-    def predict_members(self, X: np.ndarray) -> np.ndarray:
-        """(M, n) member predictions [m]."""
-        self._require_fitted()
-        (X,) = _check_table(X)
-        _check_names(self, X)
-        with thread_limit(self.n_threads):
-            P = np.stack([est.predict(X) for est in self.members])
-        return (self.y_mean + self.y_scale * P) * _target_scale(self, X)
-
-    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        P = self.predict_members(X)
-        std = P.std(axis=0, ddof=1) if len(P) > 1 else np.zeros(P.shape[1])
-        return P.mean(axis=0), std
-
-    def predict_quantiles(self, X: np.ndarray) -> Dict[float, np.ndarray]:
-        """{q: dz [m]} of the quantile members (empty without `quantiles`)."""
-        self._require_fitted()
-        (X,) = _check_table(X)
-        s = _target_scale(self, X)
-        with thread_limit(self.n_threads):
-            return {q: (self.y_mean + self.y_scale * est.predict(X)) * s
-                    for q, est in self.quantile_members.items()}
-
-    def to_state(self) -> Dict[str, Any]:
-        self._require_fitted()
-        return {"class": "GBMEnsemble", "params": dict(self.params),
-                "feature_names": list(self.feature_names), "members": list(self.members),
-                "quantile_members": {str(q): e for q, e in self.quantile_members.items()},
-                "y_mean": self.y_mean, "y_scale": self.y_scale,
-                "n_train_groups": self.n_train_groups}
-
-    @classmethod
-    def from_state(cls, state: Mapping[str, Any]) -> "GBMEnsemble":
-        m = cls(**state["params"])
-        m.feature_names = list(state["feature_names"])
-        m.members = list(state["members"])
-        m.quantile_members = {float(q): e for q, e in state["quantile_members"].items()}
-        m.y_mean, m.y_scale = float(state["y_mean"]), float(state["y_scale"])
-        m.n_train_groups = int(state["n_train_groups"])
-        return m
-
-
-# ---------------------------------------------------------------------------
 # Deep ensemble of MLPs (torch)
 # ---------------------------------------------------------------------------
 LOGVAR_RANGE = (-14.0, 6.0)
@@ -343,8 +204,12 @@ class MLPEnsemble:
     `mse_warmup` epochs of squared error on the mean), with early stopping on a
     grouped validation split (whole samples) and its own seed. The prediction
     is the mixture: mean of the means, variance = mean of (variance + mean^2)
-    - mean^2. Feature standardisation, the target scale (`target_scale`, as
-    for `GBMEnsemble`) and the target standardisation are part of the state.
+    - mean^2. `target_scale` names a feature column the target is divided by
+    before fitting (and the prediction multiplied by): by default the elastic
+    unloading curvature 3 sigma_f(0.2) / (E t), which takes the leading
+    material and thickness dependence of springback out of what the networks
+    must learn from a few dozen parts. Feature standardisation, the target
+    scale and the target standardisation are part of the state.
     CPU only.
     """
 
@@ -537,7 +402,7 @@ class TransferModel:
     base; `accepted` and `validation` say which and why. `n_real` is the
     number of real parts (groups) seen; with none the model IS the base.
 
-    On proxy data (a GBM base, ten held-out parts, 1-4 "real" parts in three
+    On proxy data (a gradient-boosting base, ten held-out parts, 1-4 "real" parts in three
     draws each): with no shift, or 50 um noise, the validated correction was
     never accepted (error = the base's); with the rim and curvature 30-40 %
     stronger (base 0.18 mm) it cut the error to 0.09-0.15 mm from two parts
@@ -675,8 +540,7 @@ class TransferModel:
         return m
 
 
-MODEL_CLASSES = {"GBMEnsemble": GBMEnsemble, "MLPEnsemble": MLPEnsemble,
-                 "TransferModel": TransferModel}
+MODEL_CLASSES = {"MLPEnsemble": MLPEnsemble, "TransferModel": TransferModel}
 
 
 def model_from_state(state: Mapping[str, Any]):
@@ -688,5 +552,5 @@ def model_from_state(state: Mapping[str, Any]):
     return cls.from_state(state)
 
 
-__all__ = ["DeviationModel", "GBMEnsemble", "MLPEnsemble", "TransferModel", "model_from_state",
-           "thread_limit", "MODEL_CLASSES", "THREADS_ENV"]
+__all__ = ["DeviationModel", "MLPEnsemble", "TransferModel", "model_from_state", "thread_limit",
+           "MODEL_CLASSES", "THREADS_ENV"]

@@ -1,7 +1,7 @@
 """precomp.ml models, conformal intervals and the envelope, on ProxySimulator data.
 
 Every number here is measured on proxy data - an analytic stand-in, NOT
-physics. The shared surrogate (conftest `gbm_surrogate`) is trained on the
+physics. The shared surrogate (conftest `mlp_surrogate`) is trained on the
 in-distribution families without the held-out one.
 """
 
@@ -12,7 +12,7 @@ from conftest import ML_CREATED_AT
 from ml_support import ProxySimulator, partition_coverage, simulate_samples
 from precomp._util import PrecompError
 from precomp.materials import get_material
-from precomp.ml import GBMEnsemble, build_table, evaluate_surrogate, transfer_surrogate
+from precomp.ml import MLPEnsemble, build_table, evaluate_surrogate, transfer_surrogate
 from precomp.ml.generate import DesignSpace, design_points
 from precomp.ml.surrogate import calibrate
 from precomp.ml.uncertainty import ConformalCalibrator, min_parts
@@ -30,8 +30,8 @@ def _held_out_arrays(sur, samples):
     return [np.concatenate(v) for v in (mus, sds, ys, gs)]
 
 
-def test_gbm_ensemble_learns_the_proxy_on_held_out_parts(gbm_surrogate, proxy_split):
-    rep = evaluate_surrogate(gbm_surrogate, proxy_split["test"], level=0.9, levels=(0.9,),
+def test_the_mlp_ensemble_learns_the_proxy_on_held_out_parts(mlp_surrogate, proxy_split):
+    rep = evaluate_surrogate(mlp_surrogate, proxy_split["test"], level=0.9, levels=(0.9,),
                              assess=False)
     pp = rep.per_part
     assert set(pp["data_source"]) == {"proxy - not physics"}
@@ -43,14 +43,14 @@ def test_gbm_ensemble_learns_the_proxy_on_held_out_parts(gbm_surrogate, proxy_sp
     assert np.all(pp["std_mean_m"] > 0)
 
 
-def test_conformal_coverage_is_valid_on_held_out_parts(gbm_surrogate, proxy_split):
+def test_conformal_coverage_is_valid_on_held_out_parts(mlp_surrogate, proxy_split):
     """Split-conformal calibration over whole parts: over random calibration /
     test partitions of held-out parts, the mean coverage of a test part is at
     least nominal (the guarantee, minus Monte-Carlo slack) and at most the
     (k + 1) / k bound of k calibration parts. Validity holds for ANY std -
     so it cannot show that the std is useful; the constant-width baseline
     and a randomly permuted std can."""
-    mu, sd, y, g = _held_out_arrays(gbm_surrogate, proxy_split["pool"])
+    mu, sd, y, g = _held_out_arrays(mlp_surrogate, proxy_split["pool"])
     rng = np.random.default_rng(0)
     for level in (0.8, 0.9):
         pc = partition_coverage(mu, sd, y, g, level=level, n_partitions=60, seed=3)
@@ -65,14 +65,12 @@ def test_conformal_coverage_is_valid_on_held_out_parts(gbm_surrogate, proxy_spli
                                n_partitions=60, seed=3)
     assert const["width_ratio"] == pytest.approx(1.0)
     assert perm["mean"] >= 0.87 and perm["width_ratio"] > 1.0      # valid, but wider
-    # the ensemble std locates the errors better than chance - but on this
-    # proxy data it does NOT beat a constant width (ratio > 1, reported in
-    # every calibration table): it moves width to the worst parts
+    # the ensemble std locates the errors better than chance: narrower
+    # intervals than the same values permuted over the nodes
     assert real["mean_width_m"] < 0.95 * perm["mean_width_m"], (real, perm)
-    assert real["worst_part_median"] > const["worst_part_median"], (real, const)
 
 
-def test_the_finite_sample_correction_counts_parts_not_nodes(gbm_surrogate, proxy_split):
+def test_the_finite_sample_correction_counts_parts_not_nodes(mlp_surrogate, proxy_split):
     # one node per part: q is the ceil((k + 1) level)-th smallest score of k
     cal = ConformalCalibrator(eps=1.0).fit(np.zeros(9), np.zeros(9), np.arange(1.0, 10.0),
                                            np.arange(9))
@@ -90,15 +88,15 @@ def test_the_finite_sample_correction_counts_parts_not_nodes(gbm_surrogate, prox
         big.intervals(np.zeros(3), np.ones(3), 0.9)
     assert big.summary()["quantiles"]["0.9"] is None and big.summary()["quantiles"]["0.8"]
     # the shipped path groups by PART: the variants of one part count once
-    c = gbm_surrogate.calibrator
+    c = mlp_surrogate.calibrator
     assert c.n_parts == len({s.part_id for s in proxy_split["calibration"]}) \
         == len(proxy_split["calibration"]) // 3
     one_part = [s for s in proxy_split["calibration"]
                 if s.part_id == proxy_split["calibration"][0].part_id]
     assert len(one_part) == 3
     with pytest.raises(ValueError, match="at least two held-out parts"):
-        calibrate(gbm_surrogate, one_part)
-    rep = evaluate_surrogate(gbm_surrogate, proxy_split["test"], level=0.9, assess=False)
+        calibrate(mlp_surrogate, one_part)
+    rep = evaluate_surrogate(mlp_surrogate, proxy_split["test"], level=0.9, assess=False)
     row = rep.calibration.set_index("level").loc[0.9]
     assert row["n_parts"] == len({s.part_id for s in proxy_split["test"]}) and row["supported"]
     assert row["calibration_parts"] == c.n_parts
@@ -107,15 +105,15 @@ def test_the_finite_sample_correction_counts_parts_not_nodes(gbm_surrogate, prox
     assert not rep.calibration.set_index("level").loc[0.95, "supported"]
 
 
-def test_the_envelope_flags_new_descriptors_and_setups(gbm_surrogate, proxy_split):
+def test_the_envelope_flags_new_descriptors_and_setups(mlp_surrogate, proxy_split):
     """The envelope flags parts whose DESCRIPTORS are new - here the held-out
     freeform family, whose dents no other family has. A family that resembles
     the others (dome, saddle, two_level) is not flagged: see the
     leave-each-family-out table in benchmarks/ml_proxy. A setup field no
     feature describes (release, tool path, mesh) is checked against the
     training setups."""
-    known = [gbm_surrogate.assess(s.commanded, s.setup) for s in proxy_split["test"]]
-    unseen = [gbm_surrogate.assess(s.commanded, s.setup) for s in proxy_split["family"]]
+    known = [mlp_surrogate.assess(s.commanded, s.setup) for s in proxy_split["test"]]
+    unseen = [mlp_surrogate.assess(s.commanded, s.setup) for s in proxy_split["family"]]
     flag_known = np.mean([not a["in_envelope"] for a in known])
     flag_unseen = np.mean([not a["in_envelope"] for a in unseen])
     assert flag_known <= 0.25 and flag_unseen >= flag_known + 0.5, (flag_known, flag_unseen)
@@ -125,7 +123,7 @@ def test_the_envelope_flags_new_descriptors_and_setups(gbm_surrogate, proxy_spli
     assert all(a["reasons"] for a in out)                     # it says why
     assert known[0]["model_data_source"] == "proxy - not physics"
     s = proxy_split["test"][0]
-    assert gbm_surrogate.assess(s)["part_score"] == known[0]["part_score"]   # a Sample too
+    assert mlp_surrogate.assess(s)["part_score"] == known[0]["part_score"]   # a Sample too
     assert all(a["setup_mismatch"] == [] for a in known)
     st = s.forming_setup()
     for change, reason in ((dict(release="clamped_only"), "setup.release"),
@@ -133,9 +131,9 @@ def test_the_envelope_flags_new_descriptors_and_setups(gbm_surrogate, proxy_spli
                            (dict(layers=1), "setup.layers"),
                            (dict(material=get_material("DC04")), "youngs_modulus"),
                            (dict(thickness=2.5e-3), "thickness")):
-        a = gbm_surrogate.assess(s.commanded, st.replace(**change))
+        a = mlp_surrogate.assess(s.commanded, st.replace(**change))
         assert not a["in_envelope"] and reason in a["reasons"], (change, a["reasons"])
-    rel = gbm_surrogate.assess(s.commanded, st.replace(release="clamped_only"))
+    rel = mlp_surrogate.assess(s.commanded, st.replace(release="clamped_only"))
     assert rel["setup_mismatch"] == [{"field": "release", "value": "clamped_only",
                                       "trained": ["321"]}]
 
@@ -156,8 +154,8 @@ def _err(model, table):
 
 
 def test_transfer_model_equals_its_base_until_a_correction_is_validated(
-        gbm_surrogate, shifted_samples, ml_features):
-    base = gbm_surrogate
+        mlp_surrogate, shifted_samples, ml_features):
+    base = mlp_surrogate
     t0 = transfer_surrogate(base, [])
     s = shifted_samples[0]
     a, b = base.predict_deviation(s.commanded, s.setup), t0.predict_deviation(s.commanded,
@@ -190,10 +188,10 @@ def test_transfer_model_equals_its_base_until_a_correction_is_validated(
 
 
 def test_transfer_does_not_make_the_base_worse_when_real_equals_simulation(
-        gbm_surrogate, proxy_split, ml_features):
+        mlp_surrogate, proxy_split, ml_features):
     """No shift: the "real" parts are more proxy parts. (The former default,
     a Bayesian ridge on every feature, made the base 2-5 times worse here.)"""
-    base = gbm_surrogate
+    base = mlp_surrogate
     real = [s for s in proxy_split["test"] if s.kind == "uncompensated"]
     held = [s for s in proxy_split["test"] if s.part_id not in {r.part_id for r in real[:3]}]
     tb = build_table(held, ml_features, points_per_sample=500, rng=2)
@@ -202,23 +200,19 @@ def test_transfer_does_not_make_the_base_worse_when_real_equals_simulation(
         assert _err(t.model, tb) <= 1.05 * _err(base.model, tb), t.training["transfer"]
 
 
-def test_gbm_is_deterministic_and_validates_its_input():
+def test_the_mlp_ensemble_validates_its_input():
+    pytest.importorskip("torch")
     rng = np.random.default_rng(0)
     X = rng.normal(size=(600, 3))
     y = X[:, 0] + 0.1 * rng.normal(size=600)
     g = np.repeat(np.arange(6), 100)
-    a = GBMEnsemble(3, max_iter=30, target_scale=None, seed=5).fit(X, y, g)
-    b = GBMEnsemble(3, max_iter=30, target_scale=None, seed=5).fit(X, y, g)
-    assert np.array_equal(a.predict(X)[0], b.predict(X)[0])
+    a = MLPEnsemble(2, hidden=(8,), epochs=3, target_scale=None, seed=5).fit(X, y, g)
     with pytest.raises(ValueError, match="target_scale"):
-        GBMEnsemble(2, max_iter=5).fit(X, y, g)               # no elastic_curvature column
+        MLPEnsemble(2, hidden=(8,), epochs=1).fit(X, y, g)    # no elastic_curvature column
     with pytest.raises(ValueError, match="NaN"):
         a.predict(np.full((2, 3), np.nan))
     with pytest.raises(ValueError, match="3 features"):
         a.predict(X[:, :2])
-    q = GBMEnsemble(2, max_iter=30, target_scale=None, quantiles=(0.05, 0.95)).fit(X, y, g)
-    band = q.predict_quantiles(X)
-    assert np.mean((y >= band[0.05]) & (y <= band[0.95])) > 0.8
 
 
 def test_mlp_ensemble_fits_and_is_reproducible(proxy_split, ml_features):

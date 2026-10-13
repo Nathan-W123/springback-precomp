@@ -142,10 +142,11 @@ def proxy_split(proxy_samples):
 
 
 @pytest.fixture(scope="session")
-def gbm_surrogate(proxy_split, ml_features):
-    """A calibrated GBMEnsemble surrogate with its envelope, trained without
-    the held-out family."""
-    from precomp.ml import GBMEnsemble, train_surrogate
-    return train_surrogate(GBMEnsemble(4, max_iter=100), proxy_split["train"],
-                           calibration=proxy_split["calibration"], features=ml_features,
-                           points_per_sample=250, seed=0)
+def mlp_surrogate(proxy_split, ml_features):
+    """A calibrated five-member MLPEnsemble surrogate (the workflow's model,
+    smaller) with its envelope, trained without the held-out family."""
+    pytest.importorskip("torch")
+    from precomp.ml import MLPEnsemble, train_surrogate
+    return train_surrogate(MLPEnsemble(5, hidden=(64, 64), epochs=40, seed=0),
+                           proxy_split["train"], calibration=proxy_split["calibration"],
+                           features=ml_features, points_per_sample=250, seed=0)

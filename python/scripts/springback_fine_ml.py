@@ -6,7 +6,7 @@ fine benchmark's 8 test parts.
 usage:
     OPENBLAS_NUM_THREADS=1 python3 python/scripts/springback_fine_ml.py \
         --out benchmarks/springback_fine_ml --work benchmarks/springback_fine_ml/work \
-        --stages 18 26 [--models gbm mlp] [--workers 4] [--threads 4] [--data-only]
+        --stages 18 26 [--workers 4] [--threads 4] [--data-only]
 
 Every formed shape is a `sparlab_form` simulation (implicit, quasi-static,
 finite_logarithmic kinematics, Hill48 AA5754-O with nominal handbook data):
@@ -24,9 +24,9 @@ Protocol (config.json, written from `PROTOCOL` when absent):
     its simulated part (vertical, alpha 1, no smoothing, 65 deg wall limit,
     the plate's masks and bound - the defaults - and the command clipped to
     the tool's reach), both simulated (`precomp.ml.generate`);
-  * models: GBMEnsemble and MLPEnsemble as in benchmarks/springback (57
-    point features, 2000 nodes per sample, splits grouped by part, conformal
-    calibration on the calibration parts, training envelope enforced);
+  * model: MLPEnsemble, five networks of 128 x 128 (57 point features, 2000
+    nodes per sample, splits grouped by part, conformal calibration on the
+    calibration parts, training envelope enforced);
   * ML first shot: `surrogate_compensate` (<= 8 predictions, stop at < 2 %
     predicted improvement, keep the best predicted iterate, reach clip) of
     each test target with the training setup (penalty 3: the setup the model
@@ -96,7 +96,6 @@ PROTOCOL: Dict[str, Any] = {
     "da": {"alpha": 1.0, "direction": "vertical", "smoothing": None,
            "max_wall_angle_deg": 65.0, "tool_reach": True},
     "surrogate": {"iterations": 8, "stagnation": 0.02, "points_per_sample": 2000,
-                  "gbm": {"n_members": 8, "max_iter": 300},
                   "mlp": {"n_members": 5, "hidden": [128, 128], "epochs": 40}},
     "baseline": "benchmarks/springback_fine/cases.csv, strategy backing_plate (penalty 10)",
     "fe_da_fixed": "fe_da_fixed/cases.csv (penalty 10, fixed decks, reach clip)",
@@ -104,7 +103,7 @@ PROTOCOL: Dict[str, Any] = {
     "timeout_s": 8 * 3600.0,
 }
 
-METHOD_ORDER = ["uncompensated", "FE-DA-1", "FE-DA-2", "FE-DA-1 fixed", "ML-GBM", "ML-MLP"]
+METHOD_ORDER = ["uncompensated", "FE-DA-1", "FE-DA-2", "FE-DA-1 fixed", "ML-MLP"]
 
 
 def log(msg: str) -> None:
@@ -598,7 +597,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--work", required=True, help="run cache, data set, models (large)")
     ap.add_argument("--stages", type=int, nargs="+", required=True,
                     help="design points per family, one stage each, in order (e.g. 18 26)")
-    ap.add_argument("--models", nargs="*", default=["gbm", "mlp"], choices=["gbm", "mlp"])
+    ap.add_argument("--models", nargs="*", default=["mlp"], choices=["mlp"])
     ap.add_argument("--workers", type=int, default=4, help="simulations at a time")
     ap.add_argument("--threads", type=int, default=4, help="threads for training")
     ap.add_argument("--data-only", action="store_true", help="generate the data, no ML")
