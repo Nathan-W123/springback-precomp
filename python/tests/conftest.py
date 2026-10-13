@@ -115,7 +115,8 @@ def proxy_samples(ml_threads):
     paths), three commanded variants each, on a 4 mm grid, formed by the
     ProxySimulator. (Every job has a contour path; the proxy's own check of
     that, which costs 10 s here, is tested in test_ml_generate.)"""
-    from precomp.ml import DesignSpace, ProxySimulator, design_points, simulate_samples
+    from ml_support import ProxySimulator, simulate_samples
+    from precomp.ml import DesignSpace, design_points
     space = DesignSpace(grid_spacing=4e-3, materials=("AA5754-O",), process={},
                         base_setup={"toolpath_style": "contour"})
     points = design_points(space, 7, seed=11)
@@ -128,8 +129,7 @@ def proxy_samples(ml_threads):
 def proxy_split(proxy_samples):
     """Grouped (by part) split of the in-distribution families: train (~45 %),
     calibration and test (the rest, halved); plus the held-out family."""
-    from precomp.ml import family_split, grouped_split
-    from precomp.ml.dataset import index_frame
+    from ml_support import family_split, grouped_split, index_frame
 
     byid = {s.sample_id: s for s in proxy_samples}
     rest, fam = family_split(proxy_samples, ML_HELD_OUT_FAMILY)

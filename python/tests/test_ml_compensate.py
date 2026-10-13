@@ -11,7 +11,8 @@ from precomp.fea import FormingSetup
 from precomp.geometry import Grid, TruncatedCone
 from precomp.materials import get_material
 from precomp.metrology import metrics, region_masks, vertical_deviation
-from precomp.ml import ProxySimulator, surrogate_compensate
+from ml_support import ProxySimulator
+from precomp.ml import surrogate_compensate
 
 
 def test_surrogate_compensation_cuts_the_verified_deviation_by_a_large_factor(

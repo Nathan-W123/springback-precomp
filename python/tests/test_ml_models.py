@@ -9,13 +9,12 @@ import numpy as np
 import pytest
 
 from conftest import ML_CREATED_AT
+from ml_support import ProxySimulator, partition_coverage, simulate_samples
 from precomp._util import PrecompError
 from precomp.materials import get_material
-from precomp.ml import (GBMEnsemble, ProxySimulator, build_table,
-                        evaluate_surrogate, simulate_samples, transfer_surrogate)
+from precomp.ml import GBMEnsemble, build_table, evaluate_surrogate, transfer_surrogate
 from precomp.ml.generate import DesignSpace, design_points
 from precomp.ml.surrogate import calibrate
-from ml_support import partition_coverage
 from precomp.ml.uncertainty import ConformalCalibrator, min_parts
 
 

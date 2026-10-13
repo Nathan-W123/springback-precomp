@@ -535,65 +535,6 @@ class Dataset:
                            stratify=stratify, n_jobs=n_jobs)
 
 
-# ---------------------------------------------------------------------------
-# Grouped splits
-# ---------------------------------------------------------------------------
-SPLIT_KEYS = {"sample": "sample_id", "part": "part_id", "family": "family"}
-
-
-def index_frame(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]]) -> pd.DataFrame:
-    """The index (sample_id, part_id, family, ...) of a data set, a frame or samples."""
-    if isinstance(samples, Dataset):
-        return samples.index()
-    if isinstance(samples, pd.DataFrame):
-        return samples
-    return pd.DataFrame([s.index_entry() for s in samples])
-
-
-def _groups(index: pd.DataFrame, by: str) -> np.ndarray:
-    if by not in SPLIT_KEYS:
-        raise ValueError(f"by must be one of {sorted(SPLIT_KEYS)}, got {by!r}")
-    return index[SPLIT_KEYS[by]].astype(str).to_numpy()
-
-
-def grouped_split(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]], *,
-                  test_fraction: float, seed: int, by: str = "part"
-                  ) -> Tuple[List[str], List[str]]:
-    """(train ids, test ids): whole groups (`by` "part", "sample" or "family")
-    go to the test side until it holds `test_fraction` of the groups
-    (at least one, never all)."""
-    if not 0 < test_fraction < 1:
-        raise ValueError("test_fraction must lie in (0, 1)")
-    idx = index_frame(samples)
-    g = _groups(idx, by)
-    uniq = np.unique(g)
-    if uniq.size < 2:
-        raise ValueError(f"need at least two {by} groups to split, found {uniq.size}")
-    rng = np.random.default_rng(seed)
-    perm = rng.permutation(uniq)
-    n_test = int(min(max(1, round(test_fraction * uniq.size)), uniq.size - 1))
-    test_groups = set(perm[:n_test])
-    ids = idx["sample_id"].astype(str).to_numpy()
-    test = [i for i, gg in zip(ids, g) if gg in test_groups]
-    train = [i for i, gg in zip(ids, g) if gg not in test_groups]
-    return train, test
-
-
-def family_split(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]],
-                 holdout: Union[str, Sequence[str]]) -> Tuple[List[str], List[str]]:
-    """Leave-family-out: (ids of the other families, ids of `holdout`)."""
-    idx = index_frame(samples)
-    hold = {holdout} if isinstance(holdout, str) else set(holdout)
-    fam = idx["family"].astype(str).to_numpy()
-    missing = hold - set(fam)
-    if missing:
-        raise ValueError(f"no sample of the families {sorted(missing)}")
-    ids = idx["sample_id"].astype(str).to_numpy()
-    return ([i for i, f in zip(ids, fam) if f not in hold],
-            [i for i, f in zip(ids, fam) if f in hold])
-
-
 __all__ = ["Sample", "Dataset", "Table", "build_table", "sample_table", "stratified_nodes",
-           "grouped_split", "family_split", "index_frame",
            "source_label", "SOURCES", "SOURCE_LABELS", "KINDS", "MASKS", "REGION_NAMES",
            "DATASET_FORMAT"]

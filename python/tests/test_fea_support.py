@@ -573,7 +573,7 @@ def test_a_model_refuses_a_setup_with_a_support_it_was_not_trained_on(base):
 def test_the_proxy_refuses_a_setup_with_support(base, cone):
     """The proxy knows single-point forming only; it does not give its
     numbers under a supported setup's name."""
-    from precomp.ml import ProxySimulator
+    from ml_support import ProxySimulator
 
     proxy = ProxySimulator()
     assert proxy.deviation(cone, base).shape == cone.grid.shape

@@ -11,8 +11,8 @@ from precomp._util import PrecompError
 from precomp.fea import FormingSetup
 from precomp.geometry import Grid, TruncatedCone
 from precomp.materials import get_material
-from precomp.ml.dataset import (Dataset, Sample, build_table, family_split, grouped_split,
-                                index_frame, source_label)
+from ml_support import family_split, grouped_split, index_frame
+from precomp.ml.dataset import Dataset, Sample, build_table, source_label
 from precomp.ml.features import FeatureConfig
 from precomp.toolpath import spiral_toolpath
 

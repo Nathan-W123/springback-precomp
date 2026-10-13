@@ -9,9 +9,9 @@ Modules
 -------
 features     the versioned per-node feature schema (FEATURE_SCHEMA_VERSION,
              FeatureSpec, FeatureConfig, feature_maps)
-dataset      Sample, the on-disk Dataset, feature tables, grouped splits
+dataset      Sample, the on-disk Dataset, feature tables
 generate     design of experiments, commanded-shape variants, SparlabSimulator,
-             ProxySimulator (analytic, NOT physics), data generation
+             data generation
 models       GBMEnsemble, MLPEnsemble, TransferModel
 uncertainty  grouped split-conformal calibration
 ood          the training envelope (Mahalanobis + kNN, point and part level)
@@ -27,13 +27,12 @@ physics" or "scan". torch is needed only for MLPEnsemble.
 
 from .compensate import (SurrogateCompensation, SurrogatePredictor, correction_basis,
                          surrogate_compensate, surrogate_optimize)
-from .dataset import (SOURCE_LABELS, Dataset, Sample, Table, build_table, family_split,
-                      grouped_split, source_label)
+from .dataset import SOURCE_LABELS, Dataset, Sample, Table, build_table, source_label
 from .evaluate import EvaluationReport, evaluate_surrogate
 from .features import (FEATURE_SCHEMA_VERSION, FeatureConfig, FeatureSpec, feature_maps,
                        global_features, region_labels)
-from .generate import (DesignPoint, DesignSpace, PerturbationSpec, ProxyParams, ProxySimulator,
-                       SparlabSimulator, design_points, generate, simulate_samples)
+from .generate import (DesignPoint, DesignSpace, PerturbationSpec, SparlabSimulator,
+                       design_points, generate)
 from .models import GBMEnsemble, MLPEnsemble, TransferModel, model_from_state
 from .ood import OODEnvelope
 from .registry import load_model, read_manifest, save_model
@@ -43,10 +42,9 @@ from .uncertainty import ConformalCalibrator
 __all__ = [
     "FEATURE_SCHEMA_VERSION", "FeatureConfig", "FeatureSpec", "feature_maps",
     "global_features", "region_labels",
-    "Sample", "Dataset", "Table", "build_table", "grouped_split",
-    "family_split", "source_label", "SOURCE_LABELS",
-    "DesignSpace", "DesignPoint", "design_points", "PerturbationSpec", "ProxyParams",
-    "ProxySimulator", "SparlabSimulator", "generate", "simulate_samples",
+    "Sample", "Dataset", "Table", "build_table", "source_label", "SOURCE_LABELS",
+    "DesignSpace", "DesignPoint", "design_points", "PerturbationSpec", "SparlabSimulator",
+    "generate",
     "GBMEnsemble", "MLPEnsemble", "TransferModel",
     "model_from_state",
     "ConformalCalibrator", "OODEnvelope",

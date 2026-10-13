@@ -4,15 +4,15 @@ import numpy as np
 import pytest
 
 from conftest import ML_CREATED_AT, run_count
+from ml_support import PROXY_LABEL, ProxySimulator
 from precomp._util import PrecompError
 from precomp.fea import FormingSetup
 from precomp.geometry import Grid, Pyramid, TruncatedCone
 from precomp.materials import get_material
 from precomp.metrology import flange_mask, part_mask
 from precomp.ml.dataset import Dataset
-from precomp.ml.generate import (PROXY_LABEL, DesignSpace, PerturbationSpec, ProxySimulator,
-                                 SimOutcome, SparlabSimulator, design_points, generate,
-                                 perturbed_commanded)
+from precomp.ml.generate import (DesignSpace, PerturbationSpec, SimOutcome, SparlabSimulator,
+                                 design_points, generate, perturbed_commanded)
 
 
 def test_the_design_is_deterministic_valid_and_within_bounds():
