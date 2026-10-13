@@ -9,11 +9,6 @@ shape against the target and against the part's baseline run.
 Variants (spec keys, all optional):
   setup       : FormingSetup.replace(**setup) (blank_size, clamp_margin,
                 step_down, tool_radius, friction, ...)
-  robot       : {"C": 3x3 [m/N] | "iso_um_per_N": c, "forces_from": "base" |
-                <variant name> | "cache"} - the tool centre is displaced by
-                C f(t) along the path (f = force on the tool, interpolated in
-                pseudo-time from that run's tool_forces.csv): where a compliant
-                robot commanded along the nominal path actually goes
   offset      : [dx, dy, dz] [m] added to every in-contact path point (a
                 constant path / calibration error)
   dsif        : {"thickness": "t0" | "sine" | float, "radius": R2, "friction": mu,
@@ -45,7 +40,6 @@ from precomp.fea.deck import make_toolpath                              # noqa: 
 from precomp.fea.setup import FormingSetup                              # noqa: E402
 from precomp.geometry.heightmap import HeightMap                        # noqa: E402
 from precomp.metrology import flange_mask, part_mask, vertical_deviation  # noqa: E402
-from precomp.robot import forces_on_path                                # noqa: E402
 from precomp.toolpath import AIR, dsif_support_path, tool_center_surface  # noqa: E402
 
 EXE = ROOT / "build" / "bin" / "sparlab_form"
@@ -90,14 +84,6 @@ def forces_table(part: str, source: str) -> pd.DataFrame:
     return tf[tf["tool"] == "tool"]
 
 
-def input_forces(part: str, src: str, path) -> np.ndarray:
-    """Forces on the path points: "<variant>:in" = the forces a robot variant
-    was deflected with; "<variant>" / "cache" = the forces its run produced."""
-    if src.endswith(":in"):
-        return np.load(RUNS / part / src[:-3] / "robot_forces_in.npy")
-    return forces_on_path(path, forces_table(part, src), step=1)
-
-
 def build_variant(part: str, name: str, spec: Dict[str, Any]) -> Path:
     setup, commanded = part_inputs(part)
     k = float(spec.get("scale", 1.0))
@@ -122,27 +108,6 @@ def build_variant(part: str, name: str, spec: Dict[str, Any]) -> Path:
     pts = path.points.copy()
     contact = path.level != AIR
     info: Dict[str, Any] = {}
-    if "robot" in spec:
-        r = spec["robot"]
-        C = (np.eye(3) * r["iso_um_per_N"] * 1e-6) if "iso_um_per_N" in r else np.asarray(r["C"], float)
-        if "forces_mix" in r:       # under-relaxed fixed point: sum of w * f(source)
-            f = sum(w * input_forces(part, src, path) for src, w in r["forces_mix"])
-        else:
-            tf = forces_table(part, r.get("forces_from", "cache"))
-            f = forces_on_path(path, tf, step=1)
-        if r.get("smooth_m"):         # moving mean over the path length (contact noise)
-            sp = path.s
-            w = r["smooth_m"] / 2
-            f = np.array([f[np.abs(sp - si) <= w].mean(axis=0) for si in sp])
-        np.save(d / "robot_forces_in.npy", f)
-        delta = f @ C.T
-        pts = pts + delta
-        info["robot_deflection_mm"] = {
-            "max_norm": float(np.linalg.norm(delta, axis=1).max() / MM),
-            "mean_norm_contact": float(np.linalg.norm(delta[contact], axis=1).mean() / MM),
-            "mean_dz_contact": float(delta[contact, 2].mean() / MM),
-            "max_dz": float(delta[:, 2].max() / MM),
-            "mean_dxy_contact": float(np.linalg.norm(delta[contact, :2], axis=1).mean() / MM)}
     if "offset" in spec:
         pts[contact] = pts[contact] + np.asarray(spec["offset"], float)
     write_traj(d / "toolpath.csv", t, pts)

@@ -50,7 +50,7 @@ root; its absence is an error naming every place looked at.
 
 ## Modules
 
-There are no import cycles; `precomp.ml` builds on everything except `robot`.
+There are no import cycles; `precomp.ml` builds on the modules above it.
 
 | Module | Imports | Contents |
 |--------|---------|----------|
@@ -58,10 +58,9 @@ There are no import cycles; `precomp.ml` builds on everything except `robot`.
 | `precomp.materials` | - | `Material` (elasticity, linear + Voce isotropic and Prager kinematic hardening, optional Armstrong-Frederick backstress and Hill48 r-values), `from_swift` / `from_hollomon`, `library`, `get_material`, `to_sparlab()` |
 | `precomp.toolpath` | geometry | `tool_center_surface` (drop cutter), `tool_reach_surface`, `spiral_toolpath`, `Toolpath`, `max_gouge`, `dsif_support_points` / `dsif_support_path`, `rim_pass_path`, `lift_heights`, `lift_at_points`, `swept_ball_top`, `signed_outline_distance` |
 | `precomp.metrology` | geometry | `align` (robust point-to-plane ICP), `signed_deviation`, `vertical_deviation`, `metrics`, `part_mask`, `flange_mask`, `wall_mask` |
-| `precomp.robot` | toolpath | `CartesianCompliance`, `forces_on_path` |
 | `precomp.fea` | geometry, toolpath, materials | `FormingSetup`, `PRESETS`, `build_deck`, `deck_hash`, `make_toolpath`, `run_deck`, `simulate` (content-addressed cache), `simulate_many`, `load_result` / `FormingResult`, `FormingError`; `precomp.fea.support` ([Rim support](#rim-support)) |
 | `precomp.compensation` | geometry, metrology (fea, toolpath lazily) | `displacement_adjustment`, `limit_wall_angle`, `smooth_update`, `FEAPredictor`, `SurrogatePredictor`, the `FieldModel` protocol |
-| `precomp.ml` | all but robot | learned deviation models, conformal intervals, the training envelope, surrogate compensation ([precomp_ml.md](precomp_ml.md)) |
+| `precomp.ml` | all of the above | learned deviation models, conformal intervals, the training envelope, surrogate compensation ([precomp_ml.md](precomp_ml.md)) |
 
 ## Geometry
 
@@ -339,15 +338,6 @@ vertical RMS over the part) support more than halves the uncompensated
 deviation (single-point 0.665 mm, plate 0.300 mm, DSIF 0.273 mm). One FE-DA step
 gives 0.555, 0.263 and 0.265 mm; a second step helps only single-point (0.542 mm).
 
-## Robot compliance
-
-`CartesianCompliance(C)` holds the 3 x 3 compliance of the tool-centre point
-[m/N] (or (n, 3, 3), one per path point); `deflection(forces)` is C f.
-`from_joint_stiffness(J, K)` gives C = J_v K^-1 J_v^T for one pose.
-`forces_on_path(path, tool_forces)` interpolates a simulated force history at
-the path's pseudo-time. The physics audit (`benchmarks/physics_audit/process`)
-uses them to bound the error of a rigid robot.
-
 ## How the workflow uses this
 
 The scripts in `python/scripts` run from the repository root
@@ -362,8 +352,8 @@ simulation goes through the run cache, so each is resumable:
 
 `python/scripts/common.py` holds their shared helpers (`deviation` by region,
 `physics` checks of a run, `split_of`, `versions`). The physics audit uses
-`dsif_support_path`, `CartesianCompliance`, `forces_on_path`, `align`,
-`HeightMap.from_points` and `precomp.materials`. FE-DA-1 (two runs) in Python:
+`dsif_support_path`, `align`, `HeightMap.from_points` and
+`precomp.materials`. FE-DA-1 (two runs) in Python:
 
 ```python
 from precomp.compensation import FEAPredictor, displacement_adjustment
@@ -454,6 +444,5 @@ physical sense rather than exact answers (times on one thread):
 * **Compensation.** The formability projection only raises: a target steeper
   than the limit is formed shallower there. Nodes without predicted data get no
   update.
-* **Robot and thickness.** A constant compliance (or one per point) is
-  first-order, with forces interpolated in pseudo-time. `thickness_map` is the
-  straight top-to-bottom distance of a node column.
+* **Thickness.** `thickness_map` is the straight top-to-bottom distance of a
+  node column.
