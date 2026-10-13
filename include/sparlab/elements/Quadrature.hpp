@@ -4,12 +4,12 @@
 ///
 /// A rule with `n` points per direction integrates polynomials of degree
 /// \f$2n-1\f$ exactly. SparLab defaults to:
-///   * stiffness:  2 per direction (exact for the bilinear Q4 and trilinear
-///                 Hex8 on parallelepipeds),
+///   * stiffness:  2 per direction (exact for the trilinear Hex8 on
+///                 parallelepipeds),
 ///   * mass:       3 per direction (exact for the N^T N product on general
 ///                 cells, where the Jacobian is not constant),
-///   * face loads: 2 per direction (exact for a constant traction times the
-///                 face shape functions).
+///   * faces:      3 per direction (the tributary areas of the contact
+///                 nodes).
 #pragma once
 
 #include "sparlab/core/Types.hpp"
@@ -49,15 +49,11 @@ const std::vector<QuadraturePoint2D>& gauss_legendre_square(int points_per_direc
 /// \throws ConfigError for unsupported orders.
 const std::vector<QuadraturePoint3D>& gauss_legendre_cube(int points_per_direction);
 
-/// One-dimensional Gauss-Legendre rule (supported: 1, 2, 3, 4).
-/// \throws ConfigError for unsupported orders.
-const std::vector<QuadraturePoint1D>& gauss_legendre_line(int points);
-
 /// Largest point count of the through-thickness rule of `gauss_legendre_box`.
 inline constexpr int kMaxThicknessPoints = 7;
 
 /// One-dimensional Gauss-Legendre rule with 1 to kMaxThicknessPoints points:
-/// the rules of `gauss_legendre_line` for n <= 4, and for n = 5..7 the roots
+/// the closed-form rules for n <= 4, and for n = 5..7 the roots
 /// of the Legendre polynomial \f$P_n\f$ found by Newton's iteration on its
 /// three-term recurrence, with the weights \f$2/((1-x^2)P_n'(x)^2)\f$ -
 /// exact for polynomials of degree 2n - 1 to round-off (tested). Built once,
@@ -79,28 +75,5 @@ const std::vector<QuadraturePoint1D>& gauss_legendre_line_extended(int points);
 /// \throws ConfigError for unsupported orders or axis.
 const std::vector<QuadraturePoint3D>& gauss_legendre_box(int in_plane, int thickness,
                                                           int thickness_axis);
-
-/// Symmetric four-point rule on the reference tetrahedron
-/// \f$\{\xi,\eta,\zeta \ge 0,\ \xi+\eta+\zeta \le 1\}\f$ (volume 1/6): the
-/// points sit at barycentric coordinates \f$(\alpha,\beta,\beta,\beta)\f$ and
-/// permutations with \f$\alpha = (5+3\sqrt5)/20\f$, \f$\beta = (5-\sqrt5)/20\f$,
-/// each weighted 1/24. Exact for polynomials of degree 2, which is the
-/// integrand \f$B^T D B\f$ of a straight-sided quadratic tetrahedron.
-const std::vector<QuadraturePoint3D>& tetrahedron_rule_4();
-
-/// Collapsed Gauss rule on the reference tetrahedron with `n` Gauss-Legendre
-/// points per direction (n^3 points, supported n = 1..4): the unit cube
-/// \f$(u,v,w)\f$ is mapped onto the tetrahedron by
-/// \f$\xi = u,\ \eta = v(1-u),\ \zeta = w(1-u)(1-v)\f$, whose Jacobian
-/// \f$(1-u)^2(1-v)\f$ is folded into the weights (Stroud's conical product).
-/// Exact for polynomials of total degree \f$2n-3\f$, so it takes n >= 2
-/// to integrate even a constant exactly.
-const std::vector<QuadraturePoint3D>& collapsed_gauss_tetrahedron(int n);
-
-/// Collapsed Gauss rule on the reference triangle
-/// \f$\{\xi,\eta \ge 0,\ \xi+\eta \le 1\}\f$ (area 1/2): \f$\xi = u\f$,
-/// \f$\eta = v(1-u)\f$ with Jacobian \f$1-u\f$; n^2 points (n = 1..4), exact
-/// for polynomials of total degree \f$2n-2\f$.
-const std::vector<QuadraturePoint2D>& collapsed_gauss_triangle(int n);
 
 }  // namespace sparlab

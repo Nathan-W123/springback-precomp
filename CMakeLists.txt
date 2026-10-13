@@ -2,14 +2,14 @@ cmake_minimum_required(VERSION 3.16)
 
 project(SparLab
         VERSION 1.0.0
-        DESCRIPTION "2-D/3-D finite-element structural solver with SIMP topology optimization"
+        DESCRIPTION "Finite-element incremental-forming and springback solver"
         LANGUAGES CXX)
 
 # ----------------------------------------------------------------------------
 # Options
 # ----------------------------------------------------------------------------
 option(SPARLAB_BUILD_TESTS     "Build the Catch2 test suite"            ON)
-option(SPARLAB_BUILD_APPS      "Build the command-line applications"    ON)
+option(SPARLAB_BUILD_APPS      "Build the sparlab_form executable"      ON)
 option(SPARLAB_ENABLE_WARNINGS "Enable a strict warning set"            ON)
 option(SPARLAB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors"   OFF)
 option(SPARLAB_ENABLE_OPENMP   "Use OpenMP where the code supports it"  ON)
@@ -81,71 +81,37 @@ add_library(sparlab STATIC
   src/core/Logging.cpp
   src/mesh/Mesh.cpp
   src/mesh/StructuredMesh.cpp
-  src/mesh/SubMesh.cpp
   src/material/IsotropicMaterial.cpp
   src/material/Hyperelastic.cpp
   src/material/Plasticity.cpp
   src/material/LogarithmicStrain.cpp
   src/elements/Quadrature.cpp
   src/elements/Element.cpp
-  src/elements/Quad4.cpp
   src/elements/Hex8.cpp
   src/elements/Hex8Incompatible.cpp
-  src/elements/Tri3.cpp
-  src/elements/Tet4.cpp
-  src/elements/Tet10.cpp
   src/elements/FaceGeometry.cpp
   src/fem/DofManager.cpp
   src/fem/Selector.cpp
   src/fem/BoundaryConditions.cpp
   src/fem/FemModel.cpp
   src/fem/Assembler.cpp
-  src/fem/LinearSolver.cpp
-  src/fem/Multigrid.cpp
-  src/fem/ModelDiagnostics.cpp
-  src/fem/StaticAnalysis.cpp
-  src/fem/StressRecovery.cpp
-  src/fem/ModalAnalysis.cpp
-  src/fem/Buckling.cpp
-  src/fem/Loads.cpp
-  src/fem/HeatConduction.cpp
   src/fem/TotalLagrangian.cpp
-  src/fem/NonlinearStatic.cpp
   src/fem/Elastoplastic.cpp
   src/fem/IncompatibleModes.cpp
-  src/fem/Dynamics.cpp
-  src/fem/Contact.cpp
   src/fem/RigidTool.cpp
   src/fem/Forming.cpp
   src/fem/ExplicitKernel.cpp
   src/fem/ExplicitDynamics.cpp
-  src/topopt/SimpInterpolation.cpp
-  src/topopt/DensityFilter.cpp
-  src/topopt/DesignDomain.cpp
-  src/topopt/Sensitivity.cpp
-  src/topopt/OptimalityCriteria.cpp
-  src/topopt/Mma.cpp
-  src/topopt/Projection.cpp
-  src/topopt/StressConstraint.cpp
-  src/topopt/BucklingConstraint.cpp
-  src/topopt/OverhangFilter.cpp
-  src/topopt/LengthScale.cpp
-  src/topopt/TopologyOptimizer.cpp
   src/io/Json.cpp
   src/io/Config.cpp
   src/io/CsvWriter.cpp
   src/io/VtkWriter.cpp
-  src/io/StlWriter.cpp
-  src/io/CalculixWriter.cpp
   src/io/MeshReader.cpp
   src/io/ResultWriter.cpp
   src/io/FormingWriter.cpp
 )
 
-target_include_directories(sparlab PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
+target_include_directories(sparlab PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_link_libraries(sparlab PUBLIC Eigen3::Eigen)
 
@@ -199,10 +165,8 @@ if(SPARLAB_BUILD_APPS)
   target_link_libraries(sparlab_app_support PUBLIC sparlab)
   target_include_directories(sparlab_app_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/apps)
 
-  foreach(app sparlab_solve sparlab_topopt sparlab_verify sparlab_bench sparlab_form)
-    add_executable(${app} apps/${app}.cpp)
-    target_link_libraries(${app} PRIVATE sparlab_app_support)
-  endforeach()
+  add_executable(sparlab_form apps/sparlab_form.cpp)
+  target_link_libraries(sparlab_form PRIVATE sparlab_app_support)
 
   # The git revision `sparlab_form --version` prints, regenerated at every
   # build (a result cache keys on it), "-dirty" with uncommitted changes.
@@ -214,9 +178,6 @@ if(SPARLAB_BUILD_APPS)
     COMMENT "SparLab: recording the git revision")
   add_dependencies(sparlab_form sparlab_git_sha)
   target_include_directories(sparlab_form PRIVATE ${CMAKE_BINARY_DIR}/generated)
-  target_sources(sparlab_verify PRIVATE apps/verify_loads.cpp apps/verify_nonlinear.cpp
-                                     apps/verify_plasticity.cpp apps/verify_logarithmic.cpp
-                                     apps/verify_dynamics.cpp apps/verify_elements.cpp)
 endif()
 
 # ----------------------------------------------------------------------------

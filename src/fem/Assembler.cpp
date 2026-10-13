@@ -4,7 +4,6 @@
 #include "sparlab/core/Logging.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <sstream>
 
 namespace sparlab {
@@ -228,7 +227,7 @@ SparseMatrix Assembler::assemble_stiffness(const Vector* scale) const {
   const Mesh& mesh = model_.mesh();
   const Index ne = mesh.num_elements();
   check_scale(scale, ne, "stiffness");
-  if (use_pattern_ && (scale == nullptr || scale->minCoeff() > 0.0)) {
+  if (scale == nullptr || scale->minCoeff() > 0.0) {
     return scatter([this](Index e) -> const Matrix& { return element_stiffness(e); }, scale);
   }
 
@@ -265,12 +264,11 @@ SparseMatrix Assembler::assemble_mass(MassType type, const Vector* scale) const 
     if (material.density() <= 0.0) {
       throw ModelError("mass assembly requires a positive density of every material; "
                        "material '" + material.name() +
-                       "' has none. Set its 'density' to run a modal or dynamic analysis");
+                       "' has none. Set its 'density' to run an explicit step");
     }
   }
 
-  if (use_pattern_ && type == MassType::Consistent &&
-      (scale == nullptr || scale->minCoeff() > 0.0)) {
+  if (type == MassType::Consistent && (scale == nullptr || scale->minCoeff() > 0.0)) {
     return scatter([this](Index e) -> const Matrix& { return element_mass(e); }, scale);
   }
 
@@ -279,13 +277,6 @@ SparseMatrix Assembler::assemble_mass(MassType type, const Vector* scale) const 
   TripletList triplets;
   triplets.reserve(static_cast<std::size_t>(ne) * edofs * edofs);
 
-  // The corner rows of a quadratic tetrahedron's consistent mass sum to a
-  // negative number, and the rotational rows of a shell or beam hold rotary
-  // inertia rather than mass, so those elements are lumped by scaling the
-  // diagonal to the element's total per DOF component instead (Hinton, Rock
-  // and Zienkiewicz 1976).
-  const bool scaled_diagonal = model_.element().diagonal_scaled_lumping();
-  const int dim = model_.dofs_per_node();
   std::vector<Index> gdofs(static_cast<std::size_t>(edofs));
   for (Index e = 0; e < ne; ++e) {
     const Scalar s = scale ? (*scale)(e) : 1.0;
@@ -299,26 +290,10 @@ SparseMatrix Assembler::assemble_mass(MassType type, const Vector* scale) const 
                                 gdofs[static_cast<std::size_t>(j)], s * me(i, j));
         }
       }
-    } else if (scaled_diagonal) {
-      // HRZ: per displacement component, the diagonal scaled so it sums to
-      // the element mass, which conserves the mass and keeps every entry
-      // positive.
-      for (int k = 0; k < dim; ++k) {
-        Scalar total = 0.0;
-        Scalar diagonal = 0.0;
-        for (int a = 0; a < npe; ++a) {
-          diagonal += me(dim * a + k, dim * a + k);
-          for (int b = 0; b < npe; ++b) total += me(dim * a + k, dim * b + k);
-        }
-        for (int a = 0; a < npe; ++a) {
-          const Index row = gdofs[static_cast<std::size_t>(dim * a + k)];
-          triplets.emplace_back(row, row, s * me(dim * a + k, dim * a + k) * total / diagonal);
-        }
-      }
     } else {
-      // Row-sum lumping. For the Q4, Tri3, Hex8 and Tet4 with a consistent
-      // mass matrix the row sums are positive and reproduce the element mass
-      // exactly, so total mass is conserved.
+      // Row-sum lumping. For the Hex8 with a consistent mass matrix the row
+      // sums are positive and reproduce the element mass exactly, so total
+      // mass is conserved.
       for (int i = 0; i < edofs; ++i) {
         const Scalar lumped = me.row(i).sum();
         triplets.emplace_back(gdofs[static_cast<std::size_t>(i)],
@@ -335,9 +310,7 @@ SparseMatrix Assembler::assemble_mass(MassType type, const Vector* scale) const 
 
 SparseMatrix Assembler::assemble_elementwise(
     const std::function<Matrix(Index)>& element_matrix) const {
-  const Mesh& mesh = model_.mesh();
-  const Index ne = mesh.num_elements();
-  const int npe = mesh.nodes_per_elem();
+  const int npe = model_.mesh().nodes_per_elem();
   const int edofs = npe * model_.dofs_per_node();
   const auto checked = [&](Index e) {
     Matrix me = element_matrix(e);
@@ -349,32 +322,13 @@ SparseMatrix Assembler::assemble_elementwise(
     }
     return me;
   };
-  if (use_pattern_) {
-    Matrix buffer;
-    return scatter(
-        [&](Index e) -> const Matrix& {
-          buffer = checked(e);
-          return buffer;
-        },
-        nullptr);
-  }
-  TripletList triplets;
-  triplets.reserve(static_cast<std::size_t>(ne) * edofs * edofs);
-  std::vector<Index> gdofs(static_cast<std::size_t>(edofs));
-  for (Index e = 0; e < ne; ++e) {
-    const Matrix me = checked(e);
-    model_.dofs().element_dofs(mesh.element_nodes(e), npe, gdofs.data());
-    for (int i = 0; i < edofs; ++i) {
-      for (int j = 0; j < edofs; ++j) {
-        triplets.emplace_back(gdofs[static_cast<std::size_t>(i)],
-                              gdofs[static_cast<std::size_t>(j)], me(i, j));
-      }
-    }
-  }
-  SparseMatrix out(model_.dofs().num_dofs(), model_.dofs().num_dofs());
-  out.setFromTriplets(triplets.begin(), triplets.end());
-  out.makeCompressed();
-  return out;
+  Matrix buffer;
+  return scatter(
+      [&](Index e) -> const Matrix& {
+        buffer = checked(e);
+        return buffer;
+      },
+      nullptr);
 }
 
 Scalar Assembler::total_mass(const Vector* scale) const {
@@ -395,7 +349,7 @@ SparseMatrix Assembler::reduce_free_free(const SparseMatrix& full) const {
   const auto& free = dofs.free_dofs();
   const Index nf = static_cast<Index>(free.size());
 
-  if (use_pattern_ && matches_pattern(full)) {
+  if (matches_pattern(full)) {
     Reduction& map = free_free_;
     if (map.key != free || map.rows != nf) {
       map.key = free;
@@ -435,78 +389,6 @@ SparseMatrix Assembler::reduce_free_free(const SparseMatrix& full) const {
   reduced.setFromTriplets(triplets.begin(), triplets.end());
   reduced.makeCompressed();
   return reduced;
-}
-
-SparseMatrix Assembler::reduce_free_prescribed(const SparseMatrix& full) const {
-  const DofManager& dofs = model_.dofs();
-  const auto& fixed = dofs.constrained_dofs();
-
-  if (use_pattern_ && matches_pattern(full)) {
-    Reduction& map = free_prescribed_;
-    if (map.key != fixed || map.cols != static_cast<Index>(fixed.size())) {
-      map.key = fixed;
-      map.rows = dofs.num_free();
-      map.cols = static_cast<Index>(fixed.size());
-      map.outer.assign(fixed.size() + 1, 0);
-      map.inner.clear();
-      map.source.clear();
-      const StorageIndex* outer = full.outerIndexPtr();
-      const StorageIndex* inner = full.innerIndexPtr();
-      for (std::size_t fc = 0; fc < fixed.size(); ++fc) {
-        const Index col = fixed[fc];
-        for (StorageIndex k = outer[col]; k < outer[col + 1]; ++k) {
-          const Index rr = dofs.reduced_index(inner[k]);
-          if (rr < 0) continue;
-          map.inner.push_back(rr);
-          map.source.push_back(k);
-        }
-        map.outer[fc + 1] = static_cast<StorageIndex>(map.inner.size());
-      }
-    }
-    return from_reduction(map, full);
-  }
-
-  std::vector<Index> fixed_index(static_cast<std::size_t>(dofs.num_dofs()), -1);
-  for (std::size_t k = 0; k < fixed.size(); ++k) {
-    fixed_index[static_cast<std::size_t>(fixed[k])] = static_cast<Index>(k);
-  }
-
-  TripletList triplets;
-  for (Eigen::Index col = 0; col < full.outerSize(); ++col) {
-    const Index fc = fixed_index[static_cast<std::size_t>(col)];
-    if (fc < 0) continue;
-    for (SparseMatrix::InnerIterator it(full, col); it; ++it) {
-      const Index rr = dofs.reduced_index(static_cast<Index>(it.row()));
-      if (rr < 0) continue;
-      triplets.emplace_back(rr, fc, it.value());
-    }
-  }
-  SparseMatrix block(dofs.num_free(), static_cast<Index>(fixed.size()));
-  block.setFromTriplets(triplets.begin(), triplets.end());
-  block.makeCompressed();
-  return block;
-}
-
-SparseMatrix Assembler::reduce_prescribed_rows(const SparseMatrix& full) const {
-  const DofManager& dofs = model_.dofs();
-  const auto& fixed = dofs.constrained_dofs();
-  std::vector<Index> fixed_index(static_cast<std::size_t>(dofs.num_dofs()), -1);
-  for (std::size_t k = 0; k < fixed.size(); ++k) {
-    fixed_index[static_cast<std::size_t>(fixed[k])] = static_cast<Index>(k);
-  }
-
-  TripletList triplets;
-  for (Eigen::Index col = 0; col < full.outerSize(); ++col) {
-    for (SparseMatrix::InnerIterator it(full, col); it; ++it) {
-      const Index fr = fixed_index[static_cast<std::size_t>(it.row())];
-      if (fr < 0) continue;
-      triplets.emplace_back(fr, static_cast<Index>(col), it.value());
-    }
-  }
-  SparseMatrix block(static_cast<Index>(fixed.size()), dofs.num_dofs());
-  block.setFromTriplets(triplets.begin(), triplets.end());
-  block.makeCompressed();
-  return block;
 }
 
 }  // namespace sparlab

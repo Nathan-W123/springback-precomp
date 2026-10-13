@@ -43,56 +43,6 @@ void check_counts_3d(const StructuredMeshSpec& spec) {
   }
 }
 
-/// Split every Q4 of a structured grid into two triangles. Alternating the
-/// diagonal between neighbouring cells removes the directional bias a single
-/// diagonal direction would give the stiffness.
-Mesh split_into_triangles(const Mesh& quads, const StructuredMeshSpec& spec) {
-  std::vector<Index> connectivity;
-  connectivity.reserve(static_cast<std::size_t>(quads.num_elements()) * 6);
-  for (Index j = 0; j < spec.ny; ++j) {
-    for (Index i = 0; i < spec.nx; ++i) {
-      const Index* n = quads.element_nodes(j * spec.nx + i);
-      if ((i + j) % 2 == 0) {
-        connectivity.insert(connectivity.end(), {n[0], n[1], n[2], n[0], n[2], n[3]});
-      } else {
-        connectivity.insert(connectivity.end(), {n[0], n[1], n[3], n[1], n[2], n[3]});
-      }
-    }
-  }
-  Mesh mesh(quads.coordinates(), std::move(connectivity), ElementType::Tri3);
-  mesh.validate();
-  return mesh;
-}
-
-/// Split every Hex8 into the six Kuhn tetrahedra around the diagonal from
-/// local corner 0 to corner 6. Each tetrahedron follows one monotone path
-/// 0 -> 6 along the cell edges; every face of the cube is then cut along the
-/// diagonal joining its lowest and highest corners, which is the same
-/// diagonal the neighbouring cell uses, so the split is conforming. Paths
-/// that are odd permutations of (x, y, z) come out negatively oriented and
-/// get two nodes swapped.
-Mesh split_into_tetrahedra(const Mesh& hexes) {
-  static const int paths[6][4] = {{0, 1, 2, 6}, {0, 1, 5, 6}, {0, 3, 2, 6},
-                                  {0, 3, 7, 6}, {0, 4, 5, 6}, {0, 4, 7, 6}};
-  const Matrix& x = hexes.coordinates();
-  std::vector<Index> connectivity;
-  connectivity.reserve(static_cast<std::size_t>(hexes.num_elements()) * 24);
-  for (Index e = 0; e < hexes.num_elements(); ++e) {
-    const Index* n = hexes.element_nodes(e);
-    for (const auto& path : paths) {
-      Index t[4] = {n[path[0]], n[path[1]], n[path[2]], n[path[3]]};
-      const Vector3 a = x.col(t[1]) - x.col(t[0]);
-      const Vector3 b = x.col(t[2]) - x.col(t[0]);
-      const Vector3 c = x.col(t[3]) - x.col(t[0]);
-      if (a.dot(b.cross(c)) < 0.0) std::swap(t[1], t[2]);
-      connectivity.insert(connectivity.end(), {t[0], t[1], t[2], t[3]});
-    }
-  }
-  Mesh mesh(hexes.coordinates(), std::move(connectivity), ElementType::Tet4);
-  mesh.validate();
-  return mesh;
-}
-
 StructuredGridInfo grid_info(const StructuredMeshSpec& spec, bool three_d, bool uniform) {
   StructuredGridInfo info;
   info.nx = spec.nx;
@@ -106,88 +56,6 @@ StructuredGridInfo grid_info(const StructuredMeshSpec& spec, bool three_d, bool 
 }
 
 }  // namespace
-
-Index structured_node_index(const StructuredGridInfo& info, Index i, Index j) {
-  if (i < 0 || i > info.nx || j < 0 || j > info.ny) {
-    std::ostringstream os;
-    os << "structured node (" << i << ", " << j << ") is outside the grid [0.."
-       << info.nx << "] x [0.." << info.ny << "]";
-    throw MeshError(os.str());
-  }
-  return j * (info.nx + 1) + i;
-}
-
-Index structured_element_index(const StructuredGridInfo& info, Index i, Index j) {
-  if (i < 0 || i >= info.nx || j < 0 || j >= info.ny) {
-    std::ostringstream os;
-    os << "structured element (" << i << ", " << j << ") is outside the grid [0.."
-       << info.nx - 1 << "] x [0.." << info.ny - 1 << "]";
-    throw MeshError(os.str());
-  }
-  return j * info.nx + i;
-}
-
-Index structured_node_index(const StructuredGridInfo& info, Index i, Index j, Index k) {
-  if (i < 0 || i > info.nx || j < 0 || j > info.ny || k < 0 || k > info.nz) {
-    std::ostringstream os;
-    os << "structured node (" << i << ", " << j << ", " << k
-       << ") is outside the grid [0.." << info.nx << "] x [0.." << info.ny << "] x [0.."
-       << info.nz << "]";
-    throw MeshError(os.str());
-  }
-  return k * (info.nx + 1) * (info.ny + 1) + j * (info.nx + 1) + i;
-}
-
-Index structured_element_index(const StructuredGridInfo& info, Index i, Index j,
-                               Index k) {
-  if (i < 0 || i >= info.nx || j < 0 || j >= info.ny || k < 0 || k >= info.nz) {
-    std::ostringstream os;
-    os << "structured element (" << i << ", " << j << ", " << k
-       << ") is outside the grid [0.." << info.nx - 1 << "] x [0.." << info.ny - 1
-       << "] x [0.." << info.nz - 1 << "]";
-    throw MeshError(os.str());
-  }
-  return k * info.nx * info.ny + j * info.nx + i;
-}
-
-Mesh make_structured_quad_mesh(const StructuredMeshSpec& spec) {
-  check_counts_2d(spec);
-
-  const Index nnx = spec.nx + 1;
-  const Index nny = spec.ny + 1;
-  const Scalar dx = spec.lx / static_cast<Scalar>(spec.nx);
-  const Scalar dy = spec.ly / static_cast<Scalar>(spec.ny);
-
-  Matrix coords(2, nnx * nny);
-  for (Index j = 0; j < nny; ++j) {
-    for (Index i = 0; i < nnx; ++i) {
-      const Index n = j * nnx + i;
-      coords(0, n) = spec.x0 + static_cast<Scalar>(i) * dx;
-      coords(1, n) = spec.y0 + static_cast<Scalar>(j) * dy;
-    }
-  }
-
-  std::vector<Index> connectivity;
-  connectivity.reserve(static_cast<std::size_t>(spec.nx) * spec.ny * 4);
-  for (Index j = 0; j < spec.ny; ++j) {
-    for (Index i = 0; i < spec.nx; ++i) {
-      const Index n0 = j * nnx + i;
-      connectivity.push_back(n0);
-      connectivity.push_back(n0 + 1);
-      connectivity.push_back(n0 + nnx + 1);
-      connectivity.push_back(n0 + nnx);
-    }
-  }
-
-  Mesh mesh(std::move(coords), std::move(connectivity), ElementType::Quad4);
-  mesh.set_structured_info(grid_info(spec, false, true));
-  mesh.validate();
-
-  log::debug("generated structured Q4 mesh: ", spec.nx, " x ", spec.ny, " = ",
-             mesh.num_elements(), " elements, ", mesh.num_nodes(), " nodes, cell ", dx,
-             " x ", dy, " m");
-  return mesh;
-}
 
 Mesh make_structured_hex_mesh(const StructuredMeshSpec& spec) {
   check_counts_3d(spec);
@@ -242,44 +110,6 @@ Mesh make_structured_hex_mesh(const StructuredMeshSpec& spec) {
   return mesh;
 }
 
-Mesh make_perturbed_quad_mesh(const StructuredMeshSpec& spec, Scalar perturbation,
-                              unsigned int seed) {
-  if (!(perturbation >= 0.0 && perturbation < 0.45)) {
-    std::ostringstream os;
-    os << "mesh perturbation must lie in [0, 0.45) to keep elements convex (got "
-       << perturbation << ")";
-    throw ConfigError(os.str());
-  }
-  Mesh mesh = make_structured_quad_mesh(spec);
-  if (perturbation == 0.0) return mesh;
-
-  const Index nnx = spec.nx + 1;
-  const Index nny = spec.ny + 1;
-  const Scalar dx = spec.lx / static_cast<Scalar>(spec.nx);
-  const Scalar dy = spec.ly / static_cast<Scalar>(spec.ny);
-
-  Matrix coords = mesh.coordinates();
-  std::mt19937 rng(seed);
-  std::uniform_real_distribution<Scalar> dist(-1.0, 1.0);
-  for (Index j = 1; j < nny - 1; ++j) {
-    for (Index i = 1; i < nnx - 1; ++i) {
-      const Index n = j * nnx + i;
-      coords(0, n) += perturbation * dx * dist(rng);
-      coords(1, n) += perturbation * dy * dist(rng);
-    }
-  }
-
-  Mesh perturbed(std::move(coords), mesh.connectivity(), ElementType::Quad4);
-  // The grid is no longer uniform, so the element-matrix cache must not be
-  // used; recording nx/ny keeps the index helpers usable.
-  perturbed.set_structured_info(grid_info(spec, false, false));
-  perturbed.validate();
-  log::debug("perturbed structured mesh: ", spec.nx, " x ", spec.ny,
-             " with interior nodes displaced by up to ", perturbation,
-             " of the cell size");
-  return perturbed;
-}
-
 Mesh make_perturbed_hex_mesh(const StructuredMeshSpec& spec, Scalar perturbation,
                              unsigned int seed) {
   if (!(perturbation >= 0.0 && perturbation < 0.35)) {
@@ -319,33 +149,6 @@ Mesh make_perturbed_hex_mesh(const StructuredMeshSpec& spec, Scalar perturbation
              " with interior nodes displaced by up to ", perturbation,
              " of the cell size");
   return perturbed;
-}
-
-Mesh make_structured_tri_mesh(const StructuredMeshSpec& spec) {
-  return split_into_triangles(make_structured_quad_mesh(spec), spec);
-}
-
-Mesh make_structured_tet_mesh(const StructuredMeshSpec& spec) {
-  return split_into_tetrahedra(make_structured_hex_mesh(spec));
-}
-
-Mesh make_structured_tet10_mesh(const StructuredMeshSpec& spec) {
-  return elevate_to_tet10(make_structured_tet_mesh(spec));
-}
-
-Mesh make_perturbed_tri_mesh(const StructuredMeshSpec& spec, Scalar perturbation,
-                             unsigned int seed) {
-  return split_into_triangles(make_perturbed_quad_mesh(spec, perturbation, seed), spec);
-}
-
-Mesh make_perturbed_tet_mesh(const StructuredMeshSpec& spec, Scalar perturbation,
-                             unsigned int seed) {
-  return split_into_tetrahedra(make_perturbed_hex_mesh(spec, perturbation, seed));
-}
-
-Mesh make_perturbed_tet10_mesh(const StructuredMeshSpec& spec, Scalar perturbation,
-                               unsigned int seed) {
-  return elevate_to_tet10(make_perturbed_tet_mesh(spec, perturbation, seed));
 }
 
 }  // namespace sparlab

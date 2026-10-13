@@ -76,13 +76,10 @@ struct ContactNodeForce {
 
 struct ContactToolState {
   Vector3 force = Vector3::Zero();  ///< on the tool [N]
-  Scalar normal_load = 0.0;
-  Scalar friction_load = 0.0;
   int active_nodes = 0;
   int slipping_nodes = 0;
   Scalar max_penetration = 0.0;
   Scalar max_penetration_ratio = 0.0;  ///< over the node's element thickness
-  Scalar area = 0.0;
 };
 
 class PenaltyContact {
@@ -114,7 +111,6 @@ class PenaltyContact {
     }
   }
 
-  std::size_t num_tools() const { return tools_.size(); }
   const std::vector<Index>& slave_nodes(std::size_t k) const { return slaves_[k].nodes; }
 
   void set_masses(const Vector& m) {
@@ -270,13 +266,10 @@ class PenaltyContact {
         s.friction[i] = ft;
         forces.push_back({node, fn, ft});
         res.force -= fn + ft;
-        res.normal_load += pn;
-        res.friction_load += ft.norm();
         ++res.active_nodes;
         if (slipping) ++res.slipping_nodes;
         res.max_penetration = std::max(res.max_penetration, -g);
         res.max_penetration_ratio = std::max(res.max_penetration_ratio, -g / s.thickness[i]);
-        res.area += s.area[i];
       }
     }
   }
@@ -314,40 +307,24 @@ class PenaltyContact {
   std::vector<Slaves> slaves_;
 };
 
-/// Lumped element masses: per element, the row sums (HRZ where the element
-/// asks for it) of its consistent mass, one value per element DOF.
+/// Lumped element masses: per element, the row sums of its consistent mass,
+/// one value per element DOF.
 std::vector<Vector> lumped_element_masses(const FemModel& model, const Assembler& assembler) {
   const Mesh& mesh = model.mesh();
   const int npe = mesh.nodes_per_elem();
   const int dim = model.dofs_per_node();
-  const bool hrz = model.element().diagonal_scaled_lumping();
   std::vector<Vector> out(static_cast<std::size_t>(mesh.num_elements()));
   for (Index e = 0; e < mesh.num_elements(); ++e) {
     const Matrix& me = assembler.element_mass(e);
     Vector m(npe * dim);
-    if (hrz) {
-      for (int k = 0; k < dim; ++k) {
-        Scalar total = 0.0;
-        Scalar diagonal = 0.0;
-        for (int a = 0; a < npe; ++a) {
-          diagonal += me(dim * a + k, dim * a + k);
-          for (int b = 0; b < npe; ++b) total += me(dim * a + k, dim * b + k);
-        }
-        for (int a = 0; a < npe; ++a) {
-          m(dim * a + k) = me(dim * a + k, dim * a + k) * total / diagonal;
-        }
-      }
-    } else {
-      for (int i = 0; i < npe * dim; ++i) m(i) = me.row(i).sum();
-    }
+    for (int i = 0; i < npe * dim; ++i) m(i) = me.row(i).sum();
     out[static_cast<std::size_t>(e)] = std::move(m);
   }
   return out;
 }
 
 /// The characteristic length of an element at its current coordinates x
-/// (dim x npe): volume over the largest face area (3-D), area over the
-/// longest edge (2-D) [m].
+/// (dim x npe): volume over the largest face area [m].
 Scalar characteristic_length(ElementType type, const Matrix& x) {
   switch (type) {
     case ElementType::Hex8: {
@@ -362,37 +339,10 @@ Scalar characteristic_length(ElementType type, const Matrix& x) {
       }
       return volume / largest;
     }
-    case ElementType::Tet4: {
-      const Vector3 a = x.col(1) - x.col(0);
-      const Vector3 b = x.col(2) - x.col(0);
-      const Vector3 c = x.col(3) - x.col(0);
-      const Scalar volume = std::abs(a.dot(b.cross(c))) / 6.0;
-      static constexpr int faces[4][3] = {{0, 1, 2}, {0, 1, 3}, {0, 2, 3}, {1, 2, 3}};
-      Scalar largest = 0.0;
-      for (const auto& f : faces) {
-        const Vector3 p = x.col(f[1]) - x.col(f[0]);
-        const Vector3 q = x.col(f[2]) - x.col(f[0]);
-        largest = std::max(largest, 0.5 * p.cross(q).norm());
-      }
-      return 3.0 * volume / largest;
-    }
-    case ElementType::Quad4:
-    case ElementType::Tri3: {
-      const int n = type == ElementType::Quad4 ? 4 : 3;
-      Scalar area = 0.0;
-      Scalar longest = 0.0;
-      for (int a = 0; a < n; ++a) {
-        const int b = (a + 1) % n;
-        area += x(0, a) * x(1, b) - x(0, b) * x(1, a);
-        longest = std::max(longest, (x.col(b) - x.col(a)).norm());
-      }
-      area = 0.5 * std::abs(area);
-      return (n == 3 ? 2.0 : 1.0) * area / longest;
-    }
     default: break;
   }
-  throw ConfigError("the element-length time step is written for linear elements (Q4, Tri3, "
-                    "Hex8, Tet4); use the element eigenvalue estimate");
+  throw ConfigError("the element-length time step is written for the Hex8; use the element "
+                    "eigenvalue estimate");
 }
 
 /// Per node, the thickness of its thinnest element in the reference
@@ -401,8 +351,7 @@ Scalar characteristic_length(ElementType type, const Matrix& x) {
 std::vector<Scalar> node_thickness(const FemModel& model) {
   const Mesh& mesh = model.mesh();
   const ElementType type = mesh.element_type();
-  const bool linear = type == ElementType::Hex8 || type == ElementType::Tet4 ||
-                      type == ElementType::Quad4 || type == ElementType::Tri3;
+  const bool linear = type == ElementType::Hex8;
   const int npe = mesh.nodes_per_elem();
   std::vector<Scalar> out(static_cast<std::size_t>(mesh.num_nodes()),
                           std::numeric_limits<Scalar>::infinity());
@@ -578,18 +527,10 @@ ExplicitTimeMap ExplicitTimeMap::tool_speed(const std::vector<const ToolTrajecto
 // ---------------------------------------------------------------------------
 ExplicitDynamics::ExplicitDynamics(const FemModel& model, const Assembler& assembler,
                                    const NonlinearOptions& nonlinear,
-                                   std::vector<RigidTool> tools, ExplicitOptions options,
-                                   int load_case)
+                                   std::vector<RigidTool> tools, ExplicitOptions options)
     : model_(model), assembler_(assembler), nonlinear_(nonlinear), tools_(std::move(tools)),
-      options_(options), load_case_(load_case) {
+      options_(options) {
   if (!model.finalized()) throw ModelError("the model must be finalised before a solve");
-  if (model.dofs_per_node() != model.dim()) {
-    throw ConfigError("the explicit integrator is written for continuum elements");
-  }
-  if (load_case >= static_cast<int>(model.load_case_specs().size())) {
-    throw ConfigError("explicit dynamics: load case " + std::to_string(load_case) +
-                      " does not exist");
-  }
   options_.validate();
   for (const IsotropicMaterial& m : model.materials()) {
     if (!(m.density() > 0.0)) {
@@ -601,7 +542,7 @@ ExplicitDynamics::ExplicitDynamics(const FemModel& model, const Assembler& assem
     (void)characteristic_length(model.mesh().element_type(),
                                 model.mesh().element_coordinates(0));
   }
-  force_ = std::make_unique<ExplicitInternalForce>(model, assembler, nonlinear_, load_case,
+  force_ = std::make_unique<ExplicitInternalForce>(model, assembler, nonlinear_,
                                                    options_.dedicated_kernel);
 }
 
@@ -758,12 +699,7 @@ ExplicitResult ExplicitDynamics::run(const ExplicitDrive& drive, const ExplicitS
   if (drive.active.size() != nt) {
     throw ConfigError("an explicit drive needs one activity flag per tool");
   }
-  const bool linear_ramp = drive.ramp.kind == Amplitude::Kind::Table && drive.ramp.times.empty();
-  if (!linear_ramp) drive.ramp.validate();
-  const auto ramp = [&](Scalar tau) -> Scalar {
-    if (linear_ramp) return std::clamp(tau / duration, 0.0, 1.0);
-    return drive.ramp.value(tau);
-  };
+  const auto ramp = [&](Scalar tau) -> Scalar { return std::clamp(tau / duration, 0.0, 1.0); };
   bool any_tool = false;
   for (char a : drive.active) any_tool = any_tool || a;
   const auto pseudo = [&](Scalar tau) { return drive.time_map.pseudo_time(tau); };
@@ -1052,26 +988,17 @@ ExplicitResult ExplicitDynamics::run(const ExplicitDrive& drive, const ExplicitS
     r.external = w_ext;
     r.mass_scaling = w_mass;
     r.error = kin - kinetic_start + w_int + w_damp - w_ext - w_cn - w_ct - w_mass;
-    Scalar top = 0.0;
-    for (Index node = 0; node < mesh.num_nodes(); ++node) {
-      top = std::max(top, u.segment(node * dim, dim).norm());
-    }
-    r.max_displacement = top;
     r.max_plastic_strain = force_->max_plastic_strain();
     for (std::size_t k = 0; k < nt; ++k) {
       if (!drive.active[k]) continue;
       ExplicitToolRecord tr;
       tr.tool = k;
       tr.centre = tools_[k].trajectory.position(r.pseudo_time);
-      tr.last_force = tool_state[k].force;
       tr.force = mean_time > 0.0 ? Vector3(mean_force[k] / mean_time) : tool_state[k].force;
-      tr.normal_load = tool_state[k].normal_load;
-      tr.friction_load = tool_state[k].friction_load;
       tr.active_nodes = tool_state[k].active_nodes;
       tr.slipping_nodes = tool_state[k].slipping_nodes;
       tr.max_penetration = tool_state[k].max_penetration;
       tr.max_penetration_ratio = tool_state[k].max_penetration_ratio;
-      tr.area = tool_state[k].area;
       r.tools.push_back(tr);
       mean_force[k].setZero();
     }

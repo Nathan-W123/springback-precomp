@@ -8,15 +8,13 @@
 ///   \mathbf{M} = \sum_e m_e\, \mathbf{A}_e^T \mathbf{M}_e^0 \mathbf{A}_e,
 /// \f]
 /// where \f$\mathbf{A}_e\f$ is the (implicit) DOF gather operator, and
-/// \f$s_e\f$, \f$m_e\f$ are per-element scale factors. For a plain FE analysis
-/// both scale factors are 1; the topology optimizer supplies the SIMP stiffness
-/// factor \f$E(\rho_e)/E_0\f$ and a mass interpolation factor.
+/// \f$s_e\f$, \f$m_e\f$ are optional per-element scale factors (1 when
+/// omitted; the explicit integrator scales the mass of selected elements).
 ///
 /// On a *uniform structured* mesh every cell has identical geometry, so
 /// \f$\mathbf{K}_e^0\f$ and \f$\mathbf{M}_e^0\f$ are computed once and reused.
-/// This is the dominant cost saving in a topology optimisation loop. The
-/// generic per-element path is always available and the two are checked against
-/// each other in the test suite.
+/// The generic per-element path is always available and the two are checked
+/// against each other in the test suite.
 ///
 /// **Cached sparsity.** The pattern of a stiffness (or consistent mass) matrix
 /// depends only on the mesh: one dim x dim block for every pair of nodes that
@@ -25,11 +23,11 @@
 /// element matrices straight into the value array - no triplet list, no
 /// sort, memory proportional to the matrix itself. Contributions reach each
 /// entry in element order, exactly as the triplet assembly sums them, so the
-/// two paths give bitwise identical matrices (the tests check it). The free /
-/// prescribed blocks are likewise cached as index maps into the full matrix
-/// for the current constraint set. An element with a zero scale factor, whose
-/// entries a triplet assembly would leave out of the pattern, falls back to
-/// the triplet path so the result stays the same.
+/// two paths give bitwise identical matrices. The free-free block is likewise
+/// cached as an index map into the full matrix for the current constraint
+/// set. An element with a zero scale factor, whose entries a triplet assembly
+/// would leave out of the pattern, falls back to the triplet path so the
+/// result stays the same.
 #pragma once
 
 #include "sparlab/core/Types.hpp"
@@ -44,12 +42,11 @@ class Assembler {
  public:
   explicit Assembler(const FemModel& model);
 
-  /// Element stiffness matrix of element `e` of the solid material (design
-  /// density 1, before any SIMP interpolation) [N/m].
+  /// Element stiffness matrix of element `e` [N/m].
   const Matrix& element_stiffness(Index e) const;
 
   /// Consistent element mass matrix of element `e` with its material's
-  /// density rho (design density 1, before any SIMP interpolation) [kg].
+  /// density rho [kg].
   const Matrix& element_mass(Index e) const;
 
   /// True when a single cached element matrix is reused for the whole mesh.
@@ -61,21 +58,12 @@ class Assembler {
   SparseMatrix assemble_stiffness(const Vector* scale = nullptr) const;
 
   /// Assemble the global mass matrix [kg].
-  /// \param type consistent or lumped: row sums for the linear elements, the
-  ///        diagonal scaled to the element mass (HRZ) for the Tet10, whose
-  ///        corner row sums are negative.
+  /// \param type consistent or lumped (row sums).
   /// \param scale optional per-element mass factors; `nullptr` means all ones.
   SparseMatrix assemble_mass(MassType type, const Vector* scale = nullptr) const;
 
   /// Extract the free-free block \f$K_{ff}\f$ of a full-size matrix.
   SparseMatrix reduce_free_free(const SparseMatrix& full) const;
-
-  /// Extract the free-prescribed block \f$K_{fp}\f$ of a full-size matrix.
-  SparseMatrix reduce_free_prescribed(const SparseMatrix& full) const;
-
-  /// Extract the prescribed-all block \f$[K_{pf}\ K_{pp}]\f$ applied to a full
-  /// displacement vector, i.e. rows of `full` at prescribed DOFs.
-  SparseMatrix reduce_prescribed_rows(const SparseMatrix& full) const;
 
   /// Total structural mass of the model [kg] for the given element factors.
   Scalar total_mass(const Vector* scale = nullptr) const;
@@ -83,17 +71,11 @@ class Assembler {
   /// Assemble \f$\sum_e A_e^T M_e A_e\f$ for element matrices computed on
   /// demand by `element_matrix(e)` (num_dofs x num_dofs of the element, in
   /// its node-major DOF order), for matrices that are neither the stiffness
-  /// nor the mass: the geometric stiffness of a buckling analysis, say. Any
-  /// element matrix fits the stiffness sparsity pattern, so the cached
-  /// pattern is used (or the triplet path when pattern assembly is off) and
+  /// nor the mass: the tangent of a deformed state, say. Any element matrix
+  /// fits the stiffness sparsity pattern, so the cached pattern is used and
   /// the result can be reduced with `reduce_free_free`. Entries may have any
   /// sign.
   SparseMatrix assemble_elementwise(const std::function<Matrix(Index)>& element_matrix) const;
-
-  /// Use the cached-pattern path (default) or the triplet path. Both give the
-  /// same matrices; the switch exists so the tests can compare them.
-  void set_pattern_assembly(bool enabled) { use_pattern_ = enabled; }
-  bool pattern_assembly() const { return use_pattern_; }
 
  private:
   struct Pattern {
@@ -125,14 +107,12 @@ class Assembler {
 
   const FemModel& model_;
   bool uniform_ = false;
-  bool use_pattern_ = true;
   Matrix cached_k_;
   Matrix cached_m_;
   mutable std::vector<Matrix> per_element_k_;
   mutable std::vector<Matrix> per_element_m_;
   mutable Pattern pattern_;
   mutable Reduction free_free_;
-  mutable Reduction free_prescribed_;
 };
 
 }  // namespace sparlab

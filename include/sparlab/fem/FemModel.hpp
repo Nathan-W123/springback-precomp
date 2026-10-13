@@ -3,9 +3,8 @@
 ///
 /// The model is a value type: it owns a mesh, the material, the idealisation
 /// (plane stress, plane strain or full 3-D elasticity), integration options,
-/// the DOF partitioning and the load cases. It deliberately performs no
-/// numerics — assembly, solution, stress recovery and optimisation all consume
-/// a `const FemModel&`.
+/// the DOF partitioning and the load case. It deliberately performs no
+/// numerics — assembly and the analyses consume a `const FemModel&`.
 ///
 /// The spatial dimension is the mesh's. A 2-D mesh takes a plane stress state
 /// and a positive thickness; a 3-D mesh takes `StressState::ThreeDimensional`
@@ -20,17 +19,13 @@
 #include "sparlab/elements/Element.hpp"
 #include "sparlab/fem/BoundaryConditions.hpp"
 #include "sparlab/fem/DofManager.hpp"
-#include "sparlab/fem/LoadCaseData.hpp"
 #include "sparlab/material/IsotropicMaterial.hpp"
 #include "sparlab/mesh/Mesh.hpp"
 
 #include <memory>
-#include <string>
 #include <vector>
 
 namespace sparlab {
-
-struct LinearSolverOptions;
 
 /// Mass-matrix formulation.
 enum class MassType {
@@ -38,19 +33,17 @@ enum class MassType {
   Lumped       ///< row-sum lumping of the consistent matrix (diagonal)
 };
 
-std::string to_string(MassType type);
-
-/// A fully specified linear-elastic model plus its load cases.
+/// A finite element model: mesh, element, materials, constraints and DOFs.
 class FemModel {
  public:
   FemModel(Mesh mesh, IsotropicMaterial material, Scalar thickness,
            StressState stress_state, IntegrationOptions integration);
 
   const Mesh& mesh() const { return mesh_; }
-  /// Spatial dimension of the model (2 or 3): the translations per node.
+  /// Spatial dimension of the model: the translations per node (3:
+  /// sparlab_form meshes are Hex8).
   int dim() const { return mesh_.dim(); }
-  /// Degrees of freedom per node: `dim()` for a continuum model, six (three
-  /// translations, three rotations) for a shell or beam model.
+  /// Degrees of freedom per node: the `dim()` translations.
   int dofs_per_node() const { return element_->dofs_per_node(); }
   /// The primary material (the deck's `material`); every element uses it
   /// unless `assign_material` gave it another.
@@ -67,16 +60,12 @@ class FemModel {
   /// Constitutive matrix of the primary material [Pa] (3 x 3 or 6 x 6).
   const Matrix& constitutive() const { return d_.front(); }
 
-  /// Replace the primary material (used by the material-stiffness sweep).
-  void set_material(const IsotropicMaterial& material);
-
   /// Give the listed elements `material`, appended to the model's materials.
   /// A later assignment overrides an earlier one for the same elements.
   /// \throws ModelError for an element index out of range.
   void assign_material(const IsotropicMaterial& material, const std::vector<Index>& elements);
 
   const std::vector<IsotropicMaterial>& materials() const { return materials_; }
-  int num_materials() const { return static_cast<int>(materials_.size()); }
   /// True when every element uses the primary material.
   bool single_material() const { return element_material_.empty(); }
   /// Index into `materials()` of element `e`'s material.
@@ -96,36 +85,13 @@ class FemModel {
   std::vector<DisplacementConstraint>& constraints() { return constraints_; }
   const std::vector<DisplacementConstraint>& constraints() const { return constraints_; }
 
-  /// Apply `constraints()` to the DOF manager and assemble one force vector per
-  /// load case. Must be called after the constraints and load cases are set and
-  /// before any assembly. Idempotent.
-  /// \param require_load_cases when false, a model with no load case is
-  ///        accepted. This is used for free-vibration analysis of a structure
-  ///        extracted from a density field, where the original load regions may
-  ///        no longer intersect the retained material.
-  void finalize(bool require_load_cases = true);
+  /// Apply `constraints()` to the DOF manager. Must be called after the
+  /// constraints and load cases are set and before any assembly. Idempotent.
+  /// \throws ConfigError for a model with no load case, or a constraint
+  ///         that `apply_constraints` refuses.
+  void finalize();
 
   bool finalized() const { return finalized_; }
-
-  /// Global force vectors [N], one per load case (index matches
-  /// `load_case_specs()`): the mechanical, body and thermal parts together.
-  const std::vector<Vector>& load_vectors() const;
-
-  /// The parts of load case `l` and its temperature field (LoadCaseData.hpp).
-  const LoadCaseData& load_case_data(std::size_t l) const;
-
-  /// Linear-solver settings of the conduction solve that `finalize` runs for
-  /// a load case with a conducted temperature field.
-  void set_conduction_solver(const LinearSolverOptions& options);
-
-  /// Load-case weights normalised to sum to one (used by the objective).
-  std::vector<Scalar> normalised_weights() const;
-
-  /// Total solid-material volume of the design domain [m^3].
-  Scalar domain_volume() const;
-
-  /// Per-element volume [m^3]: area * thickness in 2-D, cell volume in 3-D.
-  Vector element_volumes() const;
 
  private:
   /// Validates the sheet integration of `integration_` (thickness points:
@@ -144,9 +110,6 @@ class FemModel {
   DofManager dofs_;
   std::vector<DisplacementConstraint> constraints_;
   std::vector<LoadCaseSpec> load_case_specs_;
-  std::vector<Vector> load_vectors_;
-  std::vector<LoadCaseData> load_data_;
-  std::shared_ptr<LinearSolverOptions> conduction_solver_;
   bool finalized_ = false;
 };
 

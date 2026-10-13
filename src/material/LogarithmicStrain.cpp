@@ -125,7 +125,6 @@ LogarithmicStrain logarithmic_strain(const Vector6& green) {
   }
   const Matrix3& q = out.axes;
   out.strain = voigt_of(q * principal.asDiagonal() * q.transpose(), 2.0);
-  out.log_jacobian = principal.sum();
   for (int a = 0; a < 3; ++a) {
     for (int b = a; b < 3; ++b) {
       out.first(a, b) = out.first(b, a) = log_divided(out.green(a), out.green(b));

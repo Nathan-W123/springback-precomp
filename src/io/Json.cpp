@@ -8,7 +8,6 @@
 #include <cstring>
 #include <fstream>
 #include <iomanip>
-#include <limits>
 #include <sstream>
 
 namespace sparlab {
@@ -484,24 +483,6 @@ std::string dump(const Value& value, int indent) {
   return os.str();
 }
 
-Value array_of(const Vector& v) {
-  Value out = Value::make_array();
-  for (Eigen::Index i = 0; i < v.size(); ++i) out.push_back(Value::make_number(v(i)));
-  return out;
-}
-
-Value array_of(const std::vector<Scalar>& v) {
-  Value out = Value::make_array();
-  for (Scalar x : v) out.push_back(Value::make_number(x));
-  return out;
-}
-
-Value array_of(const std::vector<Index>& v) {
-  Value out = Value::make_array();
-  for (Index x : v) out.push_back(Value::make_number(static_cast<double>(x)));
-  return out;
-}
-
 Value array_of(const std::vector<std::string>& v) {
   Value out = Value::make_array();
   for (const std::string& s : v) out.push_back(Value::make_string(s));
@@ -587,27 +568,6 @@ std::string ConfigNode::string() const {
     throw ConfigError("'" + path_ + "' must be a string, got " + value_->type_name());
   }
   return value_->string_value();
-}
-
-Vector2 ConfigNode::vector2() const {
-  if (!exists()) throw ConfigError("required vector key '" + path_ + "' is missing");
-  if (!value_->is_array() || value_->array_items().size() != 2) {
-    std::ostringstream os;
-    os << "'" << path_ << "' must be an array of two numbers [x, y]";
-    if (value_->is_array()) os << ", got " << value_->array_items().size() << " entries";
-    throw ConfigError(os.str());
-  }
-  Vector2 out;
-  for (int i = 0; i < 2; ++i) {
-    const json::Value& item = value_->array_items()[static_cast<std::size_t>(i)];
-    if (!item.is_number()) {
-      std::ostringstream os;
-      os << "'" << path_ << "[" << i << "]' must be a number, got " << item.type_name();
-      throw ConfigError(os.str());
-    }
-    out(i) = item.number_value();
-  }
-  return out;
 }
 
 Vector3 ConfigNode::vector3(int dim) const {
@@ -703,11 +663,6 @@ std::string ConfigNode::string_or(const std::string& key,
   return node.exists() ? node.string() : fallback;
 }
 
-Vector2 ConfigNode::vector2_or(const std::string& key, const Vector2& fallback) const {
-  ConfigNode node = child(key);
-  return node.exists() ? node.vector2() : fallback;
-}
-
 Vector3 ConfigNode::vector3_or(const std::string& key, const Vector3& fallback,
                                int dim) const {
   ConfigNode node = child(key);
@@ -720,17 +675,6 @@ Scalar ConfigNode::positive_number(const std::string& key) const {
   if (!(v > 0.0)) {
     std::ostringstream os;
     os << "'" << node.path() << "' must be positive, got " << v;
-    throw ConfigError(os.str());
-  }
-  return v;
-}
-
-Scalar ConfigNode::bounded_number(const std::string& key, Scalar lo, Scalar hi) const {
-  ConfigNode node = require(key);
-  const Scalar v = node.number();
-  if (!(v >= lo && v <= hi)) {
-    std::ostringstream os;
-    os << "'" << node.path() << "' must lie in [" << lo << ", " << hi << "], got " << v;
     throw ConfigError(os.str());
   }
   return v;

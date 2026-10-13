@@ -2,7 +2,7 @@
 /// \brief Global degree-of-freedom numbering and Dirichlet partitioning.
 ///
 /// DOF numbering is node-major with `dofs_per_node` translational components:
-/// node `n` owns DOFs `d n + k` for component `k` (u_x, u_y and, in 3-D, u_z).
+/// node `n` owns DOFs `d n + k` for component `k` (u_x, u_y, u_z).
 /// Constraints are handled by *partitioning* rather than by penalty terms: the
 /// DOF set is split into free (f) and prescribed (p) blocks and the system
 /// \f[
@@ -25,10 +25,10 @@ namespace sparlab {
 class DofManager {
  public:
   DofManager() = default;
-  /// \param dofs_per_node translational components per node (2 or 3).
-  explicit DofManager(Index num_nodes, int dofs_per_node = 2);
+  /// \param dofs_per_node translational components per node (3: sparlab_form
+  ///        meshes are Hex8; 2 is accepted but unreachable).
+  explicit DofManager(Index num_nodes, int dofs_per_node = 3);
 
-  Index num_nodes() const { return num_nodes_; }
   int dofs_per_node() const { return dofs_per_node_; }
   Index num_dofs() const { return num_nodes_ * dofs_per_node_; }
 
@@ -57,37 +57,15 @@ class DofManager {
   /// Position of `dof` inside the reduced (free) system, or -1 if constrained.
   Index reduced_index(Index dof) const;
 
-  /// True when at least one non-zero displacement is prescribed.
-  bool has_nonzero_prescribed() const;
-
-  /// Vector of length num_dofs() holding the prescribed values (0 elsewhere).
-  Vector prescribed_vector() const;
-
-  /// Scatter a reduced free-DOF vector plus prescribed values into a full
-  /// displacement vector of length num_dofs().
-  Vector expand(const Vector& reduced) const;
-
-  /// Gather the free-DOF entries of a full-length vector.
-  Vector restrict_to_free(const Vector& full) const;
-
   /// Fill `out` with the `nodes_per_elem * dofs_per_node` global DOFs of an
   /// element, in node-major order matching the element kernels.
   void element_dofs(const Index* nodes, int nodes_per_elem, Index* out) const;
-
-  /// The element vector (node-major, `dofs_per_node` entries per node) of the
-  /// element with `nodes`, read from a full-length vector.
-  Vector gather(const Index* nodes, int nodes_per_elem, const Vector& full) const;
-  void gather(const Index* nodes, int nodes_per_elem, const Vector& full, Vector& out) const;
-
-  /// Add `factor` times an element vector into a full-length vector.
-  void scatter_add(const Index* nodes, int nodes_per_elem, const Vector& local, Vector& full,
-                   Scalar factor = 1.0) const;
 
  private:
   void rebuild() const;
 
   Index num_nodes_ = 0;
-  int dofs_per_node_ = 2;
+  int dofs_per_node_ = 3;
   std::vector<char> constrained_;
   std::vector<Scalar> values_;
 

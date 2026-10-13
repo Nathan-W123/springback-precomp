@@ -81,7 +81,6 @@ struct LogarithmicStrain {
   Vector6 strain = Vector6::Zero();    ///< \f$E_{\log}\f$, engineering shears [-]
   /// \f$dE_{\log} = P\,dE\f$ (engineering to engineering); \f$S = P^T T\f$.
   Matrix6 projection = Matrix6::Identity();
-  Scalar log_jacobian = 0.0;           ///< \f$\ln J = \mathrm{tr}\,E_{\log}\f$ [-]
   /// \f$\ell[\lambda_a, \lambda_b]\f$, the first divided differences of ln.
   Matrix3 first = Matrix3::Identity();
 };

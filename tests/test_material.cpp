@@ -1,7 +1,6 @@
 /// \file test_material.cpp
 /// \brief Constitutive matrices and material input validation.
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/fem/StressRecovery.hpp"
 #include "sparlab/material/IsotropicMaterial.hpp"
 
 #include <catch2/catch_approx.hpp>
@@ -73,46 +72,4 @@ TEST_CASE("invalid material parameters are rejected with actionable errors",
   REQUIRE_THROWS_AS(IsotropicMaterial(1.0, 0.6, 1.0), ConfigError);
   REQUIRE_THROWS_AS(IsotropicMaterial(1.0, -1.5, 1.0), ConfigError);
   REQUIRE_THROWS_AS(IsotropicMaterial(1.0, 0.3, -1.0), ConfigError);
-}
-
-TEST_CASE("von Mises stress uses the correct out-of-plane component",
-          "[material][stress]") {
-  const Scalar nu = 0.3;
-
-  SECTION("uniaxial tension gives the axial stress") {
-    const Vector3 s(100.0e6, 0.0, 0.0);
-    REQUIRE(von_mises(s, StressState::PlaneStress, nu) == Approx(100.0e6));
-  }
-
-  SECTION("pure shear gives sqrt(3) tau") {
-    const Vector3 s(0.0, 0.0, 50.0e6);
-    REQUIRE(von_mises(s, StressState::PlaneStress, nu) ==
-            Approx(std::sqrt(3.0) * 50.0e6));
-  }
-
-  SECTION("equal biaxial tension gives the same value in plane stress") {
-    const Vector3 s(80.0e6, 80.0e6, 0.0);
-    REQUIRE(von_mises(s, StressState::PlaneStress, nu) == Approx(80.0e6));
-  }
-
-  SECTION("plane strain includes sigma_zz = nu (sxx + syy)") {
-    const Vector3 s(80.0e6, 80.0e6, 0.0);
-    // sigma_zz = 0.3 * 160e6 = 48e6, so the deviator shrinks.
-    const Scalar sz = nu * (s(0) + s(1));
-    const Scalar expected = std::abs(s(0) - sz);
-    REQUIRE(von_mises(s, StressState::PlaneStrain, nu) == Approx(expected));
-    REQUIRE(von_mises(s, StressState::PlaneStrain, nu) <
-            von_mises(s, StressState::PlaneStress, nu));
-  }
-}
-
-TEST_CASE("principal stresses bracket the normal components", "[stress]") {
-  const Vector3 s(120.0e6, -40.0e6, 30.0e6);
-  Scalar s1 = 0.0;
-  Scalar s2 = 0.0;
-  principal_stresses(s, s1, s2);
-  REQUIRE(s1 >= s2);
-  // Invariants: trace and determinant of the 2-D stress tensor.
-  REQUIRE(s1 + s2 == Approx(s(0) + s(1)));
-  REQUIRE(s1 * s2 == Approx(s(0) * s(1) - s(2) * s(2)));
 }

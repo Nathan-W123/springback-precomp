@@ -6,8 +6,7 @@
 ///        history of the modes and the configuration path.
 ///
 /// Every check is exact (to round-off), a central-difference derivative
-/// check, or an invariant; the bending benchmarks against beam and plate
-/// theory are verification studies (apps/verify_elements.cpp).
+/// check, or an invariant.
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
@@ -15,11 +14,8 @@
 #include "sparlab/elements/Hex8Incompatible.hpp"
 #include "sparlab/elements/Quadrature.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
+#include "sparlab/fem/ExplicitDynamics.hpp"
 #include "sparlab/fem/Forming.hpp"
-#include "sparlab/fem/Loads.hpp"
-#include "sparlab/fem/NonlinearStatic.hpp"
-#include "sparlab/fem/StaticAnalysis.hpp"
-#include "sparlab/fem/StressRecovery.hpp"
 #include "sparlab/fem/TotalLagrangian.hpp"
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/Json.hpp"
@@ -127,11 +123,11 @@ TEST_CASE("the extended Gauss-Legendre line rules integrate polynomials of degre
     }
     for (std::size_t i = 1; i < rule.size(); ++i) REQUIRE(rule[i].xi > rule[i - 1].xi);
   }
-  // The first four are the closed-form rules of gauss_legendre_line.
+  // The first four are the closed-form rules of gauss_legendre_cube (whose
+  // first n points vary xi alone).
   for (int n = 1; n <= 4; ++n) {
     for (std::size_t i = 0; i < static_cast<std::size_t>(n); ++i) {
-      REQUIRE(gauss_legendre_line_extended(n)[i].xi == gauss_legendre_line(n)[i].xi);
-      REQUIRE(gauss_legendre_line_extended(n)[i].weight == gauss_legendre_line(n)[i].weight);
+      REQUIRE(gauss_legendre_line_extended(n)[i].xi == gauss_legendre_cube(n)[i].xi);
     }
   }
   REQUIRE_THROWS_AS(gauss_legendre_line_extended(0), ConfigError);
@@ -188,7 +184,6 @@ TEST_CASE("a Hex8 with thickness points integrates with the box rule and keeps i
   IntegrationOptions sheet;
   sheet.thickness_points = 5;
   REQUIRE(hex.integration_rule(sheet).size() == 20u);
-  REQUIRE(hex.stress_evaluation_points(sheet).size() == 20u);
   // On a box the 2 x 2 x 2 rule is already exact, so five points through
   // the thickness give the same matrix.
   const Matrix box = unit_box_coords(2.0, 1.0, 0.1);
@@ -201,15 +196,13 @@ TEST_CASE("a Hex8 with thickness points integrates with the box rule and keeps i
 // The incompatible-mode Hex8: linear element
 // ---------------------------------------------------------------------------
 
-TEST_CASE("the element factory builds the incompatible-mode Hex8 for Hex8 meshes only",
+TEST_CASE("the element factory builds the incompatible-mode Hex8",
           "[incompatible][element]") {
   const std::unique_ptr<Element> e = make_element(ElementType::Hex8, incompatible_options());
   REQUIRE(e->type() == ElementType::Hex8);
   REQUIRE(e->num_internal_nodes() == 3);
   REQUIRE(e->num_internal_dofs() == 9);
   REQUIRE(make_element(ElementType::Hex8, IntegrationOptions())->num_internal_dofs() == 0);
-  REQUIRE_THROWS_AS(make_element(ElementType::Tet4, incompatible_options()), ConfigError);
-  REQUIRE_THROWS_AS(make_element(ElementType::Quad4, incompatible_options()), ConfigError);
   REQUIRE(parse_element_formulation("incompatible_modes") == ElementFormulation::IncompatibleModes);
   REQUIRE(to_string(ElementFormulation::Standard) == "standard");
   REQUIRE_THROWS_AS(parse_element_formulation("eas"), ConfigError);
@@ -369,210 +362,6 @@ TEST_CASE("rules of two, three and four points give the same condensed stiffness
   opts.thickness_points = 6;
   REQUIRE((hex.stiffness(coords, d, 1.0, opts) - k2).cwiseAbs().maxCoeff() <=
           1.0e-12 * k2.cwiseAbs().maxCoeff());
-}
-
-// ---------------------------------------------------------------------------
-// Linear analyses with the incompatible-mode Hex8
-// ---------------------------------------------------------------------------
-
-namespace {
-
-/// All boundary nodes of a mesh.
-std::vector<Index> boundary_nodes(const Mesh& mesh) {
-  std::vector<char> on(static_cast<std::size_t>(mesh.num_nodes()), 0);
-  for (const Mesh::BoundaryFace& f : mesh.boundary_faces()) {
-    for (Index n : f.nodes) on[static_cast<std::size_t>(n)] = 1;
-  }
-  std::vector<Index> out;
-  for (Index n = 0; n < mesh.num_nodes(); ++n) {
-    if (on[static_cast<std::size_t>(n)]) out.push_back(n);
-  }
-  return out;
-}
-
-Matrix3 patch_gradient() {
-  Matrix3 g;
-  g << 3.0e-4, 1.0e-4, -0.5e-4, 1.0e-4, -2.0e-4, 0.7e-4, -0.5e-4, 0.7e-4, 1.5e-4;
-  return g;
-}
-
-}  // namespace
-
-TEST_CASE("the linear patch test passes with incompatible modes on distorted meshes",
-          "[incompatible][patch][verification]") {
-  for (Scalar perturbation : {0.0, 0.15, 0.30}) {
-    for (int thickness_points : {0, 5}) {
-      StructuredMeshSpec spec;
-      spec.nx = spec.ny = spec.nz = 3;
-      spec.lx = 1.5;
-      spec.ly = 1.0;
-      spec.lz = 1.2;
-      const Matrix3 g = patch_gradient();
-      const IsotropicMaterial material(200.0e9, 0.3, 7850.0, "patch");
-      FemModel model(make_perturbed_hex_mesh(spec, perturbation, 7u), material, 1.0,
-                     StressState::ThreeDimensional, incompatible_options(thickness_points));
-      const std::vector<Index> outer = boundary_nodes(model.mesh());
-      DisplacementConstraint bc;
-      Selector sel;
-      sel.kind = SelectorKind::NodeIds;
-      sel.ids = outer;
-      bc.region.members.push_back(sel);
-      bc.fix_x = bc.fix_y = bc.fix_z = true;
-      model.constraints().push_back(bc);
-      LoadCaseSpec load;
-      load.name = "patch";
-      load.prescribed_displacement_only = true;
-      model.load_case_specs().push_back(load);
-      model.finalize();
-      for (Index n : outer) {
-        const Vector3 u = g * model.mesh().node(n);
-        for (int k = 0; k < 3; ++k) model.dofs().prescribe(n, k, u(k));
-      }
-      Assembler assembler(model);
-      StaticAnalysisOptions options;
-      options.linear.residual_tolerance = 1.0e-12;
-      StaticAnalysis analysis(model, assembler, options);
-      const Vector u = analysis.solve_all().front().displacement;
-      Scalar err = 0.0;
-      for (Index n = 0; n < model.mesh().num_nodes(); ++n) {
-        err = std::max(err, (u.segment<3>(3 * n) - g * model.mesh().node(n)).cwiseAbs().maxCoeff());
-      }
-      INFO("perturbation " << perturbation << ", thickness points " << thickness_points);
-      REQUIRE(err <= 1.0e-11 * g.cwiseAbs().maxCoeff() * 1.5);
-      // The recovered strain includes the (vanishing) modes.
-      const StressField field = recover_stresses(model, assembler, u);
-      Vector6 exact;
-      exact << g(0, 0), g(1, 1), g(2, 2), g(0, 1) + g(1, 0), g(1, 2) + g(2, 1), g(2, 0) + g(0, 2);
-      for (Index e = 0; e < model.mesh().num_elements(); ++e) {
-        REQUIRE((field.element_strain.col(e) - exact).cwiseAbs().maxCoeff() <=
-                1.0e-10 * exact.cwiseAbs().maxCoeff());
-        REQUIRE(linear_internal_parameters(model, e,
-                                           model.dofs().gather(model.mesh().element_nodes(e), 8, u),
-                                           nullptr)
-                    .cwiseAbs()
-                    .maxCoeff() <= 1.0e-12 * 1.5 * g.cwiseAbs().maxCoeff());
-      }
-    }
-  }
-}
-
-TEST_CASE("a free thermal expansion is stress-free with incompatible modes, uniform or linear",
-          "[incompatible][thermal][patch]") {
-  StructuredMeshSpec spec;
-  spec.nx = 3;
-  spec.ny = 2;
-  spec.nz = 2;
-  spec.lx = 0.3;
-  spec.ly = 0.2;
-  spec.lz = 0.1;
-  IsotropicMaterial material(200.0e9, 0.3, 7850.0, "hot");
-  material.set_thermal(1.2e-5, 20.0, 50.0);
-  FemModel model(make_perturbed_hex_mesh(spec, 0.2, 3u), material, 1.0,
-                 StressState::ThreeDimensional, incompatible_options());
-  // 3-2-1 supports at the origin corner.
-  DisplacementConstraint a;
-  Selector sa;
-  sa.kind = SelectorKind::NodeIds;
-  sa.ids = {0};
-  a.region.members.push_back(sa);
-  a.fix_x = a.fix_y = a.fix_z = true;
-  DisplacementConstraint b = a;
-  b.region.members[0].ids = {3};  // (lx, 0, 0)
-  b.fix_x = false;
-  DisplacementConstraint c = a;
-  c.region.members[0].ids = {4 * 1};  // (0, ly/2, 0): z only
-  c.fix_x = c.fix_y = false;
-  model.constraints() = {a, b, c};
-  LoadCaseSpec load;
-  load.name = "heat";
-  load.temperature.source = TemperatureSpec::Source::Uniform;
-  load.temperature.uniform = 120.0;
-  model.load_case_specs().push_back(load);
-  model.finalize();
-  Assembler assembler(model);
-  StaticAnalysis analysis(model, assembler, StaticAnalysisOptions());
-  const Vector u = analysis.solve_all().front().displacement;
-  const LoadCaseData& data = model.load_case_data(0);
-  const StressField field = recover_stresses(model, assembler, u, nullptr, &data.temperature);
-  REQUIRE(field.element_stress.cwiseAbs().maxCoeff() <= 1.0e-3);  // [Pa], of E alpha dT = 2.4e8
-  // The internal modes take no load from the uniform expansion.
-  for (Index e = 0; e < model.mesh().num_elements(); ++e) {
-    const Vector ue = model.dofs().gather(model.mesh().element_nodes(e), 8, u);
-    REQUIRE(linear_internal_parameters(model, e, ue, &data.temperature).cwiseAbs().maxCoeff() <=
-            1.0e-15);
-  }
-}
-
-TEST_CASE("the strain at a point of an incompatible-mode Hex8 includes the modes' thermal part "
-          "when given the temperature",
-          "[incompatible][thermal]") {
-  // A clamped-free distorted element under a temperature varying across it:
-  // the modes take part of the thermal strain, so the total strain at a
-  // point depends on the temperature field, and the stress there is D
-  // (strain - thermal strain) with that strain.
-  IsotropicMaterial material(200.0e9, 0.3, 7850.0, "hot");
-  material.set_thermal(1.2e-5, 20.0, 50.0);
-  const FemModel model(Mesh(distorted_hex_coords(), {0, 1, 2, 3, 4, 5, 6, 7}, ElementType::Hex8),
-                       material, 1.0, StressState::ThreeDimensional, incompatible_options());
-  const Matrix x = model.mesh().element_coordinates(0);
-  Vector temperature(8);
-  for (int a = 0; a < 8; ++a) temperature(a) = 20.0 + 300.0 * x(2, a) * x(2, a) + 80.0 * x(0, a);
-  Vector u(24);
-  for (int a = 0; a < 8; ++a) u.segment<3>(3 * a) = 1.0e-4 * Vector3(x(0, a) * x(2, a), 0.0, 0.0);
-  const NaturalPoint point{0.3, -0.5, 0.6};
-  const Vector with = element_strain_at(model, 0, point, u, &temperature);
-  const Vector without = element_strain_at(model, 0, point, u);
-  const Vector ue = model.dofs().gather(model.mesh().element_nodes(0), 8, u);
-  const Vector expected = linear_point_strain(
-      model, 0, point, ue, linear_internal_parameters(model, 0, ue, &temperature));
-  REQUIRE((with - expected).cwiseAbs().maxCoeff() <= 1.0e-15 * expected.cwiseAbs().maxCoeff());
-  REQUIRE((with - without).cwiseAbs().maxCoeff() > 1.0e-3 * with.cwiseAbs().maxCoeff());
-  const Vector stress = element_stress_at(model, 0, point, u, 1.0, &temperature);
-  const Vector hooke = model.constitutive_of(0) *
-                       (with - element_thermal_strain(model, 0, point, temperature));
-  REQUIRE((stress - hooke).cwiseAbs().maxCoeff() <= 1.0e-12 * hooke.cwiseAbs().maxCoeff());
-}
-
-TEST_CASE("the non-linear small-strain solution with incompatible modes equals the linear one",
-          "[incompatible][nonlinear]") {
-  SolidCantileverCase c;
-  c.poisson = 0.3;
-  c.tip_load = -200.0;
-  StructuredMeshSpec spec;
-  spec.nx = 8;
-  spec.ny = 1;
-  spec.nz = 1;
-  spec.lx = c.length;
-  spec.ly = c.height;
-  spec.lz = c.width;
-  FemModel model(make_perturbed_hex_mesh(spec, 0.0), IsotropicMaterial(c.youngs, c.poisson, 1.0,
-                                                                     "beam"),
-                 1.0, StressState::ThreeDimensional, incompatible_options(3));
-  const FemModel reference = make_cantilever_3d(c, 8, 1, 1);
-  model.constraints() = reference.constraints();
-  model.load_case_specs() = reference.load_case_specs();
-  model.finalize();
-  Assembler assembler(model);
-  const Vector linear = StaticAnalysis(model, assembler, StaticAnalysisOptions())
-                            .solve_all()
-                            .front()
-                            .displacement;
-  NonlinearOptions nl;
-  nl.kinematics = Kinematics::SmallStrain;
-  nl.steps = 1;
-  nl.residual_tolerance = 1.0e-12;
-  nl.displacement_tolerance = 1.0e-12;
-  const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, nl).solve(0);
-  REQUIRE(r.completed);
-  REQUIRE((r.displacement - linear).cwiseAbs().maxCoeff() <=
-          1.0e-9 * linear.cwiseAbs().maxCoeff());
-  // Elastic small strain is linear in the modes: one local iteration, none
-  // at the committed state.
-  REQUIRE(r.max_local_iterations == 1);
-  // One element through the thickness, eight along: within 2 % of
-  // Timoshenko's tip deflection (the standard Hex8 is 3.5 times too stiff).
-  const Scalar tip = tip_deflection_3d(model, r.displacement);
-  REQUIRE(tip / c.timoshenko_tip() == Approx(1.0).margin(0.02));
 }
 
 // ---------------------------------------------------------------------------
@@ -813,7 +602,7 @@ TEST_CASE("the condensed hyperelastic tangents of the incompatible-mode Hex8 are
   const Matrix x = model.mesh().element_coordinates(0);
   for (HyperelasticModel law : {HyperelasticModel::SaintVenantKirchhoff,
                                 HyperelasticModel::NeoHookean}) {
-    INFO(to_string(law));
+    INFO((law == HyperelasticModel::NeoHookean ? "neo_hookean" : "saint_venant_kirchhoff"));
     const Vector ue = deformation(x, 0.08);
     const TotalLagrangianElement el =
         total_lagrangian_element(model, 0, ue, law, nullptr, 0.0, true, nullptr);
@@ -978,7 +767,7 @@ namespace {
 
 /// A clamped strip along x, one element through its thickness (z), under a
 /// tip load `load` [N] along -z.
-FemModel strip(const IsotropicMaterial& m, Index nx, int thickness_points, Scalar load,
+FemModel strip(const IsotropicMaterial& m, Index nx, int thickness_points,
                ElementFormulation formulation = ElementFormulation::IncompatibleModes,
                Scalar perturbation = 0.0) {
   StructuredMeshSpec spec;
@@ -1003,14 +792,6 @@ FemModel strip(const IsotropicMaterial& m, Index nx, int thickness_points, Scala
   model.constraints().push_back(root);
   LoadCaseSpec lc;
   lc.name = "tip";
-  PointLoadSpec tip;
-  Selector t;
-  t.kind = SelectorKind::Box;
-  t.xmin = spec.lx;
-  tip.region.members.push_back(t);
-  tip.force = Vector3(0.0, 0.0, -load);
-  tip.distribute_total = true;
-  lc.point_loads.push_back(tip);
   model.load_case_specs().push_back(lc);
   model.finalize();
   return model;
@@ -1029,11 +810,13 @@ IsotropicMaterial aluminium() {
 
 TEST_CASE("the incompatible-mode system evaluates bitwise alike on one and several threads",
           "[incompatible][nonlinear]") {
-  const FemModel model = strip(aluminium(), 12, 3, 30.0, ElementFormulation::IncompatibleModes,
-                               0.2);
+  const FemModel model = strip(aluminium(), 12, 3, ElementFormulation::IncompatibleModes, 0.2);
   Assembler assembler(model);
   NonlinearOptions nl;
   nl.kinematics = Kinematics::Finite;
+  // The generic element dispatch of NonlinearSystem, which the forming
+  // analysis evaluates (the explicit integrator's comparison hook).
+  const ExplicitDynamics system(model, assembler, nl, {}, ExplicitOptions());
   Vector u = Vector::Zero(model.dofs().num_dofs());
   for (Index n = 0; n < model.mesh().num_nodes(); ++n) {
     const Vector3 x = model.mesh().node(n);
@@ -1044,77 +827,15 @@ TEST_CASE("the incompatible-mode system evaluates bitwise alike on one and sever
   const int threads = omp_get_max_threads();
   omp_set_num_threads(1);
 #endif
-  const NonlinearState serial = evaluate_nonlinear_state(model, assembler, 0, nl, u, 1.0);
+  const Vector serial = system.internal_force(u, {}, /*generic=*/true);
 #if defined(SPARLAB_HAVE_OPENMP)
   omp_set_num_threads(3);
 #endif
-  const NonlinearState parallel = evaluate_nonlinear_state(model, assembler, 0, nl, u, 1.0);
+  const Vector parallel = system.internal_force(u, {}, /*generic=*/true);
 #if defined(SPARLAB_HAVE_OPENMP)
   omp_set_num_threads(threads);
 #endif
-  REQUIRE(serial.residual == parallel.residual);
-  REQUIRE(serial.energy == parallel.energy);
-  REQUIRE((SparseMatrix(serial.tangent - parallel.tangent)).norm() == 0.0);
-}
-
-TEST_CASE("an incompatible-mode strip bent past yield springs back by its linear elastic "
-          "response",
-          "[incompatible][nonlinear][plasticity]") {
-  // Small strain, a load and unload: without reverse yielding the unloading
-  // is elastic, with the condensed elastic stiffness K* whatever the plastic
-  // state, so the springback is the linear solution under the released load.
-  const Scalar load = 16.0;  // [N], 1.4 times the load of first yield (11.3 N)
-  const FemModel model = strip(aluminium(), 10, 5, load);
-  Assembler assembler(model);
-  NonlinearOptions nl;
-  nl.kinematics = Kinematics::SmallStrain;
-  nl.load_path = {1.0, 0.0};
-  nl.steps = 16;
-  nl.residual_tolerance = 1.0e-11;
-  nl.displacement_tolerance = 1.0e-11;
-  NonlinearMonitor tip;
-  tip.name = "tip";
-  tip.quantity = NonlinearMonitor::Quantity::Displacement;
-  tip.component = 2;
-  Selector t;
-  t.kind = SelectorKind::Box;
-  t.xmin = 0.1;
-  tip.region.members.push_back(t);
-  nl.monitors.push_back(tip);
-  const NonlinearResult r = NonlinearStaticAnalysis(model, assembler, nl).solve(0);
-  REQUIRE(r.completed);
-  REQUIRE(r.plastic);
-  REQUIRE_FALSE(r.mean_dilatation);  // not with incompatible modes
-  REQUIRE(r.max_plastic_strain > 1.0e-3);
-  REQUIRE(r.equilibrium.relative_force_error <= 1.0e-10);
-  // The loaded state: the step at lambda = 1.
-  const auto loaded = std::find_if(r.steps.begin(), r.steps.end(), [](const NonlinearStep& s) {
-    return s.load_factor == 1.0;
-  });
-  REQUIRE(loaded != r.steps.end());
-  for (auto s = loaded + 1; s != r.steps.end(); ++s) REQUIRE(s->yielding_points == 0);
-  const Scalar springback = r.steps.back().monitors[0] - loaded->monitors[0];
-  const Vector elastic = StaticAnalysis(model, assembler, StaticAnalysisOptions())
-                             .solve_all()
-                             .front()
-                             .displacement;
-  Scalar elastic_tip = 0.0;
-  int count = 0;
-  for (Index n = 0; n < model.mesh().num_nodes(); ++n) {
-    if (model.mesh().node(n)(0) >= 0.1) {
-      elastic_tip += elastic(3 * n + 2);
-      ++count;
-    }
-  }
-  elastic_tip /= count;
-  INFO("springback " << springback << " m, linear elastic tip " << elastic_tip << " m");
-  REQUIRE(springback == Approx(-elastic_tip).epsilon(1.0e-8));
-  // Every converged step's modes came in at most three local iterations
-  // from the committed ones (measured: 3 with these 16 steps to the load,
-  // 4 with 8, 5 with 4 - the elements where the points first yield).
-  INFO("local iterations: at most " << r.max_local_iterations << ", converged steps "
-                                    << r.max_converged_local_iterations);
-  REQUIRE(r.max_converged_local_iterations <= 3);
+  REQUIRE(serial == parallel);
 }
 
 TEST_CASE("a forming restart carries the committed incompatible modes", "[incompatible][forming]") {
@@ -1131,7 +852,6 @@ TEST_CASE("a forming restart carries the committed incompatible modes", "[incomp
                  StressState::ThreeDimensional, o);
   LoadCaseSpec lc;
   lc.name = "none";
-  lc.prescribed_displacement_only = true;
   model.load_case_specs().push_back(lc);
   model.finalize();
   Assembler assembler(model);
@@ -1202,11 +922,11 @@ TEST_CASE("a forming restart carries the committed incompatible modes", "[incomp
 
 TEST_CASE("mean dilatation is refused with incompatible modes, and auto does not apply it",
           "[incompatible][nonlinear][config]") {
-  const FemModel model = strip(aluminium(), 4, 0, 1.0);
+  const FemModel model = strip(aluminium(), 4, 0);
   Assembler assembler(model);
   NonlinearOptions nl;
   nl.mean_dilatation = MeanDilatation::All;
-  REQUIRE_THROWS_AS(NonlinearStaticAnalysis(model, assembler, nl).solve(0), ConfigError);
+  REQUIRE_THROWS_AS(ExplicitDynamics(model, assembler, nl, {}, ExplicitOptions()), ConfigError);
   const std::vector<PlasticState> virgin(8);
   REQUIRE_THROWS_AS(elastoplastic_element(model, 0, Vector::Zero(24), virgin, true, nullptr, 0.0,
                                           false, Kinematics::SmallStrain),
@@ -1219,8 +939,7 @@ TEST_CASE("the element formulation and the thickness rule are read from a deck a
   const auto deck = [](const std::string& mesh, const std::string& model) {
     return R"({"mesh": )" + mesh + R"(, "material": {"youngs_modulus": 7e10, "poisson_ratio": 0.3},
       "model": )" + model + R"(,
-      "boundary_conditions": [{"fix": ["x", "y"], "region": {"box": {"xmax": 0}}}],
-      "load_cases": [{"point_loads": [{"force": [0, 1], "region": {"box": {"xmin": 1}}}]}]})";
+      "boundary_conditions": [{"fix": ["x", "y"], "region": {"box": {"xmax": 0}}}]})";
   };
   const std::string hex = R"({"type": "structured_hex", "nx": 4, "ny": 1, "nz": 1, "lx": 1,
       "ly": 0.1, "lz": 0.02})";
@@ -1230,8 +949,6 @@ TEST_CASE("the element formulation and the thickness rule are read from a deck a
   const auto fix3 = [](std::string text) {
     const std::string two = R"("fix": ["x", "y"])";
     text.replace(text.find(two), two.size(), R"("fix": ["x", "y", "z"])");
-    const std::string force = R"("force": [0, 1])";
-    text.replace(text.find(force), force.size(), R"("force": [0, 0, 1])");
     return text;
   };
   const Configuration config = parse(fix3(deck(hex, R"({"element_formulation": "incompatible_modes",
@@ -1255,15 +972,6 @@ TEST_CASE("the element formulation and the thickness rule are read from a deck a
   REQUIRE_THROWS_AS(
       parse(fix3(deck(hex, R"({"integration": {"thickness_points": 3, "thickness_direction": "t"}})"))),
       ConfigError);
-  const std::string tet = R"({"type": "structured_tet", "nx": 2, "ny": 1, "nz": 1, "lx": 1,
-      "ly": 0.1, "lz": 0.1})";
-  REQUIRE_THROWS_AS(build_model(parse(fix3(deck(tet, R"({"element_formulation": "incompatible_modes"})")))),
-                    ConfigError);
-  REQUIRE_THROWS_AS(build_model(parse(fix3(deck(tet, R"({"integration": {"thickness_points": 3}})")))),
-                    ConfigError);
-  const std::string quad = R"({"nx": 2, "ny": 2, "lx": 1, "ly": 1})";
-  REQUIRE_THROWS_AS(build_model(parse(deck(quad, R"({"element_formulation": "incompatible_modes"})"))),
-                    ConfigError);
 }
 
 TEST_CASE("a rule of one point along a natural axis is refused for the incompatible-mode Hex8",

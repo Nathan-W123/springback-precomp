@@ -49,7 +49,6 @@ class Hex8Element final : public Element {
   ElementType type() const override { return ElementType::Hex8; }
   int dim() const override { return 3; }
   int num_nodes() const override { return 8; }
-  int num_faces() const override { return 6; }
 
   Matrix stiffness(const Matrix& coords, const Matrix& d, Scalar thickness,
                    const IntegrationOptions& opts) const override;
@@ -62,14 +61,8 @@ class Hex8Element final : public Element {
 
   Vector shape_functions(const NaturalPoint& point) const override;
 
-  std::vector<NaturalPoint> stress_evaluation_points(
-      const IntegrationOptions& opts) const override;
-
   std::vector<IntegrationPoint> integration_rule(
       const IntegrationOptions& opts) const override;
-
-  Vector boundary_traction(const Matrix& coords, int local_face, const Vector3& traction,
-                           Scalar thickness, const IntegrationOptions& opts) const override;
 };
 
 }  // namespace sparlab

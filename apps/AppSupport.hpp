@@ -1,15 +1,7 @@
 /// \file AppSupport.hpp
-/// \brief Shared command-line parsing and error reporting for the SparLab apps.
+/// \brief Command-line parsing and error reporting for sparlab_form.
 ///
-/// All four executables accept the same core flags:
-/// \code
-///   --config <file>      input deck (required except for sparlab_bench)
-///   --output <dir>       output directory (default: results/<case name>)
-///   --verbosity <level>  trace|debug|info|warn|error|silent (default: info)
-///   --strict-config      treat unknown configuration keys as errors
-///   --help               print usage and exit
-/// \endcode
-/// Additional per-app flags are documented by each app's `--help`.
+/// The flags are documented by `sparlab_form --help`.
 #pragma once
 
 #include "sparlab/core/Logging.hpp"
@@ -37,12 +29,8 @@ class CommandLine {
   std::string value(const std::string& name, const std::string& fallback = "") const;
   std::string require(const std::string& name) const;
   int integer(const std::string& name, int fallback) const;
-  Scalar number(const std::string& name, Scalar fallback) const;
-  std::vector<Scalar> number_list(const std::string& name) const;
-  const std::string& program() const { return program_; }
 
  private:
-  std::string program_;
   std::map<std::string, std::string> options_;
   std::vector<std::string> known_;
 };
@@ -56,7 +44,7 @@ int print_usage(const std::string& program, const std::string& synopsis,
 
 /// Run `body`, converting SparLab exceptions into a diagnostic on stderr and a
 /// non-zero exit status. Exit codes: 0 success, 2 configuration/model error,
-/// 3 solver/convergence error, 4 I/O error, 5 unexpected exception.
+/// 3 solver error, 4 I/O error, 5 unexpected exception.
 int run_guarded(const std::function<int()>& body);
 
 /// Default output directory for a case name.

@@ -58,14 +58,6 @@ std::vector<std::string> write_forming_step(const ResultWriter& writer, const Fe
 void write_tool_forces(const ResultWriter& writer, const FemModel& model,
                        const FormingOptions& options, const FormingResult& result);
 
-/// Write the per-step files (when `step_files`; VTK when `vtk`) of every
-/// completed step, their snapshots, and tool_forces.csv. Returns the names
-/// of the files written.
-std::vector<std::string> write_forming_results(const ResultWriter& writer, const FemModel& model,
-                                               const FormingOptions& options,
-                                               const FormingResult& result, bool vtk,
-                                               bool step_files);
-
 /// The summary.json document of a forming run.
 json::Value forming_summary_json(const Configuration& config, const FemModel& model,
                                  const FormingOptions& options, const FormingResult& result,

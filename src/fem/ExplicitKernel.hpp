@@ -48,7 +48,6 @@
 #include "sparlab/core/Types.hpp"
 #include "sparlab/fem/Assembler.hpp"
 #include "sparlab/fem/FemModel.hpp"
-#include "sparlab/fem/NonlinearStatic.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
 #include <limits>
@@ -60,17 +59,14 @@ namespace sparlab {
 
 class ExplicitInternalForce {
  public:
-  /// `load_case` < 0: no loads. `allow_dedicated` false forces the generic
-  /// dispatch.
+  /// `allow_dedicated` false forces the generic dispatch.
   ExplicitInternalForce(const FemModel& model, const Assembler& assembler,
-                        const NonlinearOptions& options, int load_case, bool allow_dedicated);
+                        const NonlinearOptions& options, bool allow_dedicated);
 
   /// The dedicated Hex8 kernel is in use.
   bool dedicated() const { return dedicated_; }
   /// Why the generic dispatch is used (empty when the kernel is dedicated).
   const std::string& fallback_reason() const { return reason_; }
-  /// Some material is elastoplastic.
-  bool plastic() const { return system_->plastic(); }
 
   /// Replace the history (NonlinearSystem's layout; empty: virgin).
   /// \throws ConfigError when it does not match the model.
@@ -123,7 +119,6 @@ class ExplicitInternalForce {
   const FemModel& model_;
   const Assembler& assembler_;
   NonlinearOptions options_;
-  int load_case_ = -1;
   std::unique_ptr<detail::NonlinearSystem> system_;  ///< the generic dispatch (and its history)
   bool dedicated_ = false;
   std::string reason_;
@@ -189,7 +184,7 @@ class ExplicitInternalForce {
   Scalar elastic_ = std::numeric_limits<Scalar>::quiet_NaN();
   std::vector<Index> incidence_ptr_;    ///< per node, into incidence_
   std::vector<Index> incidence_;        ///< offsets e * 24 + 3 a, ascending element
-  Vector dead_;                         ///< the load case's loads at lambda = 1
+  Vector dead_;                         ///< the applied loads at lambda = 1 (none: zero)
   std::vector<std::vector<PlasticState>> generic_saved_;
 };
 

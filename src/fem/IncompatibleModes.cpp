@@ -774,17 +774,11 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
       out.min_jacobian = std::min(out.min_jacobian, j);
     } else {
       out.max_strain = std::max(out.max_strain, sym.cwiseAbs().maxCoeff());
-      const Matrix3 skew = 0.5 * (p.h - p.h.transpose());
-      out.max_rotation = std::max(out.max_rotation, std::sqrt(0.5 * skew.squaredNorm()));
-      out.max_quadratic_strain = std::max(out.max_quadratic_strain,
-                                          (0.5 * p.h.transpose() * p.h).cwiseAbs().maxCoeff());
     }
     out.cauchy += cauchy;
     out.piola_kirchhoff += piola_kirchhoff;
-    out.max_point_von_mises = std::max(out.max_point_von_mises, von_mises_stress(cauchy));
     out.max_equivalent_plastic_strain =
         std::max(out.max_equivalent_plastic_strain, r.state.equivalent_plastic_strain);
-    if (r.state.equivalent_plastic_strain > 0.0) ++out.plastic_points;
   }
   const Scalar count = static_cast<Scalar>(points.size());
   out.cauchy /= count;
@@ -812,14 +806,11 @@ TotalLagrangianStress incompatible_total_lagrangian_stress(const FemModel& model
   kinematics_at(set, points, alpha);
   const IsotropicMaterial& mat = model.material_of(e);
   TotalLagrangianStress out;
-  out.piola_kirchhoff = Vector::Zero(6);
   out.cauchy = Vector::Zero(6);
-  out.min_jacobian = std::numeric_limits<Scalar>::infinity();
   for (const PointWork& p : points) {
     const Matrix h = p.h;
     const HyperelasticResponse resp =
         evaluate_hyperelastic(law, mat, StressState::ThreeDimensional, h, p.change);
-    out.piola_kirchhoff += resp.stress;
     Scalar szz = 0.0;
     out.cauchy += cauchy_from_piola_kirchhoff(h, resp, StressState::ThreeDimensional, &szz);
     const Vector6 strain = green_lagrange_6(p.h);
@@ -827,10 +818,8 @@ TotalLagrangianStress incompatible_total_lagrangian_stress(const FemModel& model
       const Scalar tensor_component = c < 3 ? strain(c) : 0.5 * strain(c);
       out.max_green_strain = std::max(out.max_green_strain, std::abs(tensor_component));
     }
-    out.min_jacobian = std::min(out.min_jacobian, (Matrix3::Identity() + p.h).determinant());
   }
   const Scalar count = static_cast<Scalar>(points.size());
-  out.piola_kirchhoff /= count;
   out.cauchy /= count;
   return out;
 }

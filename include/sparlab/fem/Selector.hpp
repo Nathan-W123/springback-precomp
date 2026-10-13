@@ -1,14 +1,12 @@
 /// \file Selector.hpp
-/// \brief Geometric region selectors for boundary conditions, loads and passive
-///        topology regions.
+/// \brief Geometric region selectors for boundary conditions, tool surfaces
+///        and material regions.
 ///
 /// Selectors are geometric so that the *same* configuration block can be
-/// applied to meshes of different resolution, and so that a topology extracted
-/// from a density field can be re-constrained without re-authoring indices.
+/// applied to meshes of different resolution without re-authoring indices.
 /// The one non-geometric primitive, `Group`, names a set carried by the mesh
-/// itself (a Gmsh physical group, an Abaqus *NSET / *ELSET): the way to reach
-/// a curved hole wall or a CAD face that no box describes. Sets are carried
-/// into extracted sub-meshes, so the re-constraint property holds for them too.
+/// itself (an Abaqus *NSET / *ELSET): the way to reach a curved hole wall or
+/// a CAD face that no box describes.
 /// Every primitive is written for three coordinates; on a 2-D mesh the z
 /// coordinate of every node is zero, so the default z bounds (+-infinity) and
 /// the default circle axis (z) make a 2-D deck read exactly as before.
@@ -85,8 +83,6 @@ struct SelectorGroup {
   /// Element indices matched by this group, tested at element centroids
   /// (ascending, unique). A `Group` primitive needs an element set.
   std::vector<Index> select_elements(const Mesh& mesh) const;
-
-  bool empty() const { return members.empty(); }
 };
 
 }  // namespace sparlab

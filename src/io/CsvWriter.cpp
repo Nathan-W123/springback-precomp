@@ -6,7 +6,6 @@
 #include <sys/types.h>
 
 #include <cerrno>
-#include <cstring>
 #include <iomanip>
 #include <sstream>
 
@@ -66,20 +65,6 @@ CsvWriter::CsvWriter(const std::string& path, const std::vector<std::string>& he
   for (std::size_t i = 0; i < header.size(); ++i) {
     if (i > 0) out_ << ',';
     out_ << header[i];
-  }
-  out_ << '\n';
-}
-
-void CsvWriter::row(const std::vector<Scalar>& values) {
-  if (values.size() != columns_) {
-    std::ostringstream os;
-    os << "CSV row for '" << path_ << "' has " << values.size()
-       << " fields but the header declares " << columns_;
-    throw IoError(os.str());
-  }
-  for (std::size_t i = 0; i < values.size(); ++i) {
-    if (i > 0) out_ << ',';
-    out_ << values[i];
   }
   out_ << '\n';
 }

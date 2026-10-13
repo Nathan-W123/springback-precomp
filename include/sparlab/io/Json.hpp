@@ -11,7 +11,7 @@
 /// syntax errors report the offending line and column.
 ///
 /// `ConfigNode` wraps a parsed value with the *path* it came from, so a bad
-/// entry produces "configuration error: topology.filter.radius must be a
+/// entry produces "configuration error: forming.tools[0].radius must be a
 /// number, got string" instead of a bare type error. Every access is recorded
 /// in a set shared by all nodes of one document, so `unused_keys` can list keys
 /// present in the deck that nothing ever read - which is how a misspelled key
@@ -88,10 +88,6 @@ std::string dump(const Value& value, int indent = 2);
 
 /// Helpers for building result documents.
 /// \{
-Value array_of(const Vector& v);
-Value array_of(const std::vector<Scalar>& v);
-Value array_of(const std::vector<Index>& v);  ///< Index is int, so this also
-                                              ///< serves std::vector<int>
 Value array_of(const std::vector<std::string>& v);
 /// \}
 
@@ -120,7 +116,6 @@ class ConfigNode {
   int integer() const;
   bool boolean() const;
   std::string string() const;
-  Vector2 vector2() const;
   /// Two- or three-entry numeric array as a 3-vector (z = 0 when two entries
   /// are given). `dim`, when 2 or 3, requires the entry count to match the
   /// mesh dimension so a component is never silently dropped or invented;
@@ -136,15 +131,11 @@ class ConfigNode {
   int integer_or(const std::string& key, int fallback) const;
   bool boolean_or(const std::string& key, bool fallback) const;
   std::string string_or(const std::string& key, const std::string& fallback) const;
-  Vector2 vector2_or(const std::string& key, const Vector2& fallback) const;
   Vector3 vector3_or(const std::string& key, const Vector3& fallback, int dim = 0) const;
   /// \}
 
   /// Required number that must be strictly positive.
   Scalar positive_number(const std::string& key) const;
-
-  /// Required number that must lie in the closed interval [lo, hi].
-  Scalar bounded_number(const std::string& key, Scalar lo, Scalar hi) const;
 
   /// Array elements of this node (throws if this node is not an array).
   std::vector<ConfigNode> items() const;

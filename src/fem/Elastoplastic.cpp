@@ -238,6 +238,14 @@ Kinematics parse_kinematics(const std::string& text) {
                     "'; expected \"finite\", \"finite_logarithmic\" or \"small_strain\"");
 }
 
+MeanDilatation parse_mean_dilatation(const std::string& text) {
+  if (text == "auto") return MeanDilatation::Auto;
+  if (text == "all") return MeanDilatation::All;
+  if (text == "none") return MeanDilatation::None;
+  throw ConfigError("unknown mean_dilatation '" + text +
+                    "'; expected \"auto\", \"all\" or \"none\"");
+}
+
 int elastoplastic_points(const FemModel& model) {
   return static_cast<int>(model.element().integration_rule(model.integration()).size());
 }
@@ -247,9 +255,6 @@ ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const
                                            bool mean_dilatation, const Vector* temperature,
                                            Scalar temperature_scale, bool want_tangent,
                                            Kinematics kinematics, const Vector* internal) {
-  if (model.dofs_per_node() != model.dim()) {
-    throw ConfigError("the elastoplastic analysis is written for continuum elements");
-  }
   if (model.element().num_internal_dofs() > 0) {
     detail::refuse_mean_dilatation(mean_dilatation);
     return detail::incompatible_elastoplastic_element(model, e, ue, committed, internal,
@@ -449,18 +454,11 @@ ElastoplasticStress elastoplastic_stress(const FemModel& model, Index e, const V
       if (state == StressState::PlaneStress) {
         out.max_strain = std::max(out.max_strain, std::abs(r.strain_33));
       }
-      const Matrix skew = 0.5 * (p.h - p.h.transpose());
-      out.max_rotation =
-          std::max(out.max_rotation, std::sqrt(0.5 * skew.squaredNorm()));
-      out.max_quadratic_strain = std::max(out.max_quadratic_strain,
-                                          (0.5 * p.h.transpose() * p.h).cwiseAbs().maxCoeff());
     }
     out.cauchy += cauchy;
     out.piola_kirchhoff += piola_kirchhoff;
-    out.max_point_von_mises = std::max(out.max_point_von_mises, von_mises_stress(cauchy));
     out.max_equivalent_plastic_strain =
         std::max(out.max_equivalent_plastic_strain, r.state.equivalent_plastic_strain);
-    if (r.state.equivalent_plastic_strain > 0.0) ++out.plastic_points;
   }
   const Scalar count = static_cast<Scalar>(kin.points.size());
   out.cauchy /= count;

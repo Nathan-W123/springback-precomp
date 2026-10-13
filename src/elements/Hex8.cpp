@@ -2,7 +2,6 @@
 
 #include "Hex8Kernels.hpp"
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/elements/Quad4.hpp"
 #include "sparlab/elements/Quadrature.hpp"
 
 #include <Eigen/Dense>
@@ -24,6 +23,18 @@ using detail::hex8_mapping;
 using detail::hex8_stiffness_rule;
 using detail::hex8_strain_matrix;
 using detail::require_unit_thickness;
+
+/// Natural derivatives of the bilinear shape functions of a quadrilateral
+/// face, (dN/dxi, dN/deta) per node in counter-clockwise order.
+Eigen::Matrix<Scalar, 4, 2> quad4_shape_gradients_natural(Scalar xi, Scalar eta) {
+  Eigen::Matrix<Scalar, 4, 2> g;
+  // dN/dxi                          dN/deta
+  g(0, 0) = -0.25 * (1.0 - eta);  g(0, 1) = -0.25 * (1.0 - xi);
+  g(1, 0) =  0.25 * (1.0 - eta);  g(1, 1) = -0.25 * (1.0 + xi);
+  g(2, 0) =  0.25 * (1.0 + eta);  g(2, 1) =  0.25 * (1.0 + xi);
+  g(3, 0) = -0.25 * (1.0 + eta);  g(3, 1) =  0.25 * (1.0 - xi);
+  return g;
+}
 
 }  // namespace
 
@@ -136,53 +147,6 @@ Matrix Hex8Element::consistent_mass(const Matrix& coords_in, Scalar density,
     me.noalias() += (density * map.det * gp.weight) * (nmat.transpose() * nmat);
   }
   return 0.5 * (me + me.transpose());
-}
-
-std::vector<NaturalPoint> Hex8Element::stress_evaluation_points(
-    const IntegrationOptions& opts) const {
-  std::vector<NaturalPoint> points;
-  for (const auto& gp : hex8_stiffness_rule(opts)) {
-    NaturalPoint p;
-    p.xi = gp.xi;
-    p.eta = gp.eta;
-    p.zeta = gp.zeta;
-    points.push_back(p);
-  }
-  return points;
-}
-
-Vector Hex8Element::boundary_traction(const Matrix& coords_in, int local_face,
-                                      const Vector3& traction, Scalar thickness,
-                                      const IntegrationOptions& opts) const {
-  require_unit_thickness(thickness);
-  const std::vector<int>& fn = face_nodes(local_face);
-  const Hex8Coords coords = hex8_coords(coords_in);
-
-  // The face is a bilinear quadrilateral parametrised by (s, t) in [-1, 1]^2
-  // through the Q4 shape functions in the face's own node order; its area
-  // element is |x_s x x_t| ds dt.
-  Eigen::Matrix<Scalar, 3, 4> xf;
-  for (int a = 0; a < 4; ++a) xf.col(a) = coords.col(fn[static_cast<std::size_t>(a)]);
-
-  Vector fe = Vector::Zero(num_dofs());
-  Scalar area = 0.0;
-  for (const auto& gp : gauss_legendre_square(opts.edge_points)) {
-    const Eigen::Vector4d n = quad4_shape_functions(gp.xi, gp.eta);
-    const Eigen::Matrix<Scalar, 4, 2> dn = quad4_shape_gradients_natural(gp.xi, gp.eta);
-    const Vector3 xs = xf * dn.col(0);
-    const Vector3 xt = xf * dn.col(1);
-    const Scalar da = xs.cross(xt).norm();
-    area += gp.weight * da;
-    for (int a = 0; a < 4; ++a) {
-      const int node = fn[static_cast<std::size_t>(a)];
-      const Scalar scale = gp.weight * da * n(a);
-      fe(3 * node + 0) += scale * traction.x();
-      fe(3 * node + 1) += scale * traction.y();
-      fe(3 * node + 2) += scale * traction.z();
-    }
-  }
-  if (!(area > 0.0)) throw MeshError("zero-area element face in traction load");
-  return fe;
 }
 
 std::vector<IntegrationPoint> Hex8Element::integration_rule(

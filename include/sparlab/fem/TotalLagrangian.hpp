@@ -85,11 +85,9 @@ TotalLagrangianElement total_lagrangian_element(const FemModel& model, Index e,
 /// the second Piola-Kirchhoff stress and the Cauchy stress (Voigt), and the
 /// out-of-plane Cauchy stress of a plane-strain element.
 struct TotalLagrangianStress {
-  Vector piola_kirchhoff;
   Vector cauchy;
   Scalar cauchy_zz = 0.0;
   Scalar max_green_strain = 0.0;  ///< largest |E_ij| over the element's points
-  Scalar min_jacobian = 1.0;      ///< smallest det F over the element's points
 };
 
 /// With internal modes, `internal` holds their committed parameters.

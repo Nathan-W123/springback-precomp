@@ -36,7 +36,7 @@
 /// in a thermal stress, below the model's small-strain premise).
 ///
 /// **Mean dilatation.** Plastic flow is isochoric. On an element with
-/// several integration points (Q4, Hex8, Tet10) each point's dilatation is
+/// several integration points (the Hex8) each point's dilatation is
 /// then a constraint, and in plane strain and 3-D the constraints outnumber
 /// the element's degrees of freedom: the element locks and overestimates the
 /// collapse load (Nagtegaal, Parks and Rice 1974). The mean-dilatation
@@ -52,9 +52,7 @@
 /// \f$\tfrac{1}{3}\,\mathrm{tr}S\,(\overline{G^TG} - G^TG)\otimes I\f$ to the
 /// geometric stiffness; being derived from the strain, it keeps the tangent
 /// symmetric and consistent. Plane stress has no incompressibility
-/// constraint (the thickness strain is free) and keeps \f$B\f$. On a
-/// constant-strain element (Tri3, Tet4) the average is the point value and
-/// nothing changes - those elements lock.
+/// constraint (the thickness strain is free) and keeps \f$B\f$.
 ///
 /// **Logarithmic-strain finite kinematics** (large strain; Miehe, Apel and
 /// Lambrecht 2002, *Anisotropic additive plasticity in the logarithmic
@@ -121,6 +119,7 @@
 
 #include "sparlab/core/Types.hpp"
 #include "sparlab/fem/FemModel.hpp"
+#include "sparlab/material/Hyperelastic.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
 #include <string>
@@ -140,6 +139,31 @@ enum class Kinematics {
 std::string to_string(Kinematics kinematics);
 /// "finite", "small_strain" or "finite_logarithmic".
 Kinematics parse_kinematics(const std::string& text);
+
+/// Which elements of an elastoplastic material average their dilatation (see
+/// above); elastic materials always keep their plain operator, and plane
+/// stress and one-point elements have nothing to average.
+enum class MeanDilatation {
+  /// The Hex8, whose full integration locks under isochoric plastic flow.
+  Auto,
+  All,   ///< every element with several integration points
+  None
+};
+
+/// "auto", "all" or "none".
+MeanDilatation parse_mean_dilatation(const std::string& text);
+
+/// How the elements of a non-linear system are evaluated (NonlinearSystem.hpp,
+/// the forming analysis and the explicit integrator).
+struct NonlinearOptions {
+  /// The elastic law with finite kinematics (small strain is linear
+  /// elasticity, logarithmic kinematics Hencky's law, which leaves it at its
+  /// default); an elastoplastic material takes the Saint Venant-Kirchhoff
+  /// form.
+  HyperelasticModel law = HyperelasticModel::SaintVenantKirchhoff;
+  Kinematics kinematics = Kinematics::Finite;
+  MeanDilatation mean_dilatation = MeanDilatation::Auto;
+};
 
 struct ElastoplasticElement {
   Vector internal_force;               ///< \f$f_e\f$ [N]
@@ -186,17 +210,11 @@ struct ElastoplasticStress {
   Vector6 cauchy = Vector6::Zero();           ///< [Pa]
   Vector6 piola_kirchhoff = Vector6::Zero();  ///< [Pa]
   Scalar von_mises = 0.0;                     ///< of the average Cauchy stress [Pa]
-  Scalar max_point_von_mises = 0.0;           ///< the largest of its points [Pa]
   Scalar max_equivalent_plastic_strain = 0.0; ///< \f$\max\bar\alpha\f$ over its points [-]
-  int plastic_points = 0;                     ///< points with \f$\bar\alpha > 0\f$
   /// The largest tensor strain component over its points: \f$\varepsilon\f$
   /// (small strain), \f$E\f$ (finite) or \f$E_{\log}\f$ (logarithmic), with
   /// the thickness strain [-].
   Scalar max_strain = 0.0;
-  /// Small strain: the largest infinitesimal rotation \f$|\mathrm{skew}\,H|\f$
-  /// and the largest component of the neglected \f$\tfrac12 H^TH\f$ [-].
-  Scalar max_rotation = 0.0;
-  Scalar max_quadratic_strain = 0.0;
   Scalar min_jacobian = 1.0;                  ///< finite: the smallest det F [-]
   /// Logarithmic kinematics: the point averages of the Kirchhoff stress
   /// \f$\tau\f$ [Pa] and of the (Lagrangian) log strain \f$E_{\log}\f$ the

@@ -13,14 +13,8 @@ namespace app {
 
 CommandLine::CommandLine(int argc, char** argv, const std::vector<std::string>& known)
     : known_(known) {
-  program_ = argc > 0 ? argv[0] : "sparlab";
   // Options that never take a value.
-  const std::vector<std::string> switches = {"help",         "strict-config", "no-vtk",
-                                             "no-csv",       "no-stress",     "export-calculix",
-                                             "list",         "no-objective",  "no-projection",
-                                             "projection",   "robust",        "no-robust",
-                                             "no-buckling-constraint", "no-overhang-filter",
-                                             "version"};
+  const std::vector<std::string> switches = {"help", "strict-config", "no-vtk", "version"};
 
   for (int i = 1; i < argc; ++i) {
     std::string token = argv[i];
@@ -93,43 +87,6 @@ int CommandLine::integer(const std::string& name, int fallback) const {
   }
 }
 
-Scalar CommandLine::number(const std::string& name, Scalar fallback) const {
-  if (!has(name)) return fallback;
-  const std::string text = value(name);
-  try {
-    std::size_t consumed = 0;
-    const double parsed = std::stod(text, &consumed);
-    if (consumed != text.size()) throw std::invalid_argument("trailing characters");
-    return parsed;
-  } catch (const std::exception&) {
-    throw ConfigError("option '--" + name + "' expects a number, got '" + text + "'");
-  }
-}
-
-std::vector<Scalar> CommandLine::number_list(const std::string& name) const {
-  std::vector<Scalar> out;
-  if (!has(name)) return out;
-  std::istringstream stream(value(name));
-  std::string token;
-  while (std::getline(stream, token, ',')) {
-    if (token.empty()) continue;
-    try {
-      std::size_t consumed = 0;
-      const double parsed = std::stod(token, &consumed);
-      if (consumed != token.size()) throw std::invalid_argument("trailing characters");
-      out.push_back(parsed);
-    } catch (const std::exception&) {
-      throw ConfigError("option '--" + name +
-                        "' expects a comma-separated list of numbers; '" + token +
-                        "' is not a number");
-    }
-  }
-  if (out.empty()) {
-    throw ConfigError("option '--" + name + "' was given an empty list");
-  }
-  return out;
-}
-
 void apply_verbosity(const CommandLine& cli) {
   if (cli.has("verbosity")) {
     log::set_level(log::parse_level(cli.value("verbosity")));
@@ -161,9 +118,6 @@ int run_guarded(const std::function<int()>& body) {
   } catch (const ModelError& e) {
     std::cerr << "[error] " << e.what() << "\n";
     return 2;
-  } catch (const ConvergenceError& e) {
-    std::cerr << "[error] " << e.what() << "\n";
-    return 3;
   } catch (const SolverError& e) {
     std::cerr << "[error] " << e.what() << "\n";
     return 3;

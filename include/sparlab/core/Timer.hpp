@@ -1,5 +1,5 @@
 /// \file Timer.hpp
-/// \brief Monotonic wall-clock stopwatch used for the runtime scaling study.
+/// \brief Monotonic wall-clock stopwatch and the per-phase timings of a run.
 #pragma once
 
 #include <chrono>
@@ -24,8 +24,9 @@ class Timer {
   Clock::time_point start_;
 };
 
-/// Accumulates named wall-clock totals so that per-phase cost (assembly,
-/// factorisation, solve, sensitivity) can be reported in run summaries.
+/// Accumulates named wall-clock totals so that per-phase cost (element
+/// tangent and residual, contact, factorisation) can be reported in run
+/// summaries.
 class TimingLedger {
  public:
   void add(const std::string& name, double seconds) { totals_[name] += seconds; }
@@ -36,8 +37,6 @@ class TimingLedger {
   }
 
   const std::map<std::string, double>& totals() const { return totals_; }
-
-  void clear() { totals_.clear(); }
 
  private:
   std::map<std::string, double> totals_;

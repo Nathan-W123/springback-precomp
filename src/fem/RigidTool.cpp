@@ -276,11 +276,6 @@ ToolContact::ToolContact(const FemModel& model, std::vector<RigidTool> tools,
   const Mesh& mesh = model.mesh();
   const int dim = mesh.dim();
   const ElementType type = mesh.element_type();
-  if (type == ElementType::Tet10) {
-    throw ConfigError("tool contact needs linear elements (Q4, Tri3, Hex8, Tet4): the "
-                      "corner weights int N dA of a six-node Tet10 face vanish, so its "
-                      "corner nodes would carry no contact force");
-  }
   std::set<std::string> names;
   for (const RigidTool& t : tools_) {
     t.validate(dim);
@@ -303,7 +298,7 @@ ToolContact::ToolContact(const FemModel& model, std::vector<RigidTool> tools,
     const std::vector<std::vector<int>>& table = element_local_faces(type);
     for (const Mesh::BoundaryFace& f : faces) {
       const Matrix coords = element_face_coordinates(mesh, f.element, f.local_face);
-      const Vector w = face_shape_integrals(shape, coords, thickness, 3);
+      const Vector w = face_shape_integrals(shape, coords, 3);
       const Index* en = mesh.element_nodes(f.element);
       const std::vector<int>& local = table[static_cast<std::size_t>(f.local_face)];
       const Scalar e = model.material_of(f.element).youngs_modulus();
@@ -340,13 +335,6 @@ int ToolContact::find(const std::string& name) const {
     if (tools_[k].name == name) return static_cast<int>(k);
   }
   return -1;
-}
-
-bool ToolContact::frictional() const {
-  for (const RigidTool& t : tools_) {
-    if (t.friction > 0.0) return true;
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -449,7 +437,6 @@ ToolContactEvaluation ToolContact::evaluate(const Vector& u, Scalar t, bool want
       Vector3 x = mesh.node(node);
       for (int comp = 0; comp < dim; ++comp) x(comp) += u(node * dim + comp);
       x = planar(x, dim);
-      ++out.evaluated_nodes;
       Vector3 nrm;
       Matrix3 dn;
       Scalar d = 0.0;
@@ -541,12 +528,7 @@ ToolContactEvaluation ToolContact::evaluate(const Vector& u, Scalar t, bool want
       ++res.active_nodes;
       if (slipping) ++res.slipping_nodes;
       res.force -= force;
-      res.normal_force -= pn * nrm;
-      res.tangential_force -= ft;
-      res.normal_load += pn;
-      res.friction_load += ft.norm();
       res.max_penetration = std::max(res.max_penetration, -g);
-      res.area += s.area[idx];
       if (want_tangent) {
         if (friction_tangent_ == FrictionTangent::Symmetric) {
           k_node = 0.5 * (k_node + k_node.transpose()).eval();  // its round-off
