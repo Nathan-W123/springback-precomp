@@ -337,13 +337,6 @@ int ToolContact::find(const std::string& name) const {
   return -1;
 }
 
-bool ToolContact::frictional() const {
-  for (const RigidTool& t : tools_) {
-    if (t.friction > 0.0) return true;
-  }
-  return false;
-}
-
 // ---------------------------------------------------------------------------
 // Increment set-up: the candidate nodes
 // ---------------------------------------------------------------------------
@@ -444,7 +437,6 @@ ToolContactEvaluation ToolContact::evaluate(const Vector& u, Scalar t, bool want
       Vector3 x = mesh.node(node);
       for (int comp = 0; comp < dim; ++comp) x(comp) += u(node * dim + comp);
       x = planar(x, dim);
-      ++out.evaluated_nodes;
       Vector3 nrm;
       Matrix3 dn;
       Scalar d = 0.0;
@@ -536,12 +528,7 @@ ToolContactEvaluation ToolContact::evaluate(const Vector& u, Scalar t, bool want
       ++res.active_nodes;
       if (slipping) ++res.slipping_nodes;
       res.force -= force;
-      res.normal_force -= pn * nrm;
-      res.tangential_force -= ft;
-      res.normal_load += pn;
-      res.friction_load += ft.norm();
       res.max_penetration = std::max(res.max_penetration, -g);
-      res.area += s.area[idx];
       if (want_tangent) {
         if (friction_tangent_ == FrictionTangent::Symmetric) {
           k_node = 0.5 * (k_node + k_node.transpose()).eval();  // its round-off

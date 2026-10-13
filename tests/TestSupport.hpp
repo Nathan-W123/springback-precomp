@@ -4,11 +4,17 @@
 
 #include "sparlab/fem/Assembler.hpp"
 #include "sparlab/fem/FemModel.hpp"
+#include "sparlab/fem/Forming.hpp"
+#include "sparlab/io/FormingWriter.hpp"
+#include "sparlab/io/ResultWriter.hpp"
 #include "sparlab/mesh/StructuredMesh.hpp"
 
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace sparlab {
 namespace testing {
@@ -89,6 +95,25 @@ inline Matrix distorted_hex_coords() {
             0.00, 0.10, 1.15, 0.90, 0.05, -0.05, 1.05, 1.10,
             0.00, -0.05, 0.10, 0.05, 0.90, 1.05, 1.20, 1.00;
   return coords;
+}
+
+/// The files sparlab_form writes as the steps of `result` end: every step's
+/// files (when `step_files`; VTK when `vtk`) and their snapshots, then
+/// tool_forces.csv. Returns the names of the files written.
+inline std::vector<std::string> write_forming_files(const ResultWriter& writer,
+                                                    const FemModel& model,
+                                                    const FormingOptions& options,
+                                                    const FormingResult& result, bool vtk,
+                                                    bool step_files) {
+  std::vector<std::string> files;
+  for (std::size_t k = 0; k < result.steps.size(); ++k) {
+    for (std::string& f : write_forming_step(writer, model, k, result.steps[k], vtk, step_files)) {
+      files.push_back(std::move(f));
+    }
+  }
+  write_tool_forces(writer, model, options, result);
+  files.push_back("tool_forces.csv");
+  return files;
 }
 
 }  // namespace testing

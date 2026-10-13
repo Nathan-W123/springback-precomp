@@ -57,14 +57,6 @@ Scalar jacobian_minus_one(const Matrix3& h) {
 
 }  // namespace
 
-std::string to_string(HyperelasticModel model) {
-  switch (model) {
-    case HyperelasticModel::SaintVenantKirchhoff: return "saint_venant_kirchhoff";
-    case HyperelasticModel::NeoHookean: return "neo_hookean";
-  }
-  return "unknown";
-}
-
 HyperelasticModel parse_hyperelastic_model(const std::string& text) {
   if (text == "saint_venant_kirchhoff") return HyperelasticModel::SaintVenantKirchhoff;
   if (text == "neo_hookean") return HyperelasticModel::NeoHookean;

@@ -1,11 +1,9 @@
 #include "sparlab/io/FormingWriter.hpp"
 
-#include "sparlab/core/Version.hpp"
 #include "sparlab/io/CsvWriter.hpp"
 #include "sparlab/io/VtkWriter.hpp"
 
 #include <cstdio>
-#include <sstream>
 
 namespace sparlab {
 namespace {
@@ -140,21 +138,6 @@ void write_tool_forces(const ResultWriter& writer, const FemModel& model,
     }
   }
   tools.close();
-}
-
-std::vector<std::string> write_forming_results(const ResultWriter& writer, const FemModel& model,
-                                               const FormingOptions& options,
-                                               const FormingResult& result, bool vtk,
-                                               bool step_files) {
-  std::vector<std::string> files;
-  for (std::size_t k = 0; k < result.steps.size(); ++k) {
-    for (std::string& f : write_forming_step(writer, model, k, result.steps[k], vtk, step_files)) {
-      files.push_back(std::move(f));
-    }
-  }
-  write_tool_forces(writer, model, options, result);
-  files.push_back("tool_forces.csv");
-  return files;
 }
 
 json::Value forming_summary_json(const Configuration& config, const FemModel& model,

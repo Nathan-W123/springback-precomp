@@ -4,12 +4,12 @@
 ///
 /// A rule with `n` points per direction integrates polynomials of degree
 /// \f$2n-1\f$ exactly. SparLab defaults to:
-///   * stiffness:  2 per direction (exact for the bilinear Q4 and trilinear
-///                 Hex8 on parallelepipeds),
+///   * stiffness:  2 per direction (exact for the trilinear Hex8 on
+///                 parallelepipeds),
 ///   * mass:       3 per direction (exact for the N^T N product on general
 ///                 cells, where the Jacobian is not constant),
-///   * face loads: 2 per direction (exact for a constant traction times the
-///                 face shape functions).
+///   * faces:      3 per direction (the tributary areas of the contact
+///                 nodes).
 #pragma once
 
 #include "sparlab/core/Types.hpp"
@@ -49,15 +49,11 @@ const std::vector<QuadraturePoint2D>& gauss_legendre_square(int points_per_direc
 /// \throws ConfigError for unsupported orders.
 const std::vector<QuadraturePoint3D>& gauss_legendre_cube(int points_per_direction);
 
-/// One-dimensional Gauss-Legendre rule (supported: 1, 2, 3, 4).
-/// \throws ConfigError for unsupported orders.
-const std::vector<QuadraturePoint1D>& gauss_legendre_line(int points);
-
 /// Largest point count of the through-thickness rule of `gauss_legendre_box`.
 inline constexpr int kMaxThicknessPoints = 7;
 
 /// One-dimensional Gauss-Legendre rule with 1 to kMaxThicknessPoints points:
-/// the rules of `gauss_legendre_line` for n <= 4, and for n = 5..7 the roots
+/// the closed-form rules for n <= 4, and for n = 5..7 the roots
 /// of the Legendre polynomial \f$P_n\f$ found by Newton's iteration on its
 /// three-term recurrence, with the weights \f$2/((1-x^2)P_n'(x)^2)\f$ -
 /// exact for polynomials of degree 2n - 1 to round-off (tested). Built once,

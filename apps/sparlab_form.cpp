@@ -17,7 +17,6 @@
 
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/core/Timer.hpp"
-#include "sparlab/core/Version.hpp"
 #include "sparlab/fem/Assembler.hpp"
 #include "sparlab/fem/Forming.hpp"
 #include "sparlab/io/Config.hpp"

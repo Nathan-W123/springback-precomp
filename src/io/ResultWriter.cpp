@@ -20,8 +20,6 @@ json::Value point_json(const Vector3& v, int dim) {
   return out;
 }
 
-const char* component_name(int k) { return dof_component_name(k); }
-
 }  // namespace
 
 ResultWriter::ResultWriter(std::string directory, const Configuration& config)
@@ -90,9 +88,8 @@ void ResultWriter::write_mesh(const FemModel& model) const {
     json::Value entry = json::Value::make_object();
     const int k = static_cast<int>(d % ndpn);
     entry.set("node", json::Value::make_number(d / ndpn));
-    entry.set("component", json::Value::make_string(component_name(k)));
-    entry.set(k < 3 ? "value_m" : "value_rad",
-              json::Value::make_number(model.dofs().prescribed_value(d)));
+    entry.set("component", json::Value::make_string(dof_component_name(k)));
+    entry.set("value_m", json::Value::make_number(model.dofs().prescribed_value(d)));
     constraints.push_back(entry);
   }
   doc.set("prescribed_dofs", constraints);

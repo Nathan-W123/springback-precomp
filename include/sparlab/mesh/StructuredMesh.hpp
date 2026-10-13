@@ -47,10 +47,4 @@ Mesh make_structured_hex_mesh(const StructuredMeshSpec& spec);
 Mesh make_perturbed_hex_mesh(const StructuredMeshSpec& spec, Scalar perturbation,
                              unsigned int seed = 12345u);
 
-/// Convenience accessors for structured grids (used by tests).
-/// \{
-Index structured_node_index(const StructuredGridInfo& info, Index i, Index j, Index k);
-Index structured_element_index(const StructuredGridInfo& info, Index i, Index j, Index k);
-/// \}
-
 }  // namespace sparlab

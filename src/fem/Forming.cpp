@@ -16,7 +16,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
 #include <limits>
 #include <map>
 #include <set>
@@ -207,7 +206,6 @@ class PartitionedFactor {
     throw SolverError("the forming tangent was solved before it was factorised");
   }
 
-  const SparseMatrix& matrix() const { return kff_; }
   /// The factorisations used so far and how often, e.g.
   /// "CHOLMOD supernodal LLT x 812, UMFPACK LU x 40".
   std::string names() const { return listing(counts_); }
@@ -349,10 +347,6 @@ Partition build_partition(const Mesh& mesh, const std::vector<StepConstraint>& c
                               (c.name.empty() ? c.constraint.region.name : c.name) + "'";
     if (dim == 2 && c.constraint.fix_z) {
       throw ConfigError(label + " fixes z but the mesh is two-dimensional");
-    }
-    if (c.constraint.fixes_rotation()) {
-      throw ConfigError(label + " fixes a rotation; the forming analysis has continuum "
-                                "elements only");
     }
     bool any = false;
     for (int k = 0; k < dim; ++k) any = any || c.constraint.fixes(k);
@@ -516,10 +510,6 @@ bool predict_rigid_motion(const Mesh& mesh, const Vector& u, const Partition& p,
 
 bool forming_suitesparse_available() { return kHaveSuiteSparse; }
 
-std::string to_string(StepConstraint::Mode mode) {
-  return mode == StepConstraint::Mode::Absolute ? "absolute" : "hold";
-}
-
 StepConstraint::Mode parse_constraint_mode(const std::string& text) {
   if (text == "hold") return StepConstraint::Mode::Hold;
   if (text == "absolute") return StepConstraint::Mode::Absolute;
@@ -550,9 +540,6 @@ FormingAnalysis::FormingAnalysis(const FemModel& model, const Assembler& assembl
                                  FormingOptions options)
     : model_(model), assembler_(assembler), options_(std::move(options)) {
   if (!model.finalized()) throw ModelError("the model must be finalised before a solve");
-  if (model.dofs_per_node() != model.dim()) {
-    throw ConfigError("the forming analysis is written for continuum elements");
-  }
   if (options_.steps.empty()) throw ConfigError("the forming analysis has no step");
   if (options_.max_iterations < 1 || options_.max_cuts < 0 || options_.max_increments < 1 ||
       options_.snapshot_stride < 0) {
@@ -1203,7 +1190,6 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
             inc.iterations = it;
             accepted_round_off = fb.raw_floor;
             inc.residual = final_norm / fb.scale;
-            inc.reference_force = fb.scale;
             reference = std::max(reference, fb.parts);
             accepted = std::move(ev);
             accepted_contact = std::move(cev);
@@ -1270,21 +1256,15 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
         FormingIncrement inc;
         inc.index = static_cast<int>(std::min<long>(rec.step, std::numeric_limits<int>::max()));
         inc.time = rec.pseudo_time;
-        inc.fraction = rec.time / drive.duration;
-        inc.max_displacement = rec.max_displacement;
         inc.max_plastic_strain = rec.max_plastic_strain;
-        inc.reference_force = reference;
         for (const ExplicitToolRecord& tr : rec.tools) {
           ToolRecord tool;
           tool.tool = tr.tool;
           tool.centre = tr.centre;
           tool.force = tr.force;
-          tool.normal_load = tr.normal_load;
-          tool.friction_load = tr.friction_load;
           tool.active_nodes = tr.active_nodes;
           tool.slipping_nodes = tr.slipping_nodes;
           tool.max_penetration = tr.max_penetration;
-          tool.area = tr.area;
           inc.tools.push_back(tool);
         }
         sr.increments.push_back(std::move(inc));
@@ -1376,9 +1356,6 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
       time = t1;
       inc.index = static_cast<int>(sr.increments.size()) + 1;
       inc.time = t1;
-      inc.fraction = s1;
-      inc.cuts = cuts_in_a_row;
-      inc.max_displacement = max_nodal(u, dim);
       inc.max_plastic_strain = system.max_plastic_strain();
       for (std::size_t k = 0; k < active.size(); ++k) {
         if (!active[k]) continue;
@@ -1387,12 +1364,9 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
         rec.tool = k;
         rec.centre = tr.centre;
         rec.force = tr.force;
-        rec.normal_load = tr.normal_load;
-        rec.friction_load = tr.friction_load;
         rec.active_nodes = tr.active_nodes;
         rec.slipping_nodes = tr.slipping_nodes;
         rec.max_penetration = tr.max_penetration;
-        rec.area = tr.area;
         inc.tools.push_back(rec);
       }
       sr.iterations += inc.iterations;

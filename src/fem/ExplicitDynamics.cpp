@@ -76,13 +76,10 @@ struct ContactNodeForce {
 
 struct ContactToolState {
   Vector3 force = Vector3::Zero();  ///< on the tool [N]
-  Scalar normal_load = 0.0;
-  Scalar friction_load = 0.0;
   int active_nodes = 0;
   int slipping_nodes = 0;
   Scalar max_penetration = 0.0;
   Scalar max_penetration_ratio = 0.0;  ///< over the node's element thickness
-  Scalar area = 0.0;
 };
 
 class PenaltyContact {
@@ -114,7 +111,6 @@ class PenaltyContact {
     }
   }
 
-  std::size_t num_tools() const { return tools_.size(); }
   const std::vector<Index>& slave_nodes(std::size_t k) const { return slaves_[k].nodes; }
 
   void set_masses(const Vector& m) {
@@ -270,13 +266,10 @@ class PenaltyContact {
         s.friction[i] = ft;
         forces.push_back({node, fn, ft});
         res.force -= fn + ft;
-        res.normal_load += pn;
-        res.friction_load += ft.norm();
         ++res.active_nodes;
         if (slipping) ++res.slipping_nodes;
         res.max_penetration = std::max(res.max_penetration, -g);
         res.max_penetration_ratio = std::max(res.max_penetration_ratio, -g / s.thickness[i]);
-        res.area += s.area[i];
       }
     }
   }
@@ -314,32 +307,17 @@ class PenaltyContact {
   std::vector<Slaves> slaves_;
 };
 
-/// Lumped element masses: per element, the row sums (HRZ where the element
-/// asks for it) of its consistent mass, one value per element DOF.
+/// Lumped element masses: per element, the row sums of its consistent mass,
+/// one value per element DOF.
 std::vector<Vector> lumped_element_masses(const FemModel& model, const Assembler& assembler) {
   const Mesh& mesh = model.mesh();
   const int npe = mesh.nodes_per_elem();
   const int dim = model.dofs_per_node();
-  const bool hrz = model.element().diagonal_scaled_lumping();
   std::vector<Vector> out(static_cast<std::size_t>(mesh.num_elements()));
   for (Index e = 0; e < mesh.num_elements(); ++e) {
     const Matrix& me = assembler.element_mass(e);
     Vector m(npe * dim);
-    if (hrz) {
-      for (int k = 0; k < dim; ++k) {
-        Scalar total = 0.0;
-        Scalar diagonal = 0.0;
-        for (int a = 0; a < npe; ++a) {
-          diagonal += me(dim * a + k, dim * a + k);
-          for (int b = 0; b < npe; ++b) total += me(dim * a + k, dim * b + k);
-        }
-        for (int a = 0; a < npe; ++a) {
-          m(dim * a + k) = me(dim * a + k, dim * a + k) * total / diagonal;
-        }
-      }
-    } else {
-      for (int i = 0; i < npe * dim; ++i) m(i) = me.row(i).sum();
-    }
+    for (int i = 0; i < npe * dim; ++i) m(i) = me.row(i).sum();
     out[static_cast<std::size_t>(e)] = std::move(m);
   }
   return out;
@@ -553,9 +531,6 @@ ExplicitDynamics::ExplicitDynamics(const FemModel& model, const Assembler& assem
     : model_(model), assembler_(assembler), nonlinear_(nonlinear), tools_(std::move(tools)),
       options_(options) {
   if (!model.finalized()) throw ModelError("the model must be finalised before a solve");
-  if (model.dofs_per_node() != model.dim()) {
-    throw ConfigError("the explicit integrator is written for continuum elements");
-  }
   options_.validate();
   for (const IsotropicMaterial& m : model.materials()) {
     if (!(m.density() > 0.0)) {
@@ -1013,26 +988,17 @@ ExplicitResult ExplicitDynamics::run(const ExplicitDrive& drive, const ExplicitS
     r.external = w_ext;
     r.mass_scaling = w_mass;
     r.error = kin - kinetic_start + w_int + w_damp - w_ext - w_cn - w_ct - w_mass;
-    Scalar top = 0.0;
-    for (Index node = 0; node < mesh.num_nodes(); ++node) {
-      top = std::max(top, u.segment(node * dim, dim).norm());
-    }
-    r.max_displacement = top;
     r.max_plastic_strain = force_->max_plastic_strain();
     for (std::size_t k = 0; k < nt; ++k) {
       if (!drive.active[k]) continue;
       ExplicitToolRecord tr;
       tr.tool = k;
       tr.centre = tools_[k].trajectory.position(r.pseudo_time);
-      tr.last_force = tool_state[k].force;
       tr.force = mean_time > 0.0 ? Vector3(mean_force[k] / mean_time) : tool_state[k].force;
-      tr.normal_load = tool_state[k].normal_load;
-      tr.friction_load = tool_state[k].friction_load;
       tr.active_nodes = tool_state[k].active_nodes;
       tr.slipping_nodes = tool_state[k].slipping_nodes;
       tr.max_penetration = tool_state[k].max_penetration;
       tr.max_penetration_ratio = tool_state[k].max_penetration_ratio;
-      tr.area = tool_state[k].area;
       r.tools.push_back(tr);
       mean_force[k].setZero();
     }

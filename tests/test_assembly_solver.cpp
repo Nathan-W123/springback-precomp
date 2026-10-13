@@ -147,22 +147,21 @@ TEST_CASE("the reduced stiffness matrix is positive definite once constrained",
   REQUIRE(es.eigenvalues().minCoeff() > 0.0);
 }
 
-TEST_CASE("DOF partitioning round-trips vectors", "[dofs]") {
+TEST_CASE("DOF partitioning numbers the free DOFs in ascending order", "[dofs]") {
   FemModel model = make_small_block();
   const DofManager& dofs = model.dofs();
   REQUIRE(dofs.num_free() + dofs.num_constrained() == dofs.num_dofs());
 
-  Vector full = Vector::Zero(dofs.num_dofs());
-  for (Index d = 0; d < dofs.num_dofs(); ++d) full(d) = 0.001 * (d + 1);
-  const Vector reduced = dofs.restrict_to_free(full);
-  const Vector expanded = dofs.expand(reduced);
-  for (Index d : dofs.free_dofs()) REQUIRE(expanded(d) == Approx(full(d)));
+  // The free DOFs number the reduced system in ascending order; a
+  // constrained DOF has no position in it.
+  Index position = 0;
+  for (Index d : dofs.free_dofs()) REQUIRE(dofs.reduced_index(d) == position++);
   for (Index d : dofs.constrained_dofs()) {
-    REQUIRE(expanded(d) == Approx(dofs.prescribed_value(d)));
+    REQUIRE(dofs.is_constrained(d));
+    REQUIRE(dofs.reduced_index(d) == -1);
   }
 
-  REQUIRE_THROWS_AS(dofs.expand(Vector::Zero(3)), ModelError);
-  REQUIRE_THROWS_AS(dofs.restrict_to_free(Vector::Zero(3)), ModelError);
+  REQUIRE_THROWS_AS(dofs.reduced_index(dofs.num_dofs()), ModelError);
   REQUIRE_THROWS_AS(dofs.dof(-1, 0), ModelError);
   REQUIRE_THROWS_AS(dofs.dof(0, 3), ModelError);
 }

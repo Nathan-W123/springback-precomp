@@ -60,10 +60,6 @@ template <typename... Args>
 void warn(const Args&... args) {
   detail::write(Level::Warn, args...);
 }
-template <typename... Args>
-void error(const Args&... args) {
-  detail::write(Level::Error, args...);
-}
 
 }  // namespace log
 }  // namespace sparlab

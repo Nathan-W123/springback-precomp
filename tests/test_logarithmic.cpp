@@ -20,11 +20,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <fstream>
 #include <functional>
-#include <iterator>
 #include <limits>
 #include <random>
 #include <string>
@@ -152,7 +149,9 @@ TEST_CASE("the logarithmic strain and its first and second derivatives are exact
     const Matrix3 reference = 0.5 * cg.log();
     worst_log = std::max(worst_log, relative(log.strain, engineering(reference)));
     REQUIRE(relative(log.strain, engineering(reference)) <= 1.0e-14);
-    REQUIRE(log.log_jacobian == Approx(0.5 * std::log(cg.determinant())).margin(2.0e-15));
+    // ln J = tr E_log.
+    REQUIRE(log.strain(0) + log.strain(1) + log.strain(2) ==
+            Approx(0.5 * std::log(cg.determinant())).margin(4.0e-15));
     // P and T : L against fourth-order central differences of E_log(E)
     // and of S(E) = P(E)^T T, at a step well above any of the gaps (their
     // round-off, eps / h, bounds the agreement at about 4e-12).

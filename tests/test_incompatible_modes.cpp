@@ -123,11 +123,11 @@ TEST_CASE("the extended Gauss-Legendre line rules integrate polynomials of degre
     }
     for (std::size_t i = 1; i < rule.size(); ++i) REQUIRE(rule[i].xi > rule[i - 1].xi);
   }
-  // The first four are the closed-form rules of gauss_legendre_line.
+  // The first four are the closed-form rules of gauss_legendre_cube (whose
+  // first n points vary xi alone).
   for (int n = 1; n <= 4; ++n) {
     for (std::size_t i = 0; i < static_cast<std::size_t>(n); ++i) {
-      REQUIRE(gauss_legendre_line_extended(n)[i].xi == gauss_legendre_line(n)[i].xi);
-      REQUIRE(gauss_legendre_line_extended(n)[i].weight == gauss_legendre_line(n)[i].weight);
+      REQUIRE(gauss_legendre_line_extended(n)[i].xi == gauss_legendre_cube(n)[i].xi);
     }
   }
   REQUIRE_THROWS_AS(gauss_legendre_line_extended(0), ConfigError);
@@ -602,7 +602,7 @@ TEST_CASE("the condensed hyperelastic tangents of the incompatible-mode Hex8 are
   const Matrix x = model.mesh().element_coordinates(0);
   for (HyperelasticModel law : {HyperelasticModel::SaintVenantKirchhoff,
                                 HyperelasticModel::NeoHookean}) {
-    INFO(to_string(law));
+    INFO((law == HyperelasticModel::NeoHookean ? "neo_hookean" : "saint_venant_kirchhoff"));
     const Vector ue = deformation(x, 0.08);
     const TotalLagrangianElement el =
         total_lagrangian_element(model, 0, ue, law, nullptr, 0.0, true, nullptr);

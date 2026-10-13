@@ -547,10 +547,6 @@ PlasticResponse plastic_return(const IsotropicMaterial& material, StressState st
       strain, committed, delta_t, 1.0e-13);
 }
 
-Scalar equivalent_stress(const PlasticityParameters& parameters, const Vector6& stress) {
-  return std::sqrt(std::max(stress.dot(parameters.yield_matrix * stress), 0.0));
-}
-
 Scalar von_mises_stress(const Vector6& s) {
   const Scalar a = s(0) - s(1);
   const Scalar b = s(1) - s(2);

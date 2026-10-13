@@ -37,8 +37,6 @@ class TimingLedger {
 
   const std::map<std::string, double>& totals() const { return totals_; }
 
-  void clear() { totals_.clear(); }
-
  private:
   std::map<std::string, double> totals_;
 };

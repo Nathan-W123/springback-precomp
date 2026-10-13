@@ -15,7 +15,6 @@
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
 
-#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -48,20 +47,11 @@ using TripletList = std::vector<Triplet>;
 /// (xx, yy, zz, xy, yz, zx). Shear entries are engineering strains.
 constexpr int voigt_components(int dim) { return dim == 3 ? 6 : 3; }
 
-/// Most degrees of freedom a node carries: the three translations and the
-/// three rotations of a shell or beam node. A continuum node carries only its
-/// `dim` translations.
-constexpr int kMaxDofsPerNode = 6;
-
-/// Configuration spelling of nodal DOF component `k`: "x", "y", "z" for the
-/// translations, "rx", "ry", "rz" for the rotations about the global axes.
+/// Configuration spelling of nodal DOF component `k`: "x", "y", "z".
 inline const char* dof_component_name(int k) {
-  static const char* const names[kMaxDofsPerNode] = {"x", "y", "z", "rx", "ry", "rz"};
-  return (k >= 0 && k < kMaxDofsPerNode) ? names[k] : "?";
+  static const char* const names[3] = {"x", "y", "z"};
+  return (k >= 0 && k < 3) ? names[k] : "?";
 }
-
-/// Cartesian component labels used when parsing configuration files.
-enum class Component : int { X = 0, Y = 1, Z = 2 };
 
 /// Idealisation used to build the constitutive matrix. The two plane states
 /// belong to 2-D meshes, `ThreeDimensional` to 3-D meshes; FemModel rejects a

@@ -11,22 +11,6 @@
 using namespace sparlab;
 using Catch::Approx;
 
-TEST_CASE("Gauss-Legendre line rules integrate polynomials exactly", "[quadrature]") {
-  // An n-point rule is exact up to degree 2n-1.
-  for (int n = 1; n <= 4; ++n) {
-    const auto& rule = gauss_legendre_line(n);
-    REQUIRE(static_cast<int>(rule.size()) == n);
-
-    for (int degree = 0; degree <= 2 * n - 1; ++degree) {
-      Scalar numeric = 0.0;
-      for (const auto& p : rule) numeric += p.weight * std::pow(p.xi, degree);
-      // exact integral of x^d over [-1,1]
-      const Scalar exact = (degree % 2 == 1) ? 0.0 : 2.0 / (degree + 1);
-      REQUIRE(numeric == Approx(exact).margin(1.0e-14));
-    }
-  }
-}
-
 TEST_CASE("Gauss-Legendre square rules are tensor products with total weight 4",
           "[quadrature]") {
   for (int n = 1; n <= 4; ++n) {
@@ -51,7 +35,7 @@ TEST_CASE("Gauss-Legendre square rules are tensor products with total weight 4",
 }
 
 TEST_CASE("unsupported quadrature orders are rejected", "[quadrature][diagnostics]") {
-  REQUIRE_THROWS_AS(gauss_legendre_line(0), ConfigError);
-  REQUIRE_THROWS_AS(gauss_legendre_line(5), ConfigError);
+  REQUIRE_THROWS_AS(gauss_legendre_cube(0), ConfigError);
+  REQUIRE_THROWS_AS(gauss_legendre_cube(5), ConfigError);
   REQUIRE_THROWS_AS(gauss_legendre_square(7), ConfigError);
 }

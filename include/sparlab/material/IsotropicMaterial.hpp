@@ -204,7 +204,7 @@ class IsotropicMaterial {
   ///        3-D elasticity and (-1, 1) excluding +-1 for plane stress. SparLab
   ///        restricts the input to (-1, 0.5) so every idealisation remains
   ///        well posed.
-  /// \param density rho [kg/m^3], must be >= 0 (0 disables modal analysis).
+  /// \param density rho [kg/m^3], must be >= 0 (an explicit step needs it > 0).
   /// \param name optional label carried into result files.
   IsotropicMaterial(Scalar youngs_modulus, Scalar poisson_ratio, Scalar density,
                     std::string name = "material");
@@ -232,17 +232,6 @@ class IsotropicMaterial {
 
   /// Three-dimensional constitutive matrix [Pa].
   Matrix6 three_dimensional_matrix() const;
-
-  /// Return a copy of this material with a scaled Young's modulus. Used by the
-  /// aerospace material-stiffness sweep.
-  IsotropicMaterial with_youngs_modulus(Scalar e) const {
-    IsotropicMaterial copy(e, nu_, rho_, name_);  // validates e
-    copy.alpha_ = alpha_;
-    copy.t_ref_ = t_ref_;
-    copy.k_ = k_;
-    copy.plasticity_ = plasticity_;
-    return copy;
-  }
 
   /// Plasticity; `plasticity().enabled()` is false for an elastic
   /// material (the default).

@@ -75,7 +75,6 @@ class Hex8IncompatibleElement final : public Element {
   ElementType type() const override { return ElementType::Hex8; }
   int dim() const override { return 3; }
   int num_nodes() const override { return 8; }
-  int num_faces() const override { return 6; }
   int num_internal_nodes() const override { return 3; }
 
   /// The condensed stiffness \f$K^*\f$ of the file comment [N/m].

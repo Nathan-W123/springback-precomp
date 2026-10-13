@@ -21,12 +21,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <fstream>
 #include <limits>
 #include <random>
-#include <sstream>
 
 using namespace sparlab;
 using namespace sparlab::testing;
@@ -60,7 +57,7 @@ PlasticResponse uniaxial(const IsotropicMaterial& m, Scalar e11, const PlasticSt
   }
   PlasticResponse r;
   for (int it = 0; it < 50; ++it) {
-    r = j2_return(m, StressState::ThreeDimensional, strain, committed, delta_t);
+    r = plastic_return(m, StressState::ThreeDimensional, strain, committed, delta_t);
     const Eigen::Vector2d residual(r.stress(1), r.stress(2));
     if (residual.cwiseAbs().maxCoeff() <=
         1.0e-13 * std::max(std::abs(r.stress(0)), m.plasticity().yield_stress)) {
@@ -101,7 +98,7 @@ Vector6 random_strain(Scalar amplitude, unsigned seed) {
 /// the strain components the idealisation takes.
 Scalar tangent_error(const IsotropicMaterial& m, StressState state, const Vector6& strain,
                      const PlasticState& committed, Scalar delta_t = 0.0) {
-  const PlasticResponse r = j2_return(m, state, strain, committed, delta_t);
+  const PlasticResponse r = plastic_return(m, state, strain, committed, delta_t);
   // (The plane-stress iteration leaves sigma_33 below 1e-12 of the stress,
   // which a step of 1e-8 keeps well below the tolerance.)
   const Scalar h = 1.0e-8;
@@ -113,8 +110,8 @@ Scalar tangent_error(const IsotropicMaterial& m, StressState state, const Vector
     Vector6 um = strain;
     up(j) += h;
     um(j) -= h;
-    const Vector6 fd = (j2_return(m, state, up, committed, delta_t).stress -
-                        j2_return(m, state, um, committed, delta_t).stress) /
+    const Vector6 fd = (plastic_return(m, state, up, committed, delta_t).stress -
+                        plastic_return(m, state, um, committed, delta_t).stress) /
                        (2.0 * h);
     Vector6 column = r.tangent.col(j);
     worst = std::max(worst, (fd - column).cwiseAbs().maxCoeff());
@@ -157,8 +154,6 @@ TEST_CASE("plasticity parameters are validated and the hardening laws are consis
     }
   }
   REQUIRE(p.isotropic_energy(0.0) == 0.0);
-  // The copy with a new modulus keeps the plasticity.
-  REQUIRE(m.with_youngs_modulus(100.0e9).plasticity().saturation_rate == 25.0);
 }
 
 TEST_CASE("uniaxial stress with linear hardening is exact for any step",
@@ -300,7 +295,7 @@ TEST_CASE("the Voce return converges at trial stresses far outside the yield sur
     for (const Vector6& e : strains) {
       INFO("h " << law.h << ", hk " << law.hk << ", strain " << e.transpose());
       PlasticResponse r;
-      REQUIRE_NOTHROW(r = j2_return(m, StressState::ThreeDimensional, e, PlasticState()));
+      REQUIRE_NOTHROW(r = plastic_return(m, StressState::ThreeDimensional, e, PlasticState()));
       REQUIRE(r.yielding);
       worst = std::max(worst, off_surface(r));
       ++returns;
@@ -309,7 +304,7 @@ TEST_CASE("the Voce return converges at trial stresses far outside the yield sur
     sheet(0) = std::log(2.2);
     sheet(1) = std::log(1.3);
     PlasticResponse r;
-    REQUIRE_NOTHROW(r = j2_return(m, StressState::PlaneStress, sheet, PlasticState()));
+    REQUIRE_NOTHROW(r = plastic_return(m, StressState::PlaneStress, sheet, PlasticState()));
     REQUIRE(r.yielding);
     // sigma_33 = 0 to 1e-12 of the stress of the first iterate, the 3-D
     // return at the elastic thickness strain (whose volumetric stress,
@@ -318,7 +313,7 @@ TEST_CASE("the Voce return converges at trial stresses far outside the yield sur
     first(2) = -m.lame_lambda() / (m.lame_lambda() + 2.0 * m.shear_modulus()) *
                (sheet(0) + sheet(1));
     const Scalar scale =
-        j2_return(m, StressState::ThreeDimensional, first, PlasticState()).stress.head(3)
+        plastic_return(m, StressState::ThreeDimensional, first, PlasticState()).stress.head(3)
             .cwiseAbs()
             .maxCoeff();
     REQUIRE(std::abs(r.stress(2)) <= 1.0e-12 * scale);
@@ -341,15 +336,15 @@ TEST_CASE("the consistent tangent is the derivative of the return", "[plasticity
       first(4) = first(5) = second(4) = second(5) = 0.0;
       if (state == StressState::PlaneStrain) first(2) = second(2) = 0.0;
     }
-    const PlasticResponse r1 = j2_return(m, state, first, PlasticState(), 20.0);
+    const PlasticResponse r1 = plastic_return(m, state, first, PlasticState(), 20.0);
     REQUIRE(r1.yielding);
-    const PlasticResponse r2 = j2_return(m, state, second, r1.state, 35.0);
+    const PlasticResponse r2 = plastic_return(m, state, second, r1.state, 35.0);
     INFO(to_string(state));
     REQUIRE(r2.yielding);
     REQUIRE(tangent_error(m, state, second, r1.state, 35.0) <= 1.0e-6);
     // The elastic branch too: a small step back inside the surface.
     const Vector6 back = second - 0.1 * (second - first);
-    REQUIRE_FALSE(j2_return(m, state, back, r2.state).yielding);
+    REQUIRE_FALSE(plastic_return(m, state, back, r2.state).yielding);
     REQUIRE(tangent_error(m, state, back, r2.state) <= 1.0e-6);
     // The tangent is symmetric (associative flow, J2).
     REQUIRE((r2.tangent - r2.tangent.transpose()).cwiseAbs().maxCoeff() <=
@@ -364,20 +359,20 @@ TEST_CASE("plane stress returns with sigma_33 = 0 and the 3-D state at its eps_3
   strain(0) = 6.0e-3;
   strain(1) = -1.0e-3;
   strain(3) = 4.0e-3;
-  const PlasticResponse r = j2_return(m, StressState::PlaneStress, strain, PlasticState());
+  const PlasticResponse r = plastic_return(m, StressState::PlaneStress, strain, PlasticState());
   REQUIRE(r.yielding);
   REQUIRE(std::abs(r.stress(2)) <= 1.0e-11 * std::abs(r.stress(0)));
   REQUIRE(r.state.thickness_strain == r.strain_33);
   Vector6 full = strain;
   full(2) = r.strain_33;
-  const PlasticResponse check = j2_return(m, StressState::ThreeDimensional, full, PlasticState());
+  const PlasticResponse check = plastic_return(m, StressState::ThreeDimensional, full, PlasticState());
   REQUIRE((check.stress - r.stress).cwiseAbs().maxCoeff() <= 1.0e-12 * check.stress.norm());
   // The condensed tangent has no thickness row or column.
   REQUIRE(r.tangent.row(2).cwiseAbs().maxCoeff() == 0.0);
   REQUIRE(r.tangent.col(2).cwiseAbs().maxCoeff() == 0.0);
   // Below yield it is the plane-stress elasticity matrix.
   const PlasticResponse elastic =
-      j2_return(m, StressState::PlaneStress, 0.05 * strain, PlasticState());
+      plastic_return(m, StressState::PlaneStress, 0.05 * strain, PlasticState());
   REQUIRE_FALSE(elastic.yielding);
   const Matrix3 d = m.plane_stress_matrix();
   const int rows[3] = {0, 1, 3};
@@ -400,9 +395,9 @@ TEST_CASE("the loading flag gives the continuum tangent at zero increment",
   Vector6 strain = Vector6::Zero();
   strain(0) = 5.0e-3;
   strain(3) = 2.0e-3;
-  const PlasticResponse r1 = j2_return(m, StressState::ThreeDimensional, strain, PlasticState());
+  const PlasticResponse r1 = plastic_return(m, StressState::ThreeDimensional, strain, PlasticState());
   REQUIRE(r1.state.loading);
-  const PlasticResponse again = j2_return(m, StressState::ThreeDimensional, strain, r1.state);
+  const PlasticResponse again = plastic_return(m, StressState::ThreeDimensional, strain, r1.state);
   REQUIRE_FALSE(again.yielding);
   REQUIRE(again.state.loading);
   REQUIRE((again.stress - r1.stress).cwiseAbs().maxCoeff() <= 1.0e-6);
@@ -421,14 +416,14 @@ TEST_CASE("the loading flag gives the continuum tangent at zero increment",
   d.tail(3) *= 2.0;  // engineering shear
   d *= 1.0e-9;
   const PlasticResponse further =
-      j2_return(m, StressState::ThreeDimensional, strain + d, r1.state);
+      plastic_return(m, StressState::ThreeDimensional, strain + d, r1.state);
   REQUIRE(further.yielding);
   REQUIRE((further.stress - r1.stress - continuum * d).norm() <=
           1.0e-4 * (continuum * d).norm());
   // A step elsewhere returns elastically with the elastic tangent and
   // clears the flag.
   const PlasticResponse unload =
-      j2_return(m, StressState::ThreeDimensional, 0.9 * strain, r1.state);
+      plastic_return(m, StressState::ThreeDimensional, 0.9 * strain, r1.state);
   REQUIRE_FALSE(unload.state.loading);
   REQUIRE((unload.tangent - m.three_dimensional_matrix()).cwiseAbs().maxCoeff() <= 1.0e-3);
 }
@@ -439,7 +434,7 @@ TEST_CASE("a temperature change enters as a free strain", "[plasticity][material
   // Free expansion is stress-free however large.
   Vector6 free = Vector6::Zero();
   free.head(3).setConstant(1.2e-5 * 400.0);
-  const PlasticResponse r = j2_return(m, StressState::ThreeDimensional, free, PlasticState(), 400.0);
+  const PlasticResponse r = plastic_return(m, StressState::ThreeDimensional, free, PlasticState(), 400.0);
   REQUIRE(r.stress.cwiseAbs().maxCoeff() <= 1.0e-6);
   REQUIRE_FALSE(r.yielding);
   // A bar held axially: sigma = -E alpha dT until it yields, then -sigma_y

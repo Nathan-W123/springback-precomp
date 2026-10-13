@@ -51,10 +51,6 @@ enum class MeshKind {
 
 std::string to_string(MeshKind kind);
 
-/// True for the generated box mesh, whose resolution a deck sets; false for a
-/// mesh read from a file, whose resolution the mesher set.
-bool is_structured(MeshKind kind);
-
 /// A mesh read from a file.
 struct MeshFileConfig {
   std::string path;           ///< as written in the deck

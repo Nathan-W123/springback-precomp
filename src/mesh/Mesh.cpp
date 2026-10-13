@@ -8,10 +8,7 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <limits>
-#include <map>
-#include <numeric>
 #include <sstream>
 #include <utility>
 
@@ -242,11 +239,9 @@ std::vector<Mesh::BoundaryFace> Mesh::boundary_faces() const {
   const std::size_t corners = static_cast<std::size_t>(face_corner_nodes(type_));
 
   // Faces are keyed by their sorted corner nodes, so orientation does not
-  // matter (the corners alone identify a Tet10 face).
-  // Sorting one flat array of keys is far cheaper than a map of vectors on a
-  // large mesh, and the boundary comes out in ascending key order - the order
-  // the earlier map-based search produced, which fixes the summation order of
-  // traction loads and the triangle order of an STL file.
+  // matter. Sorting one flat array of keys is far cheaper than a map of
+  // vectors on a large mesh, and the boundary comes out in ascending key
+  // order, which fixes the order of the contact surfaces' nodes.
   struct Record {
     std::array<Index, 4> key;
     Index element;
@@ -293,15 +288,6 @@ std::vector<Mesh::BoundaryFace> Mesh::boundary_faces() const {
     i = j;
   }
   return boundary;
-}
-
-Scalar Mesh::face_measure(const BoundaryFace& face) const {
-  if (face.nodes.size() == 4 && dim_ == 3) {
-    Matrix xf(3, 4);
-    for (int a = 0; a < 4; ++a) xf.col(a) = coords_.col(face.nodes[static_cast<std::size_t>(a)]);
-    return hex8_face_area(xf);
-  }
-  throw MeshError("face_measure received a face with an unsupported node count");
 }
 
 }  // namespace sparlab

@@ -23,7 +23,6 @@
 #include "sparlab/mesh/Mesh.hpp"
 
 #include <memory>
-#include <string>
 #include <vector>
 
 namespace sparlab {
@@ -34,9 +33,7 @@ enum class MassType {
   Lumped       ///< row-sum lumping of the consistent matrix (diagonal)
 };
 
-std::string to_string(MassType type);
-
-/// A fully specified linear-elastic model plus its load cases.
+/// A finite element model: mesh, element, materials, constraints and DOFs.
 class FemModel {
  public:
   FemModel(Mesh mesh, IsotropicMaterial material, Scalar thickness,
@@ -63,16 +60,12 @@ class FemModel {
   /// Constitutive matrix of the primary material [Pa] (3 x 3 or 6 x 6).
   const Matrix& constitutive() const { return d_.front(); }
 
-  /// Replace the primary material (used by the material-stiffness sweep).
-  void set_material(const IsotropicMaterial& material);
-
   /// Give the listed elements `material`, appended to the model's materials.
   /// A later assignment overrides an earlier one for the same elements.
   /// \throws ModelError for an element index out of range.
   void assign_material(const IsotropicMaterial& material, const std::vector<Index>& elements);
 
   const std::vector<IsotropicMaterial>& materials() const { return materials_; }
-  int num_materials() const { return static_cast<int>(materials_.size()); }
   /// True when every element uses the primary material.
   bool single_material() const { return element_material_.empty(); }
   /// Index into `materials()` of element `e`'s material.
@@ -99,12 +92,6 @@ class FemModel {
   void finalize(bool require_load_cases = true);
 
   bool finalized() const { return finalized_; }
-
-  /// Total solid-material volume of the design domain [m^3].
-  Scalar domain_volume() const;
-
-  /// Per-element volume [m^3]: area * thickness in 2-D, cell volume in 3-D.
-  Vector element_volumes() const;
 
  private:
   /// Validates the sheet integration of `integration_` (thickness points:

@@ -6,7 +6,6 @@
 
 #include <Eigen/Cholesky>
 
-#include <sstream>
 
 namespace sparlab {
 
@@ -96,17 +95,6 @@ Matrix Element::condensed_strain_operator(const Matrix& coords, const NaturalPoi
   const StrainOperator op = strain_operator(coords, point);
   if (condensation.coupling.rows() == 0) return op.b;
   return op.b - internal_strain_operator(coords, point) * condensation.coupling;
-}
-
-const std::vector<int>& Element::face_nodes(int local_face) const {
-  const std::vector<std::vector<int>>& faces = element_local_faces(type());
-  if (local_face < 0 || local_face >= static_cast<int>(faces.size())) {
-    std::ostringstream os;
-    os << to_string(type()) << " local face index " << local_face << " is outside [0, "
-       << faces.size() - 1 << "]";
-    throw MeshError(os.str());
-  }
-  return faces[static_cast<std::size_t>(local_face)];
 }
 
 std::unique_ptr<Element> make_element(ElementType type) {

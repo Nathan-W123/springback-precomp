@@ -206,17 +206,9 @@ struct ToolResultant {
   /// The force the body exerts on the tool, minus the sum of the contact
   /// forces on the nodes [N].
   Vector3 force = Vector3::Zero();
-  Vector3 normal_force = Vector3::Zero();      ///< its normal part [N]
-  Vector3 tangential_force = Vector3::Zero();  ///< its friction part [N]
-  /// The sums of the nodes' normal force magnitudes, sum p_N, and of their
-  /// friction force magnitudes, sum |F_T| [N]: their ratio is mu where
-  /// every node slips.
-  Scalar normal_load = 0.0;
-  Scalar friction_load = 0.0;
   int active_nodes = 0;          ///< slave nodes with g < 0
   int slipping_nodes = 0;        ///< of those, the ones on the slip cone
   Scalar max_penetration = 0.0;  ///< max -g over them [m]
-  Scalar area = 0.0;             ///< sum of their A_j [m^2]
 };
 
 /// The contact contribution at a state.
@@ -242,7 +234,6 @@ struct ToolContactEvaluation {
   /// The tangent blocks are symmetric (no friction in slip or stick, or the
   /// symmetric friction tangent).
   bool symmetric = true;
-  int evaluated_nodes = 0;           ///< nodes whose gap was computed
 };
 
 /// Penalty contact of a set of rigid tools with the model, in the current
@@ -254,19 +245,14 @@ class ToolContact {
   ToolContact(const FemModel& model, std::vector<RigidTool> tools,
               FrictionTangent friction_tangent = FrictionTangent::Exact);
 
-  std::size_t num_tools() const { return tools_.size(); }
-  const RigidTool& tool(std::size_t k) const { return tools_[k]; }
   /// Index of the tool called `name`, or -1.
   int find(const std::string& name) const;
   /// The slave nodes of tool k (ascending), their tributary areas A_j [m^2]
   /// and penalty stiffnesses kappa_j [Pa/m].
   const std::vector<Index>& slave_nodes(std::size_t k) const { return slaves_[k].nodes; }
   const std::vector<Scalar>& areas(std::size_t k) const { return slaves_[k].area; }
-  const std::vector<Scalar>& stiffnesses(std::size_t k) const { return slaves_[k].kappa; }
   /// The smallest characteristic size h_j of any slave node [m].
   Scalar min_node_size() const { return min_size_; }
-  bool frictional() const;
-  FrictionTangent friction_tangent() const { return friction_tangent_; }
 
   /// Prepare an increment from the converged state u0 at t0 to t1 with the
   /// tools flagged in `active` (one flag per tool): the candidate nodes of

@@ -22,9 +22,6 @@
 
 #include <Eigen/Dense>
 
-#include <cstdio>
-#include <fstream>
-#include <sstream>
 
 using namespace sparlab;
 using namespace sparlab::testing;
@@ -301,8 +298,6 @@ TEST_CASE("element factory returns a Hex8 with the right shape", "[solid][elemen
   REQUIRE(element->num_nodes() == 8);
   REQUIRE(element->num_dofs() == 24);
   REQUIRE(element->num_voigt() == 6);
-  REQUIRE(element->num_faces() == 6);
-  REQUIRE(element->face_nodes(1) == std::vector<int>({4, 5, 6, 7}));
   REQUIRE(element->integration_rule(IntegrationOptions()).size() == 8);
   REQUIRE(nodes_per_element(ElementType::Hex8) == 8);
   REQUIRE(element_dimension(ElementType::Hex8) == 3);
@@ -385,9 +380,10 @@ TEST_CASE("structured hex generator produces the documented numbering",
   const StructuredGridInfo& info = *mesh.structured_info();
   REQUIRE(info.uniform);
   REQUIRE(info.nz == 2);
-  REQUIRE(structured_node_index(info, 2, 1, 1) == 18);
-  REQUIRE(structured_element_index(info, 2, 1, 1) == 11);
-  REQUIRE_THROWS_AS(structured_node_index(info, 0, 0, 3), MeshError);
+  // node(i, j, k) = k (nx + 1)(ny + 1) + j (nx + 1) + i, elem(i, j, k) =
+  // k nx ny + j nx + i.
+  REQUIRE(mesh.node(18).isApprox(Vector3(2.0, 1.0, 0.5)));
+  REQUIRE(mesh.element_centroid(11).isApprox(Vector3(2.5, 1.5, 0.75)));
 
   // Every boundary face is a quad, there are 2(nx ny + ny nz + nz nx) of them
   // and their areas add up to the surface of the box.
@@ -398,7 +394,10 @@ TEST_CASE("structured hex generator produces the documented numbering",
     REQUIRE(f.nodes.size() == 4);
     REQUIRE(f.local_face >= 0);
     REQUIRE(f.local_face < 6);
-    area += mesh.face_measure(f);
+    // A planar quadrilateral: half the norm of its diagonals' cross product.
+    const Vector3 d1 = mesh.node(f.nodes[2]) - mesh.node(f.nodes[0]);
+    const Vector3 d2 = mesh.node(f.nodes[3]) - mesh.node(f.nodes[1]);
+    area += 0.5 * d1.cross(d2).norm();
   }
   REQUIRE(area == Approx(2.0 * (3.0 * 2.0 + 2.0 * 1.0 + 1.0 * 3.0)));
 

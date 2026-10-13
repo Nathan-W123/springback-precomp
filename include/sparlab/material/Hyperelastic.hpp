@@ -61,7 +61,6 @@ enum class HyperelasticModel {
   NeoHookean             ///< compressible neo-Hookean, ln J form
 };
 
-std::string to_string(HyperelasticModel model);
 /// "saint_venant_kirchhoff" or "neo_hookean".
 /// \throws ConfigError for any other name.
 HyperelasticModel parse_hyperelastic_model(const std::string& text);

@@ -67,8 +67,6 @@ class ExplicitInternalForce {
   bool dedicated() const { return dedicated_; }
   /// Why the generic dispatch is used (empty when the kernel is dedicated).
   const std::string& fallback_reason() const { return reason_; }
-  /// Some material is elastoplastic.
-  bool plastic() const { return system_->plastic(); }
 
   /// Replace the history (NonlinearSystem's layout; empty: virgin).
   /// \throws ConfigError when it does not match the model.

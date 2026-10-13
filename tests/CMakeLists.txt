@@ -20,7 +20,6 @@ set(SPARLAB_TEST_SOURCES
   test_io.cpp
   test_solid.cpp
   test_unstructured.cpp
-  test_dofs.cpp
   test_plasticity.cpp
   test_anisotropy.cpp
   test_logarithmic.cpp

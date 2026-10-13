@@ -28,13 +28,10 @@ void DisplacementConstraint::set(int component, bool fix, Scalar value) {
     case 0: fix_x = fix; value_x = value; return;
     case 1: fix_y = fix; value_y = value; return;
     case 2: fix_z = fix; value_z = value; return;
-    case 3: fix_rx = fix; value_rx = value; return;
-    case 4: fix_ry = fix; value_ry = value; return;
-    case 5: fix_rz = fix; value_rz = value; return;
     default: break;
   }
   std::ostringstream os;
-  os << "DOF component " << component << " is outside [0, " << kMaxDofsPerNode - 1 << "]";
+  os << "DOF component " << component << " is outside [0, 2]";
   throw ModelError(os.str());
 }
 
@@ -45,9 +42,7 @@ Index apply_constraints(const Mesh& mesh,
   const int ndpn = dofs.dofs_per_node();
   std::set<Index> touched;
   for (const DisplacementConstraint& bc : constraints) {
-    bool any = false;
-    for (int k = 0; k < kMaxDofsPerNode; ++k) any = any || bc.fixes(k);
-    if (!any) {
+    if (!bc.fix_x && !bc.fix_y && !bc.fix_z) {
       throw ConfigError("boundary condition '" + bc.region.name +
                         "' constrains no component; remove it or list the "
                         "components to fix");
@@ -56,12 +51,6 @@ Index apply_constraints(const Mesh& mesh,
       throw ConfigError("boundary condition '" + bc.region.name +
                         "' fixes z, but the model is two-dimensional and has no z "
                         "degree of freedom");
-    }
-    if (ndpn < kMaxDofsPerNode && bc.fixes_rotation()) {
-      throw ConfigError("boundary condition '" + bc.region.name +
-                        "' fixes a rotation, but the model's nodes carry translations "
-                        "only; rotations are degrees of freedom of shell and beam "
-                        "elements");
     }
     const std::vector<Index> nodes = bc.region.select_nodes(mesh);
     if (nodes.empty()) {

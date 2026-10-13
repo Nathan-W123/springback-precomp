@@ -49,7 +49,6 @@ ElementFormulation parse_element_formulation(const std::string& text);
 struct IntegrationOptions {
   int stiffness_points = 2;  ///< points per direction for K_e
   int mass_points = 3;       ///< points per direction for M_e
-  int edge_points = 2;       ///< points per direction on a boundary face for tractions
   /// Hex8: points of the stiffness rule through the thickness of a sheet,
   /// along the natural axis `thickness_axis` (1 to kMaxThicknessPoints of
   /// Quadrature.hpp); 0 keeps `stiffness_points`. The rule is then
@@ -106,19 +105,9 @@ class Element {
   /// Spatial dimension (2 or 3): the translational DOFs per node.
   virtual int dim() const = 0;
   virtual int num_nodes() const = 0;
-  /// Number of boundary faces (edges in 2-D).
-  virtual int num_faces() const = 0;
 
-  /// Degrees of freedom per node, in node-major order: the `dim` translations
-  /// of a continuum element; the three translations followed by the three
-  /// rotations about the global axes for a shell or beam element.
-  virtual int dofs_per_node() const { return dim(); }
-
-  /// Lump the mass matrix by scaling its diagonal to the element mass per
-  /// DOF component (Hinton, Rock and Zienkiewicz) rather than by row sums:
-  /// the quadratic tetrahedron, whose corner row sums are negative, and the
-  /// structural elements, whose rotational rows carry rotary inertia.
-  virtual bool diagonal_scaled_lumping() const { return false; }
+  /// Degrees of freedom per node, in node-major order: the `dim` translations.
+  int dofs_per_node() const { return dim(); }
 
   /// Degrees of freedom carried by the element (num_nodes * dofs_per_node).
   int num_dofs() const { return num_nodes() * dofs_per_node(); }
@@ -191,11 +180,6 @@ class Element {
   /// Never pass it where the shape-function gradients are read off B.
   Matrix condensed_strain_operator(const Matrix& coords, const NaturalPoint& point,
                                    const InternalCondensation& condensation) const;
-
-  /// Local node indices of boundary face `local_face`, from the topology's
-  /// shared face table.
-  /// \throws MeshError for an out-of-range face index.
-  const std::vector<int>& face_nodes(int local_face) const;
 };
 
 /// Factory for the supported element topologies.

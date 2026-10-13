@@ -57,29 +57,6 @@ StructuredGridInfo grid_info(const StructuredMeshSpec& spec, bool three_d, bool 
 
 }  // namespace
 
-Index structured_node_index(const StructuredGridInfo& info, Index i, Index j, Index k) {
-  if (i < 0 || i > info.nx || j < 0 || j > info.ny || k < 0 || k > info.nz) {
-    std::ostringstream os;
-    os << "structured node (" << i << ", " << j << ", " << k
-       << ") is outside the grid [0.." << info.nx << "] x [0.." << info.ny << "] x [0.."
-       << info.nz << "]";
-    throw MeshError(os.str());
-  }
-  return k * (info.nx + 1) * (info.ny + 1) + j * (info.nx + 1) + i;
-}
-
-Index structured_element_index(const StructuredGridInfo& info, Index i, Index j,
-                               Index k) {
-  if (i < 0 || i >= info.nx || j < 0 || j >= info.ny || k < 0 || k >= info.nz) {
-    std::ostringstream os;
-    os << "structured element (" << i << ", " << j << ", " << k
-       << ") is outside the grid [0.." << info.nx - 1 << "] x [0.." << info.ny - 1
-       << "] x [0.." << info.nz - 1 << "]";
-    throw MeshError(os.str());
-  }
-  return k * info.nx * info.ny + j * info.nx + i;
-}
-
 Mesh make_structured_hex_mesh(const StructuredMeshSpec& spec) {
   check_counts_3d(spec);
 

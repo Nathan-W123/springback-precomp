@@ -48,14 +48,6 @@ class SolverError : public SparLabError {
       : SparLabError("solver error: " + what) {}
 };
 
-/// An iterative procedure exhausted its iteration budget without meeting its
-/// convergence criterion. Raised (not hidden) so callers can decide.
-class ConvergenceError : public SparLabError {
- public:
-  explicit ConvergenceError(const std::string& what)
-      : SparLabError("convergence error: " + what) {}
-};
-
 /// Input/output failure (unwritable directory, unreadable file).
 class IoError : public SparLabError {
  public:

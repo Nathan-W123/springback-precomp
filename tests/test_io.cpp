@@ -111,9 +111,9 @@ TEST_CASE("JSON serialisation round-trips", "[io][json]") {
   doc.set("flag", json::Value::make_bool(true));
   doc.set("empty_object", json::Value::make_object());
   doc.set("empty_array", json::Value::make_array());
-  Vector v(3);
-  v << 1.5, -2.5, 1.0e-17;
-  doc.set("vector", json::array_of(v));
+  json::Value v = json::Value::make_array();
+  for (const Scalar x : {1.5, -2.5, 1.0e-17}) v.push_back(json::Value::make_number(x));
+  doc.set("vector", v);
   doc.set("names", json::array_of(std::vector<std::string>{"a", "b"}));
 
   const std::string dumped = json::dump(doc, 2);
@@ -149,7 +149,7 @@ TEST_CASE("ConfigNode reports paths, types and unread keys", "[io][config]") {
   REQUIRE(root.child("a").child("b").number() == Approx(3.5));
   REQUIRE(root.child("a").string_or("c", "") == "text");
   REQUIRE(root.child("a").boolean_or("d", false));
-  REQUIRE(root.child("a").vector2_or("v", Vector2::Zero()).isApprox(Vector2(1.0, 2.0)));
+  REQUIRE(root.child("a").vector3_or("v", Vector3::Ones()).isApprox(Vector3(1.0, 2.0, 0.0)));
   REQUIRE(root.child("a").number_or("missing", 7.0) == Approx(7.0));
   REQUIRE(root.array("list").size() == 2);
   REQUIRE(root.array("list")[1].child("x").integer() == 2);
@@ -166,13 +166,13 @@ TEST_CASE("ConfigNode reports paths, types and unread keys", "[io][config]") {
   REQUIRE_THROWS_AS(root.require("nope"), ConfigError);
   REQUIRE_THROWS_AS(root.child("a").child("b").string(), ConfigError);
   REQUIRE_THROWS_AS(root.child("a").child("b").boolean(), ConfigError);
-  REQUIRE_THROWS_AS(root.child("a").child("c").vector2(), ConfigError);
+  REQUIRE_THROWS_AS(root.child("a").child("c").vector3(), ConfigError);
   REQUIRE_THROWS_AS(root.child("a").child("b").integer(), ConfigError);
   REQUIRE_THROWS_AS(root.child("list").child("x"), ConfigError);
 
-  // positive_number and bounded_number validate ranges.
+  // positive_number validates the sign.
   REQUIRE(root.child("a").positive_number("b") == Approx(3.5));
-  REQUIRE_THROWS_AS(root.child("a").bounded_number("b", 0.0, 1.0), ConfigError);
+  REQUIRE_THROWS_AS(root.child("a").child("list").positive_number("x"), ConfigError);
 
   // "typo_key" was never read.
   const std::vector<std::string> unused = root.unused_keys();
@@ -297,9 +297,8 @@ TEST_CASE("CSV and VTK writers produce well-formed files", "[io][writers]") {
     {
       CsvWriter csv(path, {"i", "a[m]", "b[N]"}, 9);
       csv.row(0, {1.5, -2.5});
-      csv.row({3.0, 4.0, 5.0});
+      csv.row(3, {4.0, 5.0});
       csv.raw_row({"x", "y", "z"});
-      REQUIRE_THROWS_AS(csv.row({1.0}), IoError);
       REQUIRE_THROWS_AS(csv.row(1, {1.0}), IoError);
       REQUIRE_THROWS_AS(csv.raw_row({"only_one"}), IoError);
       csv.close();

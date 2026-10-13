@@ -6,7 +6,6 @@
 #pragma once
 
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/core/Logging.hpp"
 #include "sparlab/fem/Assembler.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
 #include "sparlab/fem/FemModel.hpp"
@@ -14,7 +13,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -44,17 +42,16 @@ struct Evaluation {
   int yielding_points = 0;
   /// Elements with internal modes (the incompatible-mode Hex8): their
   /// parameters at this state, found from the committed ones (empty when
-  /// the model has none), and the most local iterations an element took.
+  /// the model has none).
   std::vector<Vector> modes;
-  int max_internal_iterations = 0;
 };
 
 /// Norm over the free DOFs of |K| |u|, the tangent's absolute entries times
 /// the absolute displacement: each stored displacement is exact only to its
 /// relative rounding eps, which the stiffness turns into forces of
 /// eps |K| |u|. In a slender structure under large rotation this dominates:
-/// the Tet10 elastica's residual stagnates at 0.3 eps times it (1.3e-5 N),
-/// 180 times above the gross element forces' share.
+/// an elastica's residual stagnated at 0.3 eps times it (1.3e-5 N), 180
+/// times above the gross element forces' share.
 inline Scalar stiffness_gross(const SparseMatrix& k, const Vector& u, const std::vector<Index>& free) {
   Vector product = Vector::Zero(k.rows());
   for (Eigen::Index col = 0; col < k.outerSize(); ++col) {
@@ -113,7 +110,6 @@ class NonlinearSystem {
     return small_ || logarithmic_ || elastoplastic(e);
   }
   const Vector& dead() const { return dead_; }
-  const NonlinearOptions& options() const { return options_; }
   /// Some material is elastoplastic.
   bool plastic() const { return plastic_; }
   /// Element e averages its dilatation.
@@ -130,7 +126,6 @@ class NonlinearSystem {
   /// ones: the points' states, and the parameters of the elements' internal
   /// modes (elastic elements have them too).
   void commit(Evaluation& ev) {
-    max_committed_local_ = std::max(max_committed_local_, ev.max_internal_iterations);
     if (!internal_.empty() && ev.modes.size() == internal_.size()) {
       internal_ = std::move(ev.modes);
       ev.modes.clear();
@@ -146,11 +141,6 @@ class NonlinearSystem {
   const Vector* internal(Index e) const {
     return internal_.empty() ? nullptr : &internal_[static_cast<std::size_t>(e)];
   }
-  /// The most local iterations an element with internal modes took, in any
-  /// evaluation and in the evaluations that were committed (0 without
-  /// internal modes).
-  int max_local_iterations() const { return max_local_; }
-  int max_committed_local_iterations() const { return max_committed_local_; }
   /// The committed internal-mode parameters of every element (empty for a
   /// model without internal modes): part of the history a restart carries.
   const std::vector<Vector>& internal_all() const { return internal_; }
@@ -224,7 +214,6 @@ class NonlinearSystem {
     std::vector<std::vector<PlasticState>> states(plastic_ ? static_cast<std::size_t>(ne) : 0);
     std::vector<int> yielding(plastic_ ? static_cast<std::size_t>(ne) : 0, 0);
     std::vector<Vector> modes(internal_.size());
-    std::vector<int> local_iterations(internal_.size(), 0);
     std::string failure;
 #ifdef SPARLAB_HAVE_OPENMP
 #pragma omp parallel for schedule(static)
@@ -257,7 +246,6 @@ class NonlinearSystem {
         }
         if (!internal_.empty()) {
           modes[static_cast<std::size_t>(e)] = std::move(tl.internal);
-          local_iterations[static_cast<std::size_t>(e)] = tl.internal_iterations;
         }
         f_el[static_cast<std::size_t>(e)] = std::move(tl.internal_force);
         rate_el[static_cast<std::size_t>(e)] = std::move(tl.thermal_force_rate);
@@ -297,10 +285,6 @@ class NonlinearSystem {
     }
     out.states = std::move(states);
     out.modes = std::move(modes);
-    for (int it : local_iterations) {
-      out.max_internal_iterations = std::max(out.max_internal_iterations, it);
-    }
-    max_local_ = std::max(max_local_, out.max_internal_iterations);
     out.external = lambda * dead_;
     out.residual = out.internal - out.external;
     out.gross = (gross + thermal + out.external.cwiseAbs()).norm();
@@ -376,10 +360,6 @@ class NonlinearSystem {
   std::vector<char> averaged_;                        ///< per element: mean dilatation
   std::vector<PlasticState> virgin_;                  ///< one per point, for elastic elements
   std::vector<Vector> internal_;  ///< per element: committed internal-mode parameters, or empty
-  /// Local-iteration statistics (evaluate runs its parallel loop inside and
-  /// updates this after it, from the calling thread).
-  mutable int max_local_ = 0;
-  int max_committed_local_ = 0;
   Vector dead_;
   bool symmetric_ = true;
 };

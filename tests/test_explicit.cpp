@@ -191,10 +191,10 @@ ExplicitDrive held_drive(const FemModel& model, Scalar duration) {
   ExplicitDrive drive;
   drive.duration = duration;
   drive.fixed = model.dofs().constrained_dofs();
-  const Vector values = model.dofs().prescribed_vector();
   drive.fixed_start.resize(static_cast<Eigen::Index>(drive.fixed.size()));
   for (std::size_t i = 0; i < drive.fixed.size(); ++i) {
-    drive.fixed_start(static_cast<Eigen::Index>(i)) = values(drive.fixed[i]);
+    drive.fixed_start(static_cast<Eigen::Index>(i)) =
+        model.dofs().prescribed_value(drive.fixed[i]);
   }
   drive.fixed_end = drive.fixed_start;
   return drive;
@@ -1470,7 +1470,7 @@ TEST_CASE("a form_explicit run writes the step files, its energy history and its
   std::filesystem::remove_all(dir);
   ResultWriter writer(dir.string(), c);
   const std::vector<std::string> files =
-      write_forming_results(writer, model, c.forming.options, r, false, true);
+      write_forming_files(writer, model, c.forming.options, r, false, true);
   const auto first_line = [&](const std::string& name) {
     std::ifstream in((dir / name).string());
     std::string line;

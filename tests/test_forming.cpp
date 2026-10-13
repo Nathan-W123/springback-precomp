@@ -1399,7 +1399,7 @@ TEST_CASE("a forming run writes the result files of its output contract", "[form
   CHECK(r.steps[2].reaction_norm < 1.0e-6 * r.steps[2].reference_force);
   // The same files as writing them all after the run.
   const std::vector<std::string> after =
-      write_forming_results(writer, model, c.forming.options, r, true, true);
+      write_forming_files(writer, model, c.forming.options, r, true, true);
   std::vector<std::string> expected = files;
   expected.push_back("tool_forces.csv");
   CHECK(after == expected);
@@ -1504,7 +1504,7 @@ TEST_CASE("a step whose start state cannot be evaluated stops the run with its s
   std::filesystem::remove_all(dir);
   ResultWriter writer(dir.string(), c);
   const std::vector<std::string> files =
-      write_forming_results(writer, model, c.forming.options, r, true, true);
+      write_forming_files(writer, model, c.forming.options, r, true, true);
   CHECK(files == std::vector<std::string>{"tool_forces.csv"});  // no completed step
   const json::Value summary =
       forming_summary_json(c, model, c.forming.options, r, 0.1, "test", files);

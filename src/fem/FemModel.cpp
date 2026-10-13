@@ -6,19 +6,10 @@
 #include "sparlab/elements/Quadrature.hpp"
 
 #include <cmath>
-#include <numeric>
 #include <sstream>
 #include <utility>
 
 namespace sparlab {
-
-std::string to_string(MassType type) {
-  switch (type) {
-    case MassType::Consistent: return "consistent";
-    case MassType::Lumped: return "lumped";
-  }
-  return "unknown";
-}
 
 FemModel::FemModel(Mesh mesh, IsotropicMaterial material, Scalar thickness,
                    StressState stress_state, IntegrationOptions integration)
@@ -127,11 +118,6 @@ void FemModel::check_sheet_integration() const {
   }
 }
 
-void FemModel::set_material(const IsotropicMaterial& material) {
-  materials_.front() = material;
-  d_.front() = material.constitutive(stress_state_);
-}
-
 void FemModel::assign_material(const IsotropicMaterial& material,
                                const std::vector<Index>& elements) {
   if (finalized_) {
@@ -164,18 +150,5 @@ void FemModel::finalize(bool require_load_cases) {
             dofs_.num_free(), " free");
   finalized_ = true;
 }
-
-Vector FemModel::element_volumes() const {
-  const Index ne = mesh_.num_elements();
-  Vector v(ne);
-  if (mesh_.dim() == 2) {
-    for (Index e = 0; e < ne; ++e) v(e) = mesh_.element_measure(e) * thickness_;
-  } else {
-    for (Index e = 0; e < ne; ++e) v(e) = mesh_.element_measure(e);
-  }
-  return v;
-}
-
-Scalar FemModel::domain_volume() const { return element_volumes().sum(); }
 
 }  // namespace sparlab

@@ -21,10 +21,8 @@ class CsvWriter {
   CsvWriter(const std::string& path, const std::vector<std::string>& header,
             int precision = 17);
 
-  /// Write one row. The number of fields must match the header.
-  void row(const std::vector<Scalar>& values);
-
-  /// Write a row mixing an index column with numeric values.
+  /// Write a row of an index column and numeric values. The number of fields
+  /// must match the header.
   void row(Index index, const std::vector<Scalar>& values);
 
   /// Write a row of arbitrary strings (already formatted).

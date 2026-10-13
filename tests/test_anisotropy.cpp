@@ -201,6 +201,12 @@ Scalar relative(const Matrix& a, const Matrix& b) {
   return (a - b).cwiseAbs().maxCoeff() / std::max(b.cwiseAbs().maxCoeff(), 1.0e-300);
 }
 
+/// The equivalent stress sqrt(xi^T P xi) of the material's criterion (Hill48,
+/// or von Mises) of a 3-D Voigt stress [Pa].
+Scalar equivalent_stress(const PlasticityParameters& parameters, const Vector6& stress) {
+  return std::sqrt(std::max(stress.dot(parameters.yield_matrix * stress), 0.0));
+}
+
 /// |f| of a returned state, sigma_bar(dev sigma - sum alpha_i) - sigma_y
 /// (the deviator taken first, so that the pressure's round-off stays out).
 Scalar yield_function(const IsotropicMaterial& m, const PlasticResponse& r) {
@@ -319,9 +325,6 @@ TEST_CASE("Hill48 coefficients, frame and yield matrix follow the calibration",
   p.hill.r0 = p.hill.r45 = p.hill.r90 = -1.0;  // ignored
   other.set_plasticity(p);
   REQUIRE(relative(other.plasticity().yield_matrix, m.plasticity().yield_matrix) == 0.0);
-  // The copy with a new modulus keeps everything.
-  REQUIRE(m.with_youngs_modulus(100.0e9).plasticity().yield_matrix ==
-          m.plasticity().yield_matrix);
 
   // Refusals.
   const auto refuses = [](PlasticityParameters bad) {

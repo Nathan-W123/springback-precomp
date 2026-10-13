@@ -164,10 +164,6 @@ class Mesh {
   /// Computed on demand; O(num_elements * faces per element * log).
   std::vector<BoundaryFace> boundary_faces() const;
 
-  /// Area [m^2] of a boundary face: a bilinear quadrilateral integrated with
-  /// a 2 x 2 rule.
-  Scalar face_measure(const BoundaryFace& face) const;
-
  private:
   Matrix coords_;
   std::vector<Index> connectivity_;

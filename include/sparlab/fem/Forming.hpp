@@ -143,7 +143,6 @@ struct StepConstraint {
   DisplacementConstraint constraint;  ///< region, fixed components, absolute values [m]
   Mode mode = Mode::Hold;
 };
-std::string to_string(StepConstraint::Mode mode);
 /// "hold" or "absolute".
 StepConstraint::Mode parse_constraint_mode(const std::string& text);
 
@@ -242,25 +241,18 @@ struct ToolRecord {
   std::size_t tool = 0;              ///< index into FormingOptions::tools
   Vector3 centre = Vector3::Zero();  ///< reference point c(t) [m]
   Vector3 force = Vector3::Zero();   ///< exerted by the body on the tool [N]
-  Scalar normal_load = 0.0;          ///< sum of the nodes' normal forces [N]
-  Scalar friction_load = 0.0;        ///< sum of their friction force magnitudes [N]
   int active_nodes = 0;
   int slipping_nodes = 0;
   Scalar max_penetration = 0.0;      ///< [m]
-  Scalar area = 0.0;                 ///< [m^2]
 };
 
 /// One converged increment.
 struct FormingIncrement {
   int index = 0;              ///< 1-based within the step
   Scalar time = 0.0;          ///< pseudo-time at its end [s]
-  Scalar fraction = 0.0;      ///< s, the fraction of the step at its end
   int iterations = 0;
-  int cuts = 0;               ///< halvings before it converged
   Scalar residual = 0.0;      ///< relative residual at convergence
-  Scalar reference_force = 0.0;  ///< F_ref [N]
   std::vector<ToolRecord> tools;
-  Scalar max_displacement = 0.0;    ///< [m]
   Scalar max_plastic_strain = 0.0;  ///< committed [-]
 };
 
@@ -366,11 +358,6 @@ class FormingAnalysis {
   /// so a long run that is killed keeps the steps it completed.
   using StepObserver = std::function<void(const FormingResult& so_far)>;
   void set_step_observer(StepObserver observer) { observer_ = std::move(observer); }
-
-  const FormingOptions& options() const { return options_; }
-  /// The pseudo-time windows the steps resolve to from the start of the
-  /// analysis [s] (a restart resolves them from its start state's time).
-  const std::vector<std::pair<Scalar, Scalar>>& windows() const { return windows_; }
 
  private:
   /// The steps' windows when the step before the first ended at

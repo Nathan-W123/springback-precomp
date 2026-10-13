@@ -222,17 +222,6 @@ PlasticResponse plastic_return(const IsotropicMaterial& material, StressState st
                                const Vector6& strain, const PlasticState& committed,
                                Scalar delta_t = 0.0, bool want_tangent = true);
 
-/// plastic_return under its original name.
-inline PlasticResponse j2_return(const IsotropicMaterial& material, StressState state,
-                                 const Vector6& strain, const PlasticState& committed,
-                                 Scalar delta_t = 0.0) {
-  return plastic_return(material, state, strain, committed, delta_t);
-}
-
-/// The equivalent stress \f$\bar\sigma = \sqrt{\xi^T P\,\xi}\f$ of the
-/// material's criterion (Hill48, or von Mises) of a 3-D Voigt stress [Pa].
-Scalar equivalent_stress(const PlasticityParameters& parameters, const Vector6& stress);
-
 /// The von Mises stress of a 3-D Voigt stress [Pa].
 Scalar von_mises_stress(const Vector6& stress);
 

@@ -1,7 +1,6 @@
 #include "ExplicitKernel.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/core/Logging.hpp"
 #include "sparlab/fem/TotalLagrangian.hpp"
 
 #include <Eigen/Dense>
@@ -515,8 +514,6 @@ ExplicitInternalForce::ExplicitInternalForce(const FemModel& model, const Assemb
   const Mesh& mesh = model.mesh();
   if (!allow_dedicated) {
     reason_ = "the dedicated kernel is switched off";
-  } else if (mesh.element_type() != ElementType::Hex8 || model.dofs_per_node() != 3) {
-    reason_ = "the dedicated kernel is written for Hex8 meshes";
   } else if (options_.kinematics != Kinematics::Finite &&
              options_.kinematics != Kinematics::SmallStrain &&
              options_.kinematics != Kinematics::FiniteLogarithmic) {

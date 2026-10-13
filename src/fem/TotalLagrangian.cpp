@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace sparlab {
 namespace {
@@ -84,9 +83,6 @@ TotalLagrangianElement total_lagrangian_element(const FemModel& model, Index e,
                                                 const Vector* internal) {
   const Mesh& mesh = model.mesh();
   const Element& element = model.element();
-  if (model.dofs_per_node() != model.dim()) {
-    throw ConfigError("the total Lagrangian formulation is written for continuum elements");
-  }
   if (element.num_internal_dofs() > 0) {
     return detail::incompatible_total_lagrangian_element(model, e, ue, law, temperature,
                                                          temperature_scale, want_tangent,
@@ -186,15 +182,12 @@ TotalLagrangianStress total_lagrangian_stress(const FemModel& model, Index e, co
     for (int a = 0; a < n; ++a) te(a) = (*temperature)(nodes[a]);
   }
   TotalLagrangianStress out;
-  out.piola_kirchhoff = Vector::Zero(nv);
   out.cauchy = Vector::Zero(nv);
-  out.min_jacobian = std::numeric_limits<Scalar>::infinity();
   int count = 0;
   for (const IntegrationPoint& ip : element.integration_rule(model.integration())) {
     const StrainOperator op = element.strain_operator(x0, ip.point);
     const Matrix g = reference_gradients(op, dim, n);
     const Matrix h = u * g.transpose();
-    const Matrix f = Matrix::Identity(dim, dim) + h;
     Scalar dt = 0.0;
     if (thermal) {
       dt = temperature_scale * point_temperature_change(element.shape_functions(ip.point), te,
@@ -202,7 +195,6 @@ TotalLagrangianStress total_lagrangian_stress(const FemModel& model, Index e, co
     }
     const HyperelasticResponse resp = evaluate_hyperelastic(law, mat, state, h, dt);
     Scalar szz = 0.0;
-    out.piola_kirchhoff += resp.stress;
     out.cauchy += cauchy_from_piola_kirchhoff(h, resp, state, &szz);
     out.cauchy_zz += szz;
     const Vector strain = green_lagrange_voigt(h);
@@ -213,10 +205,8 @@ TotalLagrangianStress total_lagrangian_stress(const FemModel& model, Index e, co
     // In plane stress the thickness strains too: E_33 and J = det F l_3.
     const Scalar l3 = resp.thickness_stretch;
     out.max_green_strain = std::max(out.max_green_strain, std::abs(0.5 * (l3 * l3 - 1.0)));
-    out.min_jacobian = std::min(out.min_jacobian, f.determinant() * l3);
     ++count;
   }
-  out.piola_kirchhoff /= static_cast<Scalar>(count);
   out.cauchy /= static_cast<Scalar>(count);
   out.cauchy_zz /= static_cast<Scalar>(count);
   return out;

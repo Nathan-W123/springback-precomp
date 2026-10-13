@@ -152,8 +152,6 @@ std::string to_string(MeshKind kind) {
   return "unknown";
 }
 
-bool is_structured(MeshKind kind) { return kind != MeshKind::File; }
-
 SelectorGroup parse_region(const ConfigNode& node, const std::string& default_name,
                            int dim) {
   if (!node.exists()) {
@@ -575,10 +573,9 @@ Configuration parse_configuration(const json::Value& document, const std::string
     const ConfigNode integ = model.child("integration");
     config.integration.stiffness_points = integ.integer_or("stiffness_points", 2);
     config.integration.mass_points = integ.integer_or("mass_points", 3);
-    // "face_points" is the dimension-neutral name; "edge_points" is kept for
-    // the existing 2-D decks.
-    config.integration.edge_points =
-        integ.integer_or("face_points", integ.integer_or("edge_points", 2));
+    // "face_points" (or the older "edge_points") set the face rule of the
+    // traction loads SparLab no longer has; the keys are still accepted.
+    (void)integ.integer_or("face_points", integ.integer_or("edge_points", 2));
     // A Hex8 sheet's rule through its thickness (0: the in-plane count) and
     // the element formulation; FemModel checks them against the mesh.
     config.integration.thickness_points = integ.integer_or("thickness_points", 0);

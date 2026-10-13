@@ -47,10 +47,6 @@ const std::vector<QuadraturePoint1D>& line_rule(int points) {
 
 }  // namespace
 
-const std::vector<QuadraturePoint1D>& gauss_legendre_line(int points) {
-  return line_rule(points);
-}
-
 const std::vector<QuadraturePoint2D>& gauss_legendre_square(int points_per_direction) {
   static std::map<int, std::vector<QuadraturePoint2D>> cache;
   const auto cached = cache.find(points_per_direction);

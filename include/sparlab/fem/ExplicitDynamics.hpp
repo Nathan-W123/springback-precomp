@@ -33,8 +33,8 @@
 /// Every step is final: the plastic history is updated in place at every
 /// step, never iterated.
 ///
-/// **Lumped mass**: the row sums of the consistent element masses (HRZ for
-/// the Tet10), Assembler::assemble_mass. **Mass scaling** multiplies an
+/// **Lumped mass**: the row sums of the consistent element masses,
+/// Assembler::assemble_mass. **Mass scaling** multiplies an
 /// element's density by \f$s_e \ge 1\f$: uniform,
 /// \f$s_e = (\Delta t_{target}/\Delta t_{crit})^2\f$ for every element;
 /// selective (conventional, per element),
@@ -266,15 +266,11 @@ struct ExplicitToolRecord {
   /// The force the body exerts on the tool averaged over the steps since
   /// the last record (the decimation's box filter) [N].
   Vector3 force = Vector3::Zero();
-  Vector3 last_force = Vector3::Zero();  ///< at the recorded step itself [N]
-  Scalar normal_load = 0.0;              ///< sum of the nodes' normal forces [N]
-  Scalar friction_load = 0.0;            ///< sum of their friction force magnitudes [N]
   int active_nodes = 0;
   int slipping_nodes = 0;
   Scalar max_penetration = 0.0;          ///< [m]
   /// The largest penetration over the node's element thickness [-].
   Scalar max_penetration_ratio = 0.0;
-  Scalar area = 0.0;                     ///< sum of the contact nodes' tributary areas [m^2]
 };
 
 /// A recorded step (every `history_every` steps, and the last).
@@ -300,7 +296,6 @@ struct ExplicitRecord {
   Scalar mass_scaling = 0.0;
   Scalar external = 0.0;     ///< W_ext: loads and reactions [J]
   Scalar error = 0.0;        ///< E_err [J]
-  Scalar max_displacement = 0.0;    ///< [m]
   Scalar max_plastic_strain = 0.0;  ///< [-]
   std::vector<ExplicitToolRecord> tools;  ///< the active tools
 };
@@ -408,7 +403,6 @@ class ExplicitDynamics {
 
   /// True when the dedicated Hex8 kernel applies to the model and options.
   bool dedicated() const;
-  const ExplicitOptions& options() const { return options_; }
 
  private:
   const FemModel& model_;
