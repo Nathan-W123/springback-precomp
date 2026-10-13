@@ -4,31 +4,29 @@
 ///        Internal to the library.
 ///
 /// The dedicated kernel evaluates the same equations as the element
-/// dispatch of NonlinearSystem (Elastoplastic.hpp for small-strain and for
-/// elastoplastic elements, TotalLagrangian.hpp for elastic elements with
-/// finite kinematics), in the form an explicit step needs:
+/// dispatch of NonlinearSystem (Elastoplastic.hpp, every element; with finite
+/// or logarithmic kinematics every element is elastoplastic), in the form an
+/// explicit step needs:
 /// * the reference gradients \f$G = \partial N/\partial X\f$ and weights
 ///   \f$w\det J\f$ of every point are computed once (one set on a uniform
 ///   structured mesh, whose cells are the same box);
 /// * at a point, \f$F = I + UG^T\f$, the strain (Green-Lagrange, or the
-///   linear one), the return of Plasticity.hpp from the point's history
-///   (or \f$S = DE\f$ for an elastic element with finite kinematics), and
+///   linear one), the return of Plasticity.hpp from the point's history, and
 ///   the nodal forces \f$f_a = w\,(FS)\,G_a\f$ (\f$w\,\sigma G_a\f$ with
 ///   small strain) - \f$B_{NL}^TS\f$ written as \f$FSG\f$;
 /// * with mean dilatation the point's dilatation is replaced by the
 ///   element's average in the strain, and the force gains
 ///   \f$\tfrac w3\,\mathrm{tr}S\,(\bar d - d)\f$ with \f$d = FG\f$ the
 ///   variation of the dilatation (Elastoplastic.hpp);
-/// * with logarithmic kinematics (elastoplastic elements) the strain is
-///   \f$E_{\log}\f$ of every point's E (LogarithmicStrain.hpp), the return
-///   gives T, and the force takes \f$S = P^TT\f$ (T's deviator with mean
-///   dilatation, plus the mean pressure over the volume times
-///   \f$C^{-1} = P^TI\f$, the variation of \f$\ln J\f$) in place of the
-///   Green-Lagrange S - about 3.6 us an element and step on one thread (the
-///   cone's first 1 518 steps; 4.0 us with the iterative eigensolver
-///   throughout), against 30 us through the dispatch; the spectral
-///   decomposition takes the closed-form 3 x 3 solver where its residual
-///   shows it accurate;
+/// * with logarithmic kinematics the strain is \f$E_{\log}\f$ of every
+///   point's E (LogarithmicStrain.hpp), the return gives T, and the force
+///   takes \f$S = P^TT\f$ (T's deviator with mean dilatation, plus the mean
+///   pressure over the volume times \f$C^{-1} = P^TI\f$, the variation of
+///   \f$\ln J\f$) in place of the Green-Lagrange S - about 3.6 us an element
+///   and step on one thread (the cone's first 1 518 steps; 4.0 us with the
+///   iterative eigensolver throughout), against 30 us through the dispatch;
+///   the spectral decomposition takes the closed-form 3 x 3 solver where its
+///   residual shows it accurate;
 /// * the history is updated in place (an explicit step is final), in a
 ///   compact form (plastic strain, back stress, equivalent plastic strain,
 ///   loading flag), one array per component over the element's eight
@@ -176,7 +174,6 @@ class ExplicitInternalForce {
   std::vector<Scalar> dilatation_;
   std::vector<int> material_;      ///< per element: index into materials_
   std::vector<const IsotropicMaterial*> materials_;
-  std::vector<Scalar> elasticity_;  ///< per material: D (3-D), 36 values row-major
   std::vector<Predictor> predictor_;
   std::vector<char> plastic_;        ///< per element
   std::vector<char> averaged_;       ///< per element

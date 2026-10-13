@@ -470,7 +470,7 @@ TEST_CASE("a tool that grazes the surface from the reference state converges wit
   for (int k = 0; k < 3; ++k) base.set(k, true);
   bcs.push_back(base);
   FemModel model = finalised(hex_block(10, 10, 2, 0.01, 0.01, 0.002, 0.0, 0.0, -0.002),
-                             default_material(), 1.0, StressState::ThreeDimensional, bcs);
+                             never_yielding_material(), 1.0, StressState::ThreeDimensional, bcs);
   Assembler assembler(model);
   RigidTool tool;
   tool.radius = 0.005;
@@ -479,6 +479,7 @@ TEST_CASE("a tool that grazes the surface from the reference state converges wit
   tool.trajectory = path({0.0, 1.0}, {Vector3(0.005, 0.005, 0.005 + 5.0e-4),
                                       Vector3(0.005, 0.005, 0.005 - 1.0e-3)});
   FormingOptions o;
+  o.mean_dilatation = MeanDilatation::None;  // an elastic block's elements
   o.tools.push_back(tool);
   FormingStep step;
   step.name = "press";
@@ -508,8 +509,9 @@ TEST_CASE("a tool dragged along a block with friction slides at mu times its nor
   // - x and y in its proportion, which a friction force that did not follow
   // the slip would miss - with |F_T| = mu F_z. A sphere is dragged along x:
   // its resultants differ from F_x = mu F_z by its contact normals' tilt
-  // (ploughing), 7e-4 on this mesh.
-  const IsotropicMaterial m = default_material();
+  // (ploughing), 7e-4 on this mesh. (Elastic in effect: finite kinematics
+  // take an elastoplastic material.)
+  const IsotropicMaterial m = never_yielding_material();
   const Scalar mu = 0.2;
   const Scalar pi = std::acos(-1.0);
   for (const RigidTool::Shape shape : {RigidTool::Shape::Sphere, RigidTool::Shape::Plane}) {
@@ -540,6 +542,7 @@ TEST_CASE("a tool dragged along a block with friction slides at mu times its nor
     tool.trajectory = path({0.0, 1.0, 2.0}, {Vector3(0.005, 0.005, lift + 1.0e-4), pressed,
                                              pressed + 0.01 * drag});
     FormingOptions o;
+    o.mean_dilatation = MeanDilatation::None;  // an elastic block's elements
     o.residual_tolerance = 1.0e-10;
     o.displacement_tolerance = 1.0e-10;
     o.tools.push_back(tool);
@@ -606,7 +609,7 @@ TEST_CASE("a tool active in consecutive steps cannot jump between them", "[formi
   for (int k = 0; k < 3; ++k) base.set(k, true);
   bcs.push_back(base);
   FemModel model = finalised(hex_block(10, 10, 1, 0.01, 0.01, 0.002, 0.0, 0.0, -0.002),
-                             default_material(), 1.0, StressState::ThreeDimensional, bcs);
+                             never_yielding_material(), 1.0, StressState::ThreeDimensional, bcs);
   Assembler assembler(model);
   RigidTool tool;
   tool.name = "ball";
@@ -618,6 +621,7 @@ TEST_CASE("a tool active in consecutive steps cannot jump between them", "[formi
                                            Vector3(0.003, 0.005, low),
                                            Vector3(0.007, 0.005, low)});
   FormingOptions o;
+  o.mean_dilatation = MeanDilatation::None;  // an elastic block's elements
   o.tools.push_back(tool);
   FormingStep a;
   a.name = "a";
@@ -697,7 +701,7 @@ TEST_CASE("two opposed tools pinch a sheet with equal and opposite forces", "[fo
   for (int k = 0; k < 3; ++k) frame.set(k, true);
   bcs.push_back(frame);
   FemModel model = finalised(hex_block(12, 6, 4, 0.012, 0.006, t, 0.0, 0.0, -t),
-                             default_material(), 1.0, StressState::ThreeDimensional, bcs);
+                             never_yielding_material(), 1.0, StressState::ThreeDimensional, bcs);
   Assembler assembler(model);
   const Scalar r = 0.004;
   const Scalar depth = 5.0e-5;
@@ -714,6 +718,7 @@ TEST_CASE("two opposed tools pinch a sheet with equal and opposite forces", "[fo
   bottom.surface = box(-kInf, kInf, -kInf, kInf, -kInf, -t, "bottom face");
   for (Vector3& p : bottom.trajectory.points) p.z() = -t - p.z();
   FormingOptions o;
+  o.mean_dilatation = MeanDilatation::None;  // an elastic sheet's elements
   o.residual_tolerance = 1.0e-10;
   o.displacement_tolerance = 1.0e-10;
   o.tools = {top, bottom};
@@ -803,9 +808,10 @@ TEST_CASE("a release onto 3-2-1 supports is invariant under a rigid motion of th
   // A stress-free body released stays where it is, and follows its supports
   // rigidly.
   {
-    FemModel model = finalised(mesh0, default_material());
+    FemModel model = finalised(mesh0, never_yielding_material());
     Assembler assembler(model);
     FormingOptions o;
+    o.mean_dilatation = MeanDilatation::None;  // an elastic block's elements
     FormingStep release;
     release.name = "release";
     release.type = FormingStep::Type::Release;
@@ -1354,6 +1360,76 @@ TEST_CASE("the forming block of a deck is read in full, strictly, and refused wh
   CHECK_THROWS_WITH(FormingAnalysis(loose_model, loose_assembler, l.forming.options),
                     ContainsSubstring("step 'release'") &&
                         ContainsSubstring("rotation about x"));
+}
+
+TEST_CASE("a deck with an elastic material under finite kinematics is refused",
+          "[forming][io]") {
+  // sparlab_form models elastoplastic sheets: its elastic large-strain laws
+  // were removed, so a material without a plasticity block - the deck's, or
+  // a material region's - under finite or logarithmic kinematics is refused
+  // when the analysis is built, naming the material; small-strain
+  // kinematics take it as linear elasticity.
+  const std::string plastic = R"("density": 2700,
+                 "plasticity": {"yield_stress": 100e6, "hardening_modulus": 300e6}})";
+  const auto build = [](const std::string& deck) {
+    const Configuration c = parse_deck(deck);
+    FemModel model = build_model(c);
+    Assembler assembler(model);
+    FormingAnalysis analysis(model, assembler, c.forming.options);
+  };
+  CHECK_NOTHROW(build(forming_deck(kFullForming)));
+  for (const std::string kinematics : {"finite", "finite_logarithmic", "small_strain"}) {
+    INFO(kinematics);
+    std::string forming = kFullForming;
+    const std::string from = R"("kinematics": "finite",)";
+    forming.replace(forming.find(from), from.size(), R"("kinematics": ")" + kinematics + "\",");
+    std::string elastic = forming_deck(forming);
+    const std::size_t at = elastic.find(plastic);
+    REQUIRE(at != std::string::npos);
+    elastic.replace(at, plastic.size(), R"("density": 2700, "name": "soft"})");
+    if (kinematics == "small_strain") {
+      CHECK_NOTHROW(build(elastic));
+    } else {
+      CHECK_THROWS_AS(build(elastic), ConfigError);
+      CHECK_THROWS_WITH(
+          build(elastic),
+          ContainsSubstring("material 'soft' has no plasticity block, and the \"" + kinematics +
+                            "\" kinematics takes elastoplastic materials only") &&
+              ContainsSubstring("sparlab_form models elastoplastic sheets") &&
+              ContainsSubstring("elastic large-strain laws (Saint Venant-Kirchhoff, "
+                                "neo-Hookean) were removed"));
+    }
+  }
+  // An elastic material region among plastic elements.
+  std::string region = forming_deck(kFullForming);
+  const std::string bcs = R"("boundary_conditions": [)";
+  region.replace(region.find(bcs), bcs.size(),
+                 R"("material_regions": [{"name": "insert", "region": {"box": {"xmax": 0.002}},
+                      "material": {"name": "insert", "youngs_modulus": 70e9,
+                                   "poisson_ratio": 0.33, "density": 2700}}],
+    )" + bcs);
+  CHECK_THROWS_WITH(build(region),
+                    ContainsSubstring("material 'insert' has no plasticity block"));
+}
+
+TEST_CASE("forming.material_model, the removed elastic laws' key, is refused under strict "
+          "config",
+          "[forming][io]") {
+  // The deck key that chose Saint Venant-Kirchhoff or neo-Hookean is no
+  // longer read: a strict parse (sparlab_form --strict-config) refuses it as
+  // unknown, a lenient one warns and ignores it.
+  for (const std::string law : {"saint_venant_kirchhoff", "neo_hookean"}) {
+    INFO(law);
+    std::string forming = kFullForming;
+    const std::string from = R"("kinematics": "finite",)";
+    forming.replace(forming.find(from), from.size(),
+                    from + R"( "material_model": ")" + law + "\",");
+    CHECK_THROWS_AS(parse_deck(forming_deck(forming)), ConfigError);
+    CHECK_THROWS_WITH(parse_deck(forming_deck(forming)),
+                      ContainsSubstring("does not recognise") &&
+                          ContainsSubstring("forming.material_model"));
+    CHECK_NOTHROW(parse_deck(forming_deck(forming), false));
+  }
 }
 
 TEST_CASE("a forming run writes the result files of its output contract", "[forming][io]") {

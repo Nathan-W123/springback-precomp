@@ -8,7 +8,7 @@
 ///   whole model: what each Newton iteration of a forming step evaluates.
 /// Called from: fem/Forming.cpp:FormingAnalysis::run (evaluate, commit),
 ///   fem/ExplicitKernel.cpp:ExplicitInternalForce::evaluate (the generic dispatch)
-/// Calls into: fem/Elastoplastic, fem/TotalLagrangian, fem/Assembler (assemble_elementwise)
+/// Calls into: fem/Elastoplastic, fem/Assembler (assemble_elementwise)
 /// Start reading at: NonlinearSystem::evaluate, NonlinearSystem::commit
 #pragma once
 
@@ -16,7 +16,6 @@
 #include "sparlab/fem/Assembler.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
 #include "sparlab/fem/FemModel.hpp"
-#include "sparlab/fem/TotalLagrangian.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -94,28 +93,20 @@ class NonlinearSystem {
   /// A system under no applied load at all - no load case: prescribed
   /// displacements and forces added by the caller (the moving tools of the
   /// forming analysis) drive it. `evaluate` then returns f_ext = 0 and
-  /// q = 0 whatever lambda.
+  /// q = 0 whatever lambda. Every element is evaluated by the return of
+  /// Elastoplastic.hpp; under finite kinematics every material must be
+  /// elastoplastic.
+  /// \throws ConfigError for an elastic material under finite kinematics
+  ///         (require_elastoplastic_materials).
   NonlinearSystem(const FemModel& model, const Assembler& assembler,
                   const NonlinearOptions& options)
-      : model_(model), assembler_(assembler), options_(options),
-        small_(options.kinematics == Kinematics::SmallStrain),
-        logarithmic_(options.kinematics == Kinematics::FiniteLogarithmic) {
-    if (logarithmic_ && options.law != HyperelasticModel::SaintVenantKirchhoff) {
-      throw ConfigError("the \"finite_logarithmic\" kinematics has its own elastic law, "
-                        "Hencky's (quadratic in the logarithmic strain); the \"neo_hookean\" "
-                        "material model is for \"finite\" kinematics");
-    }
+      : model_(model), assembler_(assembler), options_(options) {
+    require_elastoplastic_materials(model, options.kinematics);
     dead_ = Vector::Zero(model.dofs().num_dofs());
     initialise_history();
   }
 
   bool symmetric() const { return symmetric_; }
-  /// Element e is evaluated by the return of Elastoplastic.hpp: every element
-  /// with small-strain or logarithmic kinematics (linear or Hencky
-  /// elasticity), the elastoplastic ones with finite kinematics.
-  bool routed_through_return(Index e) const {
-    return small_ || logarithmic_ || elastoplastic(e);
-  }
   const Vector& dead() const { return dead_; }
   /// Some material is elastoplastic.
   bool plastic() const { return plastic_; }
@@ -222,7 +213,7 @@ class NonlinearSystem {
     std::vector<int> yielding(plastic_ ? static_cast<std::size_t>(ne) : 0, 0);
     std::vector<Vector> modes(internal_.size());
     std::string failure;
-    // Element loop (OpenMP when built in): the return path or the total Lagrangian path.
+    // Element loop (OpenMP when built in): every element through the return.
 #ifdef SPARLAB_HAVE_OPENMP
 #pragma omp parallel for schedule(static)
 #endif
@@ -233,32 +224,20 @@ class NonlinearSystem {
         for (int a = 0; a < npe; ++a) {
           for (int k = 0; k < dim; ++k) ue(dim * a + k) = u(nodes[a] * dim + k);
         }
-        TotalLagrangianElement tl;
-        if (routed_through_return(e)) {
-          ElastoplasticElement ep = elastoplastic_element(
-              model_, e, ue, committed(e), averaged(e), temperature, lambda, want_tangent,
-              options_.kinematics, internal_of(e));
-          tl.internal_force = std::move(ep.internal_force);
-          tl.tangent = std::move(ep.tangent);
-          tl.thermal_force_rate = std::move(ep.thermal_force_rate);
-          tl.energy = ep.energy;
-          tl.internal = std::move(ep.internal);
-          tl.internal_iterations = ep.internal_iterations;
-          if (elastoplastic(e)) {
-            states[static_cast<std::size_t>(e)] = std::move(ep.states);
-            yielding[static_cast<std::size_t>(e)] = ep.yielding_points;
-          }
-        } else {
-          tl = total_lagrangian_element(model_, e, ue, options_.law, temperature, lambda,
-                                        want_tangent, internal_of(e));
+        ElastoplasticElement ep = elastoplastic_element(
+            model_, e, ue, committed(e), averaged(e), temperature, lambda, want_tangent,
+            options_.kinematics, internal_of(e));
+        if (elastoplastic(e)) {
+          states[static_cast<std::size_t>(e)] = std::move(ep.states);
+          yielding[static_cast<std::size_t>(e)] = ep.yielding_points;
         }
         if (!internal_.empty()) {
-          modes[static_cast<std::size_t>(e)] = std::move(tl.internal);
+          modes[static_cast<std::size_t>(e)] = std::move(ep.internal);
         }
-        f_el[static_cast<std::size_t>(e)] = std::move(tl.internal_force);
-        rate_el[static_cast<std::size_t>(e)] = std::move(tl.thermal_force_rate);
-        energy_el[static_cast<std::size_t>(e)] = tl.energy;
-        if (want_tangent) k_el[static_cast<std::size_t>(e)] = std::move(tl.tangent);
+        f_el[static_cast<std::size_t>(e)] = std::move(ep.internal_force);
+        rate_el[static_cast<std::size_t>(e)] = std::move(ep.thermal_force_rate);
+        energy_el[static_cast<std::size_t>(e)] = ep.energy;
+        if (want_tangent) k_el[static_cast<std::size_t>(e)] = std::move(ep.tangent);
       } catch (const std::exception& ex) {
 #ifdef SPARLAB_HAVE_OPENMP
 #pragma omp critical(sparlab_nonlinear_failure)
@@ -362,8 +341,6 @@ class NonlinearSystem {
   const FemModel& model_;
   const Assembler& assembler_;
   NonlinearOptions options_;  ///< by value: see the constructor
-  bool small_ = false;
-  bool logarithmic_ = false;
   bool plastic_ = false;
   std::vector<std::vector<PlasticState>> committed_;  ///< per element; empty if elastic
   std::vector<char> averaged_;                        ///< per element: mean dilatation

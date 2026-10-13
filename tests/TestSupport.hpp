@@ -24,6 +24,20 @@ inline IsotropicMaterial default_material(Scalar poisson = 0.3) {
   return IsotropicMaterial(70.0e9, poisson, 2700.0, "test_aluminium");
 }
 
+/// default_material() with a plasticity block whose yield stress (1e15 Pa)
+/// no test reaches: linear elastic in effect, and admitted under finite
+/// kinematics, which take elastoplastic materials only
+/// (require_elastoplastic_materials). With `mean_dilatation` "none" its
+/// elements are those of an elastic material (S = D E with the plain B_NL),
+/// which mean dilatation never averages.
+inline IsotropicMaterial never_yielding_material(Scalar poisson = 0.3) {
+  IsotropicMaterial m = default_material(poisson);
+  PlasticityParameters p;
+  p.yield_stress = 1.0e15;
+  m.set_plasticity(p);
+  return m;
+}
+
 /// A small Hex8 block (0.4 x 0.3 x 0.05 m, nx x ny x 1 cells) clamped on
 /// x = 0, with its one empty load case, finalised.
 inline FemModel make_small_block(Index nx = 4, Index ny = 3, Scalar poisson = 0.3) {

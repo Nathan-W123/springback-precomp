@@ -6,7 +6,6 @@
 
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/core/Logging.hpp"
-#include "sparlab/fem/TotalLagrangian.hpp"
 
 #include <Eigen/Dense>
 #include <Eigen/SparseCholesky>
@@ -27,41 +26,6 @@ namespace sparlab {
 namespace {
 
 using namespace detail;
-
-/// The von Mises stress of a plane stress state with the out-of-plane
-/// normal stress sz [Pa].
-Scalar von_mises_plane(Scalar sx, Scalar sy, Scalar sxy, Scalar sz) {
-  const Scalar j = 0.5 * ((sx - sy) * (sx - sy) + (sy - sz) * (sy - sz) + (sz - sx) * (sz - sx)) +
-                   3.0 * sxy * sxy;
-  return std::sqrt(std::max(j, 0.0));
-}
-
-/// The von Mises stress of a Voigt stress (3 entries in 2-D, the plane
-/// strain sz from the Poisson ratio; 6 in 3-D) [Pa].
-Scalar von_mises(const Vector& s, StressState state, Scalar poisson) {
-  if (s.size() == 3) {
-    const Scalar sx = s(0);
-    const Scalar sy = s(1);
-    const Scalar sxy = s(2);
-    const Scalar sz = (state == StressState::PlaneStrain) ? poisson * (sx + sy) : 0.0;
-    const Scalar j = 0.5 * ((sx - sy) * (sx - sy) + (sy - sz) * (sy - sz) +
-                            (sz - sx) * (sz - sx)) +
-                     3.0 * sxy * sxy;
-    return std::sqrt(std::max(j, 0.0));
-  }
-  if (s.size() == 6) {
-    const Scalar sx = s(0);
-    const Scalar sy = s(1);
-    const Scalar sz = s(2);
-    const Scalar j = 0.5 * ((sx - sy) * (sx - sy) + (sy - sz) * (sy - sz) +
-                            (sz - sx) * (sz - sx)) +
-                     3.0 * (s(3) * s(3) + s(4) * s(4) + s(5) * s(5));
-    return std::sqrt(std::max(j, 0.0));
-  }
-  std::ostringstream os;
-  os << "von_mises expects a Voigt vector of 3 or 6 components, received " << s.size();
-  throw ModelError(os.str());
-}
 
 #ifdef SPARLAB_HAVE_CHOLMOD
 constexpr bool kHaveSuiteSparse = true;
@@ -551,19 +515,8 @@ FormingAnalysis::FormingAnalysis(const FemModel& model, const Assembler& assembl
   if (!(options_.residual_tolerance > 0.0) || !(options_.displacement_tolerance > 0.0)) {
     throw ConfigError("the forming tolerances must be positive");
   }
-  if (options_.law == HyperelasticModel::NeoHookean) {
-    if (options_.kinematics == Kinematics::SmallStrain) {
-      throw ConfigError("the small-strain kinematics is linear elasticity; the neo-Hookean "
-                        "law needs \"finite\" kinematics");
-    }
-    for (Index e = 0; e < model.mesh().num_elements(); ++e) {
-      if (model.material_of(e).plasticity().enabled()) {
-        throw ConfigError("material '" + model.material_of(e).name() +
-                          "' is elastoplastic, which takes the Saint Venant-Kirchhoff form; "
-                          "the neo-Hookean law cannot be combined with plasticity");
-      }
-    }
-  }
+  // Finite kinematics take elastoplastic materials only (Elastoplastic.hpp).
+  require_elastoplastic_materials(model, options_.kinematics);
   // The tools and their surfaces (refused here rather than at the first
   // step).
   const ToolContact probe(model, options_.tools, options_.friction_tangent);
@@ -751,7 +704,6 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
 
   NonlinearOptions nl;
   nl.kinematics = options_.kinematics;
-  nl.law = options_.law;
   nl.mean_dilatation = options_.mean_dilatation;
   NonlinearSystem system(model_, assembler_, nl);
   if (!start.plastic.empty()) system.set_committed(start.plastic);
@@ -1432,23 +1384,14 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
       for (int a = 0; a < npe; ++a) {
         for (int k = 0; k < dim; ++k) ue(dim * a + k) = u(nodes[a] * dim + k);
       }
-      if (system.routed_through_return(e)) {
-        const ElastoplasticStress st =
-            elastoplastic_stress(model_, e, ue, system.committed(e), system.averaged(e), nullptr,
-                                 0.0, options_.kinematics, system.internal(e));
-        sr.element_von_mises(e) = st.von_mises;
-        if (system.elastoplastic(e)) {
-          sr.element_plastic_strain(e) = st.max_equivalent_plastic_strain;
-        }
-        max_strain = std::max(max_strain, st.max_strain);
-      } else {
-        const TotalLagrangianStress st = total_lagrangian_stress(model_, e, ue, options_.law,
-                                                                 nullptr, 0.0, system.internal(e));
-        sr.element_von_mises(e) =
-            dim == 3 ? von_mises(st.cauchy, StressState::ThreeDimensional, 0.0)
-                     : von_mises_plane(st.cauchy(0), st.cauchy(1), st.cauchy(2), st.cauchy_zz);
-        max_strain = std::max(max_strain, st.max_green_strain);
+      const ElastoplasticStress st =
+          elastoplastic_stress(model_, e, ue, system.committed(e), system.averaged(e), nullptr,
+                               0.0, options_.kinematics, system.internal(e));
+      sr.element_von_mises(e) = st.von_mises;
+      if (system.elastoplastic(e)) {
+        sr.element_plastic_strain(e) = st.max_equivalent_plastic_strain;
       }
+      max_strain = std::max(max_strain, st.max_strain);
     }
     // Release check: supports that still carry load hold the part deformed (a warning).
     // (Reactions at their round-off, as those of a body that was never

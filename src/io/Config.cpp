@@ -635,7 +635,6 @@ Configuration parse_configuration(const json::Value& document, const std::string
     FormingOptions& o = c.options;
     if (c.enabled) {
       o.kinematics = parse_kinematics(fm.string_or("kinematics", "finite"));
-      o.law = parse_hyperelastic_model(fm.string_or("material_model", "saint_venant_kirchhoff"));
       const ConfigNode md = fm.child("mean_dilatation");
       if (md.exists()) {
         o.mean_dilatation = md.raw()->is_bool()
