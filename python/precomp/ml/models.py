@@ -402,11 +402,14 @@ class TransferModel:
     base; `accepted` and `validation` say which and why. `n_real` is the
     number of real parts (groups) seen; with none the model IS the base.
 
-    On proxy data (a gradient-boosting base, ten held-out parts, 1-4 "real" parts in three
-    draws each): with no shift, or 50 um noise, the validated correction was
-    never accepted (error = the base's); with the rim and curvature 30-40 %
-    stronger (base 0.18 mm) it cut the error to 0.09-0.15 mm from two parts
-    on; with one part nothing changes.
+    On proxy data (with the gradient-boosting base the package had then, ten
+    held-out parts, 1-4 "real" parts in three draws each): with no shift, or
+    50 um noise, the validated correction was never accepted (error = the
+    base's); with the rim and curvature 30-40 % stronger (base 0.18 mm) it
+    cut the error to 0.09-0.15 mm from two parts on; with one part nothing
+    changes. Two real parts of ONE family can validate that family's offset
+    and then shift every family (tests/test_ml_models.py): take the real
+    parts from different families.
     """
 
     kind = "point"

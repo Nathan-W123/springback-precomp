@@ -18,11 +18,11 @@ Every sample states its data source: "sim" (a SparLab simulation), "scan"
 (a measured part) or "proxy" (the analytic ProxySimulator - not physics). Tables
 and metrics carry that label (`SOURCE_LABELS`) wherever they are reported.
 
-Splits are grouped. The variants of one design point (the uncompensated,
+Splits are by part. The variants of one design point (the uncompensated,
 perturbed and compensated commanded shapes of one target part) share a
-`part_id` and are split together by default, so a part never appears on both
-sides of a split; `by="sample"` and `by="family"` (leave-family-out) are the
-other groupings.
+`part_id`, so a part never appears on both sides of a split: the workflow
+splits design points by their index (`python/scripts/common.split_of`), and
+`train_surrogate` and `evaluate_surrogate` refuse a part on both sides.
 """
 
 from __future__ import annotations

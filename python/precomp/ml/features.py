@@ -464,7 +464,9 @@ class FeatureMaps:
         return self.values[..., self.names.index(name)]
 
     def gather(self, points: Any = None, grid=None) -> np.ndarray:
-        """Rows of features at `points` (see `point_features`)."""
+        """Rows of features at `points`: None (every node), a boolean grid mask,
+        flat node indices, or an (n, 2) array of x, y [m] (interpolated on
+        `grid`)."""
         ny, nx, F = self.values.shape
         flat = self.values.reshape(-1, F)
         if points is None:

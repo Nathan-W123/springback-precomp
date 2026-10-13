@@ -412,15 +412,13 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
     label, the setup fields seen (`setup_envelope`), seed and sizes - is kept
     in `surrogate.training`.
 
-    group_by : the groups the model's bootstrap (GBMEnsemble) or
-        early-stopping split (MLPEnsemble) draws: "sample" (default) or
-        "part". The variants of a part are near duplicates, so with "sample"
-        a bootstrap member sees about 95 % of the parts and the ensemble
-        spread is far smaller than the error on a new part - it is a relative
-        scale that conformal calibration turns into intervals, not an error
-        estimate. "part" gives a larger spread but, on proxy data, an 18 %
-        larger held-out error and 90 % intervals almost twice as wide after
-        calibration (docs/precomp_ml.md, "Models").
+    group_by : the groups the MLPEnsemble's early-stopping (validation)
+        split draws: "sample" (default, what the workflow uses) or "part".
+        The variants of a part are near duplicates, so with "sample" the
+        validation loss is optimistic and the ensemble spread is smaller than
+        the error on a new part - a relative scale that conformal calibration
+        turns into intervals, not an error estimate. "part" makes the
+        validation honest but takes those parts away from training.
     """
     train = list(train)
     if not train:

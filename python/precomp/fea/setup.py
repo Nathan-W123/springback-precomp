@@ -109,7 +109,7 @@ _BENCHMARK_PROCESS: Dict[str, Any] = {
     "toolpath_style": "spiral", "toolpath_spacing": 1e-3, "max_tool_travel": 1e-3,
     "release": "321", "kinematics": "finite_logarithmic", "threads": 1}
 
-#: Named setups (`FormingSetup.preset`, `precomp setup --preset`), the
+#: Named setups (`FormingSetup.preset`), the
 #: FormingSetup fields each one sets. Presets are never changed once a record
 #: uses them; a new discretisation gets a new name.
 #:
