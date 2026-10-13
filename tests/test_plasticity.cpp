@@ -1,6 +1,6 @@
 /// \file test_plasticity.cpp
-/// \brief J2 plasticity: the return map at a material point, the
-///        elastoplastic element, and the solver's history.
+/// \brief J2 plasticity: the return map at a material point and the
+///        elastoplastic element.
 ///
 /// Every check is exact or a derivative check. Uniaxial stress is a
 /// proportional path, on which the backward-Euler radial return with linear

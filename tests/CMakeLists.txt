@@ -48,9 +48,3 @@ catch_discover_tests(sparlab_tests
   TEST_PREFIX "sparlab."
   PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=1"
 )
-
-# A single target that runs the whole suite in one process, which is what the
-# `make test` convenience target and CI use. It keeps its threads, but they
-# sleep rather than spin while they wait, since it runs beside the cases.
-add_test(NAME sparlab.all COMMAND sparlab_tests)
-set_tests_properties(sparlab.all PROPERTIES TIMEOUT 1800 ENVIRONMENT "OMP_WAIT_POLICY=PASSIVE")

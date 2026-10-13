@@ -262,7 +262,7 @@ TEST_CASE("inverted, degenerate and mis-sized hexahedra are rejected",
 }
 
 TEST_CASE("Hex8 consistent mass is symmetric, positive definite and conserves mass",
-          "[solid][element][modal][verification]") {
+          "[solid][element][mass][verification]") {
   Hex8Element element;
   const Scalar density = 2700.0;
   const IntegrationOptions opts;

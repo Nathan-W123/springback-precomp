@@ -111,10 +111,7 @@ add_library(sparlab STATIC
   src/io/FormingWriter.cpp
 )
 
-target_include_directories(sparlab PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
+target_include_directories(sparlab PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_link_libraries(sparlab PUBLIC Eigen3::Eigen)
 
