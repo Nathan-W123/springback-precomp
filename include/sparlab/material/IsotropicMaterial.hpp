@@ -23,15 +23,9 @@
 /// \f$\sigma_{zz} = \nu(\sigma_{xx}+\sigma_{yy})\f$.
 ///
 /// **Thermal strain.** A temperature change \f$\Delta T = T - T_{ref}\f$ gives
-/// the isotropic free strain \f$\alpha\,\Delta T\f$. Its Voigt form depends on
-/// the idealisation: \f$\alpha\Delta T\{1, 1, 0\}\f$ in plane stress, where
-/// the free out-of-plane expansion leaves the in-plane law unchanged;
-/// \f$(1+\nu)\,\alpha\Delta T\{1, 1, 0\}\f$ in plane strain, where the
-/// restrained out-of-plane expansion \f$\varepsilon_{zz} = 0\f$ adds
-/// \f$\nu\alpha\Delta T\f$ in each in-plane direction and
-/// \f$\sigma_{zz} = \nu(\sigma_{xx}+\sigma_{yy}) - E\alpha\Delta T\f$; and
-/// \f$\alpha\Delta T\{1,1,1,0,0,0\}\f$ in 3-D. The stress is
-/// \f$\sigma = D(\varepsilon - \varepsilon_0)\f$.
+/// the isotropic free strain \f$\varepsilon_0 = \alpha\Delta T\{1,1,1,0,0,0\}\f$,
+/// which the plastic returns (Plasticity.hpp) take off the 3-D strain, the
+/// plane states included: \f$\sigma = D(\varepsilon - \varepsilon_0)\f$.
 ///
 /// Three-dimensional elasticity, with Lame constants
 /// \f$\lambda = E\nu/((1+\nu)(1-2\nu))\f$ and \f$G = E/(2(1+\nu))\f$:
@@ -267,18 +261,6 @@ class IsotropicMaterial {
   /// Set the thermal properties.
   /// \throws ConfigError for a negative conductivity or non-finite input.
   void set_thermal(Scalar expansion, Scalar reference_temperature, Scalar conductivity);
-
-  /// Voigt thermal strain \f$\varepsilon_0\f$ of a temperature change for
-  /// an idealisation (see the file comment): 3 components for the plane
-  /// states, 6 in 3-D.
-  Vector thermal_strain(StressState state, Scalar delta_t) const;
-
-  /// Out-of-plane stress of a plane-strain state with in-plane stresses
-  /// sx, sy at temperature change delta_t:
-  /// \f$\nu(\sigma_{xx}+\sigma_{yy}) - E\alpha\Delta T\f$.
-  Scalar plane_strain_sigma_zz(Scalar sx, Scalar sy, Scalar delta_t) const {
-    return nu_ * (sx + sy) - e_ * alpha_ * delta_t;
-  }
 
  private:
   Scalar e_;

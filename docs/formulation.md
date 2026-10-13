@@ -400,10 +400,11 @@ integrates everything.
 
 **Materials.** Every element takes the return of section 7: `sparlab_form`
 models elastoplastic sheets, so under `finite` and `finite_logarithmic`
-kinematics every material - the deck's and every material region's - needs
-a `plasticity` block, and one without it is refused when the analysis is
-built. (The elastic large-strain laws, Saint Venant-Kirchhoff and
-neo-Hookean, and their deck key `forming.material_model` were removed.)
+kinematics the material of every element - the deck's where no material
+region replaces it, and each region's - needs a `plasticity` block, and an
+element whose material has none is refused when the analysis is built.
+(The elastic large-strain laws, Saint Venant-Kirchhoff and neo-Hookean,
+and their deck key `forming.material_model` were removed.)
 The elastic part of the return is linear elasticity in the Green-Lagrange
 strain, `S = D E_e` - large rotation, small elastic strain - and Hencky's
 law in the logarithmic strain with `finite_logarithmic`.

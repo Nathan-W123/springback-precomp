@@ -287,30 +287,6 @@ void IsotropicMaterial::set_plasticity(const PlasticityParameters& parameters) {
   plasticity_ = p;
 }
 
-Vector IsotropicMaterial::thermal_strain(StressState state, Scalar delta_t) const {
-  const Scalar e0 = alpha_ * delta_t;
-  switch (state) {
-    case StressState::PlaneStress: {
-      Vector v(3);
-      v << e0, e0, 0.0;
-      return v;
-    }
-    case StressState::PlaneStrain: {
-      // eps_zz = 0 restrains the out-of-plane expansion, which reappears as
-      // nu alpha dT in each in-plane direction.
-      Vector v(3);
-      v << (1.0 + nu_) * e0, (1.0 + nu_) * e0, 0.0;
-      return v;
-    }
-    case StressState::ThreeDimensional: {
-      Vector v = Vector::Zero(6);
-      v.head(3).setConstant(e0);
-      return v;
-    }
-  }
-  throw ConfigError("unhandled stress state");
-}
-
 Matrix IsotropicMaterial::constitutive(StressState state) const {
   switch (state) {
     case StressState::PlaneStress: return plane_stress_matrix();

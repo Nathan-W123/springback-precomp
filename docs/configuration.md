@@ -78,7 +78,8 @@ errors on a `file` mesh.
 
 ```json
 "material": { "name": "AA1050-like", "youngs_modulus": 70.0e9,
-              "poisson_ratio": 0.33, "density": 2700.0 }
+              "poisson_ratio": 0.33, "density": 2700.0,
+              "plasticity": { "yield_stress": 100.0e6, "hardening_modulus": 300.0e6 } }
 ```
 
 | Key | Type | Default | Constraint |
@@ -88,7 +89,7 @@ errors on a `file` mesh.
 | `poisson_ratio` | number | required | in `(-1, 0.5)` so the constitutive matrix stays positive definite |
 | `density` | number [kg/m^3] | `0` | `>= 0`; a `form_explicit` step needs a positive density of every material |
 | `thermal_expansion`, `reference_temperature`, `conductivity` | number | `0` | accepted and checked (finite; `conductivity >= 0`), without effect: the forming analysis applies no temperature |
-| `plasticity` | object | none | plasticity, below; without it the material is elastic, which only `small_strain` kinematics take: `sparlab_form` models elastoplastic sheets, and under `finite` or `finite_logarithmic` kinematics a material without plasticity is refused (the elastic large-strain laws were removed; [`forming.md`](forming.md), section 2) |
+| `plasticity` | object | none | plasticity, below; without it the material is elastic, which only `small_strain` kinematics take: `sparlab_form` models elastoplastic sheets, and under `finite` or `finite_logarithmic` kinematics a deck in which an element's material (after `material_regions`) has none is refused (the elastic large-strain laws were removed; [`forming.md`](forming.md), section 2) |
 
 ### `material.plasticity`
 
@@ -188,8 +189,9 @@ every element region) the `material`, which takes the same keys as the top-level
 other element keeps the top-level material. A region that selects no element
 is an error. Every evaluation of an element - its stiffness and internal
 forces, its plasticity, its mass - uses the element's own material; under
-`finite` or `finite_logarithmic` kinematics a region's material needs a
-`plasticity` block too.
+`finite` or `finite_logarithmic` kinematics every element's material needs a
+`plasticity` block, so a region's material needs one, and so does the
+top-level material unless regions replace it on every element.
 
 ## `model`
 
