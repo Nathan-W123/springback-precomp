@@ -11,7 +11,6 @@ CalculiX: C3D8, *STEP NLGEOM, *PLASTIC table (multiplicative finite-strain
 J2), same E, nu and flow curve. Quantities: Cauchy von Mises stress and
 equivalent plastic strain at the end of every step.
 """
-import json
 import math
 import sys
 from pathlib import Path

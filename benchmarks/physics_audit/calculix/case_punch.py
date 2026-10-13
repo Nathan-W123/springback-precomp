@@ -26,7 +26,6 @@ usage: python3 case_punch.py NAME key=value ...
 """
 import csv
 import json
-import math
 import sys
 from pathlib import Path
 

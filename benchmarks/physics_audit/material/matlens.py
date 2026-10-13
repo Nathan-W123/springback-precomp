@@ -19,7 +19,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -33,7 +33,7 @@ from precomp.fea import build_deck, load_result, run_deck          # noqa: E402
 from precomp.fea.setup import FormingSetup                          # noqa: E402
 from precomp.geometry.heightmap import HeightMap                    # noqa: E402
 from precomp.materials import Material, get_material                # noqa: E402
-from precomp.metrology import (flange_mask, metrics, part_mask,     # noqa: E402
+from precomp.metrology import (flange_mask, part_mask,              # noqa: E402
                                vertical_deviation)
 
 EXE = ROOT / "build" / "bin" / "sparlab_form"

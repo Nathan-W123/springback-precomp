@@ -49,8 +49,7 @@ REFCASE = "h0.625_L1_im_tp7" if PART_KEY == "t0" else "c1_h0.625_L1_im_tp5"
 from precomp.fea import load_result  # noqa: E402
 from precomp.fea.results import _interpolate_structured  # noqa: E402
 from precomp.geometry.heightmap import HeightMap  # noqa: E402
-from precomp.metrology import (flange_mask, metrics, part_mask, signed_deviation,  # noqa: E402
-                               vertical_deviation)
+from precomp.metrology import flange_mask, metrics, part_mask, signed_deviation  # noqa: E402
 
 MM = 1e-3
 TARGET = HeightMap.load(PART_RUN / "commanded.npz")

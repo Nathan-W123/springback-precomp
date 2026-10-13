@@ -46,7 +46,7 @@ from precomp.fea.setup import FormingSetup                              # noqa: 
 from precomp.geometry.heightmap import HeightMap                        # noqa: E402
 from precomp.metrology import flange_mask, part_mask, vertical_deviation  # noqa: E402
 from precomp.robot import forces_on_path                                # noqa: E402
-from precomp.toolpath import AIR, Toolpath, dsif_support_path, tool_center_surface  # noqa: E402
+from precomp.toolpath import AIR, dsif_support_path, tool_center_surface  # noqa: E402
 
 EXE = ROOT / "build" / "bin" / "sparlab_form"
 CACHE = Path("/home/user/wt/bench/benchmarks/springback/work/runs/runs")

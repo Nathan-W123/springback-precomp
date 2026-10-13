@@ -32,7 +32,7 @@ def err(q, v):
     return f"{a:+.3f}..{b:+.3f}"
 
 
-out = [f"### Table 5 - second check part truncated_cone-s2026-0001 (wall 54 deg) [mm]\n",
+out = ["### Table 5 - second check part truncated_cone-s2026-0001 (wall 54 deg) [mm]\n",
        f"Released-shape difference against `{REF}`; errors against the band of "
        "Richardson limits of `richardson_fit_c1.csv` (empty until three IM meshes exist).\n",
        "| Case | vert. RMS | vert. max | rim sag | springback RMS | released vs finest RMS / max "

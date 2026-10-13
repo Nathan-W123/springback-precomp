@@ -1,6 +1,5 @@
 """Worker: run the QUEUE of variants.py, claiming jobs by atomic mkdir.
 Usage: python3 run_queue.py <worker-name>"""
-import json
 import os
 import sys
 import time

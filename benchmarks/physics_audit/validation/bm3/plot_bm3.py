@@ -1,6 +1,6 @@
 """Figure: measured vs published FE vs SparLab profiles (RD), thickness and force vs depth.
 usage: python3 plot_bm3.py out.png cases/<a> [cases/<b> ...]"""
-import sys, os, csv, glob, json
+import sys, os, csv, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 import analyze_bm3 as A

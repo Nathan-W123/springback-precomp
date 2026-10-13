@@ -3,9 +3,9 @@
 and compare each to its base on the same 0.833 mm IM5 mesh
 (convergence/cases/h0.833_L1_im_tp5) and to the 2 mm-mesh effect the
 material / process lens reported. Writes results.csv."""
-import sys, json
+import sys
 from pathlib import Path
-import numpy as np, pandas as pd
+import pandas as pd
 HERE = Path(__file__).resolve().parent
 A = HERE.parent
 sys.path.insert(0, str(A / "convergence"))
