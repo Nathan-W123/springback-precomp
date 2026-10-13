@@ -83,12 +83,12 @@ def rng():
 # precomp.ml: one proxy data set and one surrogate for the whole session
 # ---------------------------------------------------------------------------
 ML_CREATED_AT = "2026-09-29T00:00:00+00:00"
-#: The family no ML fixture model is trained on (out-of-distribution tests).
-#: Freeform, because its dents give it part descriptors no other family has:
-#: the envelope detects new DESCRIPTORS, not new family names, and a family
-#: that resembles the others (dome, saddle, two_level) is not flagged - see
-#: test_the_envelope_across_every_held_out_family.
-ML_HELD_OUT_FAMILY = "freeform"
+#: Parts outside every training range (out-of-distribution tests): truncated
+#: cones deeper and steeper than any the fixture models are trained on. The
+#: envelope detects new DESCRIPTORS, so these must lie outside the training
+#: part bounds (TruncatedCone.bounds: depth 0.01-0.035 m).
+ML_UNSEEN_BOUNDS = {"truncated_cone": {"depth": (0.045, 0.055), "wall_angle_deg": (55.0, 65.0),
+                                       "top_radius": (0.06, 0.075)}}
 
 
 @pytest.fixture(scope="session")
@@ -111,15 +111,14 @@ def ml_features():
 
 @pytest.fixture(scope="session")
 def proxy_samples(ml_threads):
-    """7 parts of every family (AA5754-O, the default process, contour tool
-    paths), three commanded variants each, on a 4 mm grid, formed by the
-    ProxySimulator. (Every job has a contour path; the proxy's own check of
-    that, which costs 10 s here, is tested in test_ml_generate.)"""
+    """10 parts of every family (AA5754-O, the default process and spiral
+    tool path), three commanded variants each, on a 4 mm grid, formed by the
+    ProxySimulator. (Every job has a tool path; the proxy's own check of
+    that is tested in test_ml_generate.)"""
     from ml_support import ProxySimulator, simulate_samples
     from precomp.ml import DesignSpace, design_points
-    space = DesignSpace(grid_spacing=4e-3, materials=("AA5754-O",), process={},
-                        base_setup={"toolpath_style": "contour"})
-    points = design_points(space, 7, seed=11)
+    space = DesignSpace(grid_spacing=4e-3, materials=("AA5754-O",), process={})
+    points = design_points(space, 10, seed=11)
     return simulate_samples(points, ProxySimulator(check_toolpath=False),
                             created_at=ML_CREATED_AT,
                             kinds=("uncompensated", "perturbed", "compensated"))
@@ -127,24 +126,29 @@ def proxy_samples(ml_threads):
 
 @pytest.fixture(scope="session")
 def proxy_split(proxy_samples):
-    """Grouped (by part) split of the in-distribution families: train (~45 %),
-    calibration and test (the rest, halved); plus the held-out family."""
-    from ml_support import family_split, grouped_split, index_frame
+    """Grouped (by part) split: train (~45 %), calibration and test (the
+    rest, halved); plus "unseen", parts outside the training ranges
+    (ML_UNSEEN_BOUNDS) that no fixture model is trained on."""
+    from ml_support import ProxySimulator, grouped_split, index_frame, simulate_samples
+    from precomp.ml import DesignSpace, design_points
 
     byid = {s.sample_id: s for s in proxy_samples}
-    rest, fam = family_split(proxy_samples, ML_HELD_OUT_FAMILY)
-    train, pool = grouped_split(index_frame([byid[i] for i in rest]), test_fraction=0.55,
-                                seed=0)
+    train, pool = grouped_split(index_frame(proxy_samples), test_fraction=0.55, seed=0)
     cal, test = grouped_split(index_frame([byid[i] for i in pool]), test_fraction=0.5, seed=1)
     pick = lambda ids: [byid[i] for i in ids]  # noqa: E731
+    space = DesignSpace(grid_spacing=4e-3, materials=("AA5754-O",), process={},
+                        families=("truncated_cone",), part_bounds=ML_UNSEEN_BOUNDS)
+    unseen = simulate_samples(design_points(space, 7, seed=11),
+                              ProxySimulator(check_toolpath=False), created_at=ML_CREATED_AT,
+                              kinds=("uncompensated",))
     return {"train": pick(train), "calibration": pick(cal), "test": pick(test),
-            "pool": pick(pool), "family": pick(fam)}
+            "pool": pick(pool), "unseen": unseen}
 
 
 @pytest.fixture(scope="session")
 def mlp_surrogate(proxy_split, ml_features):
     """A calibrated five-member MLPEnsemble surrogate (the workflow's model,
-    smaller) with its envelope, trained without the held-out family."""
+    smaller) with its envelope, trained on proxy_split["train"]."""
     pytest.importorskip("torch")
     from precomp.ml import MLPEnsemble, train_surrogate
     return train_surrogate(MLPEnsemble(5, hidden=(64, 64), epochs=40, seed=0),

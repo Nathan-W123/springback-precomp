@@ -4,8 +4,8 @@ ProxySimulator - a fast analytic springback stand-in, NOT physics, labelled
     "proxy - not physics" wherever it appears. The ML tests train and
     compensate on its data in seconds instead of hours of SparLab runs.
 simulate_samples - `precomp.ml.generate` into a temporary data set.
-grouped_split, family_split, index_frame - the tests' train / calibration /
-    test splits by whole part or family.
+grouped_split, index_frame - the tests' train / calibration / test
+    splits by whole part, sample or family.
 partition_coverage - repeated split-conformal calibration over random
     calibration / test partitions of held-out parts (how the tests check that
     ConformalCalibrator's intervals are valid).
@@ -304,20 +304,6 @@ def grouped_split(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]], *,
     test = [i for i, gg in zip(ids, g) if gg in test_groups]
     train = [i for i, gg in zip(ids, g) if gg not in test_groups]
     return train, test
-
-
-def family_split(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]],
-                 holdout: Union[str, Sequence[str]]) -> Tuple[List[str], List[str]]:
-    """Leave-family-out: (ids of the other families, ids of `holdout`)."""
-    idx = index_frame(samples)
-    hold = {holdout} if isinstance(holdout, str) else set(holdout)
-    fam = idx["family"].astype(str).to_numpy()
-    missing = hold - set(fam)
-    if missing:
-        raise ValueError(f"no sample of the families {sorted(missing)}")
-    ids = idx["sample_id"].astype(str).to_numpy()
-    return ([i for i, f in zip(ids, fam) if f not in hold],
-            [i for i, f in zip(ids, fam) if f in hold])
 
 
 # ---------------------------------------------------------------------------

@@ -182,7 +182,7 @@ class FormingSetup:
       element_size : in-plane element size [m] (the blank gets
           round(blank_size / element_size) elements per side).
       layers : elements through the thickness.
-      element : "hex8" (structured_hex) or "tet4" (structured_tet).
+      element : "hex8" (structured_hex), the only one.
       element_formulation : "standard" (the default) or "incompatible_modes"
           (Hex8 only; `ELEMENT_FORMULATIONS`), the deck's
           `model.element_formulation`.
@@ -193,7 +193,7 @@ class FormingSetup:
       material : a `Material`.
     Tool and path
       tool_radius [m], friction (Coulomb coefficient) [-], step_down [m],
-      toolpath_style ("spiral" | "contour"), toolpath_spacing [m],
+      toolpath_style ("spiral", the only one), toolpath_spacing [m],
       toolpath_direction ("ccw" | "cw").
       contact : the tool's penalty contact settings, written into the tool
           object: `penalty` (the scale s of the contact stiffness
@@ -266,26 +266,21 @@ class FormingSetup:
             raise ValueError(f"layers must be an integer >= 1, got {self.layers!r}")
         if not (isinstance(self.threads, int) and self.threads >= 1):
             raise ValueError(f"threads must be an integer >= 1, got {self.threads!r}")
-        if self.element not in ("hex8", "tet4"):
-            raise ValueError(f"element must be 'hex8' or 'tet4', got {self.element!r}")
+        if self.element != "hex8":
+            raise ValueError(f"element must be 'hex8', got {self.element!r}")
         if self.element_formulation not in ELEMENT_FORMULATIONS:
             raise ValueError("element_formulation must be one of "
                              f"{', '.join(ELEMENT_FORMULATIONS)}; got "
                              f"{self.element_formulation!r}")
-        if self.element_formulation != "standard" and self.element != "hex8":
-            raise ValueError(f"element_formulation {self.element_formulation!r} needs "
-                             f"element 'hex8', got {self.element!r}")
         tp = self.thickness_points
         if not (isinstance(tp, int) and not isinstance(tp, bool) and 0 <= tp <= 7):
             raise ValueError(f"thickness_points must be an integer 0-7 (0: the solver's "
                              f"default), got {tp!r}")
-        if tp and self.element != "hex8":
-            raise ValueError("thickness_points needs element 'hex8'")
         if tp == 1 and self.element_formulation == "incompatible_modes":
             raise ValueError("thickness_points 1 is refused with incompatible modes (the "
                              "mode gradients vanish at the element centre)")
-        if self.toolpath_style not in ("spiral", "contour"):
-            raise ValueError("toolpath_style must be 'spiral' or 'contour'")
+        if self.toolpath_style != "spiral":
+            raise ValueError(f"toolpath_style must be 'spiral', got {self.toolpath_style!r}")
         if self.toolpath_direction not in ("ccw", "cw"):
             raise ValueError("toolpath_direction must be 'ccw' or 'cw'")
         if self.release not in ("321", "clamped_only"):

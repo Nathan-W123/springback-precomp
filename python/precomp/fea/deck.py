@@ -65,7 +65,7 @@ from .. import __version__
 from .._util import (PathLike, PrecompError, canonical_json, read_json, sha256_bytes,
                      to_jsonable, write_json)
 from ..geometry.heightmap import HeightMap
-from ..toolpath import AIR, Toolpath, contour_toolpath, spiral_toolpath
+from ..toolpath import AIR, Toolpath, spiral_toolpath
 from .setup import CONTACT_KEYS, FORMING_SOLVER_KEYS, NEWTON_KEYS, FormingSetup
 from .support import (COMMAND_TOLERANCE, RIM_PASS_WINDOW, SUPPORT_TOOL, SupportPlan,
                       check_command, plan_support)
@@ -90,16 +90,11 @@ def forming_surface(commanded: HeightMap) -> HeightMap:
 
 
 def make_toolpath(setup: FormingSetup, commanded: HeightMap) -> Toolpath:
-    """The tool path the setup prescribes for `commanded` (style, step-down,
+    """The spiral tool path the setup prescribes for `commanded` (step-down,
     spacing, direction and tool radius from the setup), made for its part
     below the sheet plane (`forming_surface`)."""
-    kwargs = dict(direction=setup.toolpath_direction)
-    surface = forming_surface(commanded)
-    if setup.toolpath_style == "spiral":
-        return spiral_toolpath(surface, setup.tool_radius, setup.step_down,
-                               setup.toolpath_spacing, **kwargs)
-    return contour_toolpath(surface, setup.tool_radius, setup.step_down,
-                            setup.toolpath_spacing, **kwargs)
+    return spiral_toolpath(forming_surface(commanded), setup.tool_radius, setup.step_down,
+                           setup.toolpath_spacing, direction=setup.toolpath_direction)
 
 
 def _clamp_region(setup: FormingSetup) -> Dict[str, Any]:
@@ -209,13 +204,12 @@ def deck_document(setup: FormingSetup, t_form_end: float = 1.0,
     unless the setup has none)."""
     n = setup.elements_per_side
     L = setup.meshed_blank_size
-    mesh_type = "structured_hex" if setup.element == "hex8" else "structured_tet"
     return {
         "name": setup.name,
         "description": (f"{_PROCESS[setup.support]} of a {setup.material.name} blank, "
                         f"written by precomp {__version__}"),
         "units": "SI",
-        "mesh": {"type": mesh_type, "nx": n, "ny": n, "nz": setup.layers,
+        "mesh": {"type": "structured_hex", "nx": n, "ny": n, "nz": setup.layers,
                  "lx": L, "ly": L, "lz": setup.thickness,
                  "x0": -0.5 * L, "y0": -0.5 * L, "z0": -setup.thickness},
         "material": setup.material.to_sparlab(),

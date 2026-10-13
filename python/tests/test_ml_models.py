@@ -106,14 +106,12 @@ def test_the_finite_sample_correction_counts_parts_not_nodes(mlp_surrogate, prox
 
 
 def test_the_envelope_flags_new_descriptors_and_setups(mlp_surrogate, proxy_split):
-    """The envelope flags parts whose DESCRIPTORS are new - here the held-out
-    freeform family, whose dents no other family has. A family that resembles
-    the others (dome, saddle, two_level) is not flagged: see the
-    leave-each-family-out table in benchmarks/ml_proxy. A setup field no
-    feature describes (release, tool path, mesh) is checked against the
+    """The envelope flags parts whose DESCRIPTORS are new - here cones deeper
+    and steeper than any training part (conftest.ML_UNSEEN_BOUNDS). A setup
+    field no feature describes (release, mesh) is checked against the
     training setups."""
     known = [mlp_surrogate.assess(s.commanded, s.setup) for s in proxy_split["test"]]
-    unseen = [mlp_surrogate.assess(s.commanded, s.setup) for s in proxy_split["family"]]
+    unseen = [mlp_surrogate.assess(s.commanded, s.setup) for s in proxy_split["unseen"]]
     flag_known = np.mean([not a["in_envelope"] for a in known])
     flag_unseen = np.mean([not a["in_envelope"] for a in unseen])
     assert flag_known <= 0.25 and flag_unseen >= flag_known + 0.5, (flag_known, flag_unseen)
@@ -127,7 +125,8 @@ def test_the_envelope_flags_new_descriptors_and_setups(mlp_surrogate, proxy_spli
     assert all(a["setup_mismatch"] == [] for a in known)
     st = s.forming_setup()
     for change, reason in ((dict(release="clamped_only"), "setup.release"),
-                           (dict(toolpath_style="spiral"), "setup.toolpath_style"),
+                           (dict(element_formulation="incompatible_modes"),
+                            "setup.element_formulation"),
                            (dict(layers=1), "setup.layers"),
                            (dict(material=get_material("DC04")), "youngs_modulus"),
                            (dict(thickness=2.5e-3), "thickness")):
@@ -144,7 +143,7 @@ def shifted_samples(ml_threads):
     +40 %, unclamping curvature +30 % (still proxy data)."""
     real = ProxySimulator().shifted(rim_amplitude=1.12e-3, curvature=0.13)
     space = DesignSpace(grid_spacing=4e-3, materials=("AA5754-O",), process={},
-                        families=("truncated_cone", "pyramid", "dome", "two_level"))
+                        families=("truncated_cone", "pyramid", "dome", "elliptic_cone"))
     pts = design_points(space, 3, seed=29)
     return simulate_samples(pts, real, created_at=ML_CREATED_AT, kinds=("uncompensated",))
 
@@ -190,9 +189,18 @@ def test_transfer_model_equals_its_base_until_a_correction_is_validated(
 def test_transfer_does_not_make_the_base_worse_when_real_equals_simulation(
         mlp_surrogate, proxy_split, ml_features):
     """No shift: the "real" parts are more proxy parts. (The former default,
-    a Bayesian ridge on every feature, made the base 2-5 times worse here.)"""
+    a Bayesian ridge on every feature, made the base 2-5 times worse here.)
+    The real parts come from different families, as a transfer set should:
+    two parts of ONE family validate each other's family offset under
+    leave-one-part-out, and the accepted correction then shifts every family
+    (the fixture's two test domes: 0.043 against the base's 0.023 mm on the
+    other parts)."""
     base = mlp_surrogate
-    real = [s for s in proxy_split["test"] if s.kind == "uncompensated"]
+    first = {}
+    for s in proxy_split["test"]:
+        if s.kind == "uncompensated":
+            first.setdefault(s.family, s)
+    real = list(first.values())
     held = [s for s in proxy_split["test"] if s.part_id not in {r.part_id for r in real[:3]}]
     tb = build_table(held, ml_features, points_per_sample=500, rng=2)
     for n in (2, 3):

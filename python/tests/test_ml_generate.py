@@ -16,7 +16,7 @@ from precomp.ml.generate import (DesignSpace, PerturbationSpec, SimOutcome, Spar
 
 
 def test_the_design_is_deterministic_valid_and_within_bounds():
-    space = DesignSpace(families=("truncated_cone", "pyramid", "freeform"))
+    space = DesignSpace(families=("truncated_cone", "pyramid", "dome"))
     a = design_points(space, 4, seed=3)
     b = design_points(space, 4, seed=3)
     assert [p.describe() for p in a] == [p.describe() for p in b]
@@ -197,11 +197,6 @@ def test_the_proxy_fails_a_job_without_a_tool_path_as_the_deck_would(tmp_path):
     assert rep.created == ["pyramid-s1-0000-unco"]
     assert rep.failed[0]["sample_id"] == "pyramid-s1-0000-pert"
     assert "no spiral tool path" in rep.failed[0]["reason"]
-    contour = design_points(DesignSpace(base_setup={"toolpath_style": "contour"}, **kw), 1,
-                            seed=1)
-    rep = generate(Dataset.create(tmp_path / "e", created_at=ML_CREATED_AT), contour,
-                   ProxySimulator(), created_at=ML_CREATED_AT, kinds=("perturbed",), seed=1)
-    assert not rep.failed
 
 
 def test_the_element_formulation_and_thickness_points_are_recorded_physics():

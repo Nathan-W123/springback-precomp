@@ -1,11 +1,11 @@
-"""Drop cutter and tool paths: no gouging, contact, closed loops, monotone spiral."""
+"""Drop cutter and tool paths: no gouging, contact, monotone spiral."""
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from precomp.geometry import Freeform, Grid, HeightMap, TruncatedCone, zeros
-from precomp.toolpath import (AIR, Toolpath, contour_toolpath, dsif_support_path,
+from precomp.geometry import Grid, HeightMap, TruncatedCone, zeros
+from precomp.toolpath import (AIR, Toolpath, dsif_support_path,
                               dsif_support_points, lift_at_points, lift_heights, max_gouge,
                               rim_pass_path, signed_outline_distance, spherical_structure,
                               spiral_toolpath, swept_ball_top, tool_center_surface)
@@ -55,55 +55,6 @@ def test_drop_cutter_never_gouges_a_cone_and_touches_it_everywhere():
     assert np.sum(np.abs(dmin - R) < 1e-12) > 10      # exactly R where the contact is a node
 
 
-def _loops(path: Toolpath):
-    """The closed ring of each level, in order: the in-contact run of a level
-    is its link from the previous level followed by the ring, which starts at
-    the first occurrence of its closing point."""
-    out = []
-    lv = path.level
-    start = 0
-    for i in range(1, len(lv) + 1):
-        if i == len(lv) or lv[i] != lv[start]:
-            if lv[start] != AIR:
-                run = path.points[start:i]
-                j = int(np.flatnonzero(np.all(run == run[-1], axis=1))[0])
-                out.append((lv[start], run[j:]))
-            start = i
-    return out
-
-
-def test_contour_toolpath_levels_are_closed_equally_spaced_ccw_loops(small_cone):
-    g = Grid.centered(0.1, 5e-4)
-    target = small_cone.heightmap(g)
-    step, spacing = 1e-3, 1e-3
-    path = contour_toolpath(target, R, step, spacing)
-    heights = path.metadata["level_heights"]
-    assert heights[:5] == pytest.approx([R - (k + 1) * step for k in range(5)])
-    cz = tool_center_surface(target, R)
-    assert heights[-1] == pytest.approx(cz.z.min() + 1e-3 * step)
-    assert max_gouge(path, cz) == 0.0 and path.metadata["max_gouge_m"] == 0.0
-    loops = [pts for lv, pts in _loops(path) if len(pts) > 10]
-    assert len(loops) == len(heights)
-    for ring in loops:
-        closed = ring[-1] - ring[0]
-        assert np.linalg.norm(closed) < 1e-12                          # closed loop
-        seg = np.linalg.norm(np.diff(ring[:, :2], axis=0), axis=1)
-        assert seg.max() <= spacing * (1 + 1e-9) and seg.min() > 0.5 * spacing
-        x, y = ring[:-1, 0], ring[:-1, 1]
-        area = 0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y)
-        assert area > 0                                               # counter-clockwise
-    # consecutive loops start close to each other (aligned starts)
-    starts = np.array([pts[0, :2] for pts in loops])
-    assert np.linalg.norm(np.diff(starts, axis=0), axis=1).max() < 3 * step / np.tan(0.5) + spacing
-    # alternate direction flips every other level
-    alt = contour_toolpath(target, R, step, spacing, alternate=True)
-    signs = []
-    for pts in [p for lv, p in _loops(alt) if len(p) > 10][:4]:
-        x, y = pts[:-1, 0], pts[:-1, 1]
-        signs.append(np.sign(np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y)))
-    assert signs == [1, -1, 1, -1]
-
-
 def test_spiral_descends_monotonically_and_touches_the_surface(small_cone):
     g = Grid.centered(0.1, 5e-4)
     target = small_cone.heightmap(g)
@@ -122,15 +73,11 @@ def test_spiral_descends_monotonically_and_touches_the_surface(small_cone):
     assert path.points[-1, 2] == pytest.approx(R + 2e-3)               # and retract
 
 
-def test_two_pockets_give_two_loops_per_level_and_air_moves():
-    part = Freeform(((-0.03, 0.0, 0.012, 0.008), (0.03, 0.0, 0.012, 0.008)), 0.05, 0.06)
+def test_the_spiral_refuses_a_part_with_two_pockets():
+    cone = TruncatedCone(0.02, 45.0, 0.012, 0.004, 0.004)
     g = Grid.centered(0.14, 5e-4)
-    target = part.heightmap(g)
-    path = contour_toolpath(target, R, 1e-3, 1e-3)
-    assert max(path.metadata["loops_per_level"]) == 2
-    air = np.flatnonzero(path.level == AIR)
-    assert len(air) > 2                                                # traverses between pockets
-    assert np.all(path.points[air, 2] == pytest.approx(R + 2e-3))
+    X, Y = g.mesh()
+    target = zeros(g).with_z(np.minimum(cone.height(X + 0.03, Y), cone.height(X - 0.03, Y)))
     with pytest.raises(ValueError, match="one loop per level"):
         spiral_toolpath(target, R, 1e-3, 1e-3)
 
@@ -296,15 +243,14 @@ def test_lift_at_points_is_exact_over_nodes_and_stable_under_its_own_sweep():
 
 def test_flat_target_is_refused():
     with pytest.raises(Exception, match="flat"):
-        contour_toolpath(zeros(Grid.centered(0.05, 1e-3)), R, 1e-3)
+        spiral_toolpath(zeros(Grid.centered(0.05, 1e-3)), R, 1e-3, 1e-3)
     with pytest.raises(ValueError):
         Toolpath(np.zeros((1, 3)), np.zeros(1), R)
     with pytest.raises(ValueError):
         HeightMap(Grid.centered(0.05, 1e-3), np.zeros((2, 2)))
 
 
-@pytest.mark.parametrize("make", [spiral_toolpath, contour_toolpath])
-def test_the_deepest_level_reaches_a_dimpled_floor(make):
+def test_the_deepest_level_reaches_a_dimpled_floor():
     """Over a flat floor the last level traces the floor's outline. A dimple
     at the deepest point (a compensated floor, a dome's pole) makes that
     contour - and a regular level just above it - too short to follow; the
@@ -316,7 +262,7 @@ def test_the_deepest_level_reaches_a_dimpled_floor(make):
     for dimple in (0.4e-3, 1.01e-3):   # the last level alone; it and a regular one
         target = cone.with_z(cone.z - dimple * np.exp(-(X ** 2 + Y ** 2) / (2 * 0.8e-3 ** 2)))
         cz = tool_center_surface(target, 0.004)
-        path = make(target, 0.004, 1e-3, 1e-3)
+        path = spiral_toolpath(target, 0.004, 1e-3, 1e-3)
         reach = float(cz.z.min())
         assert path.metadata["deepest_level_raised_m"] > 0.0
         # within the depth of the dimple's shortest followable loop (3.1 mm
@@ -324,7 +270,7 @@ def test_the_deepest_level_reaches_a_dimpled_floor(make):
         assert path.points[path.level != AIR, 2].min() - reach < 0.2e-3
         assert max_gouge(path, cz) < 1e-9
     # a flat floor keeps its level just above the floor
-    path = make(cone, 0.004, 1e-3, 1e-3)
+    path = spiral_toolpath(cone, 0.004, 1e-3, 1e-3)
     assert path.metadata["deepest_level_raised_m"] == 0.0
     assert path.points[:, 2].min() - float(tool_center_surface(cone, 0.004).z.min()) < 1e-5
 
@@ -399,8 +345,7 @@ def test_the_last_revolution_never_gouges_a_raised_spot_of_the_floor():
     cone = TruncatedCone(0.0081, 54.0, 0.003, 0.0015, 0.0015).heightmap(g)
     bump = 0.7e-3 * np.exp(-((X - 3.5e-3) ** 2 + Y ** 2) / (2 * 0.8e-3 ** 2))
     target = cone.with_z(np.minimum(cone.z + bump * (cone.z < -0.003 + 1e-4), 0.0))
-    for make in (spiral_toolpath, contour_toolpath):
-        path = make(target, 0.004, 1e-3, 1e-3)
-        cz = tool_center_surface(target, 0.004)
-        assert path.metadata["max_gouge_m"] == max_gouge(path, cz) < 1e-6
-        assert path.points[:, 2].min() - float(cz.z.min()) < 1e-5
+    path = spiral_toolpath(target, 0.004, 1e-3, 1e-3)
+    cz = tool_center_surface(target, 0.004)
+    assert path.metadata["max_gouge_m"] == max_gouge(path, cz) < 1e-6
+    assert path.points[:, 2].min() - float(cz.z.min()) < 1e-5

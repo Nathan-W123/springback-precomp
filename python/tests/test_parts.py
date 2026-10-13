@@ -6,9 +6,8 @@ import math
 import numpy as np
 import pytest
 
-from precomp.geometry import (MAX_WALL_ANGLE_DEG, Dome, EllipticCone, FilletedProfile, Freeform,
-                              Grid, Pyramid, Saddle, TruncatedCone, TwoLevel, ellipse_distance,
-                              families, part_from_dict)
+from precomp.geometry import (MAX_WALL_ANGLE_DEG, Dome, EllipticCone, FilletedProfile, Grid,
+                              Pyramid, TruncatedCone, ellipse_distance, families, part_from_dict)
 
 
 def test_cone_wall_slope_equals_the_wall_angle():
@@ -127,24 +126,14 @@ def test_sampled_parts_are_valid_formable_and_serialisable(family):
         assert part.max_depth() == pytest.approx(hm.depth, rel=2e-2)
         doc = json.loads(json.dumps(part.to_dict()))
         assert part_from_dict(doc) == part
-        if family != "freeform":
-            for key, (lo, hi) in cls.bounds.items():
-                assert lo <= getattr(part, key) <= hi
+        for key, (lo, hi) in cls.bounds.items():
+            assert lo <= getattr(part, key) <= hi
 
 
 def test_sampling_is_deterministic_by_seed():
-    a = [TwoLevel.sample(np.random.default_rng(5)) for _ in range(2)]
+    a = [Pyramid.sample(np.random.default_rng(5)) for _ in range(2)]
     assert a[0] == a[1]
-    assert Freeform.from_seed(11) == Freeform.from_seed(11)
-    assert Freeform.from_seed(11) != Freeform.from_seed(12)
-
-
-def test_saddle_floor_is_anticlastic():
-    s = Saddle(0.06, 0.05, 0.03, 40.0, 0.015, 0.004)
-    g = Grid.centered(0.16, 5e-4)
-    H, K = s.heightmap(g).curvature(sigma=1e-3)
-    c = (g.ny // 2, g.nx // 2)
-    assert K[c] < 0
+    assert Pyramid.sample(np.random.default_rng(5)) != Pyramid.sample(np.random.default_rng(6))
 
 
 def test_heightmap_refuses_a_grid_that_cuts_the_part(small_cone):

@@ -146,11 +146,10 @@ def test_element_formulation_and_thickness_points_go_into_the_model_block(small_
     assert deck_document(small_setup.replace(thickness_points=7))["model"]["integration"] == \
         {"thickness_points": 7, "thickness_direction": "z"}
     for bad, match in [({"element_formulation": "reduced"}, "element_formulation"),
-                       ({"element": "tet4", "element_formulation": "incompatible_modes"},
-                        "needs element 'hex8'"),
+                       ({"element": "tet4"}, "element must be 'hex8'"),
+                       ({"toolpath_style": "contour"}, "toolpath_style must be 'spiral'"),
                        ({"thickness_points": 8}, "thickness_points"),
                        ({"thickness_points": 2.0}, "thickness_points"),
-                       ({"element": "tet4", "thickness_points": 5}, "thickness_points"),
                        ({"element_formulation": "incompatible_modes", "thickness_points": 1},
                         "thickness_points 1"),
                        ({"element_formulation": "incompatible_modes",

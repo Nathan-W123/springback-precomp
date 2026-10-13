@@ -177,9 +177,8 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
         model cannot resolve less. It saves about two thirds of the
         predictions (2 instead of 6), but whether it helps is unclear: on
         proxy data the verified deviation was 4 % smaller on the 23 held-out
-        targets of the tests (0.054 against 0.056 mm), 9 % larger on the 11
-        of the demonstration (0.049 against 0.045 mm) and the same on the 10
-        of its freeform run (0.040 mm). Off by default.
+        targets of the tests (0.054 against 0.056 mm) and 9 % larger on the
+        11 of the proxy demonstration (0.049 against 0.045 mm). Off by default.
     upper_bound, hold_mask, adjust_mask, tool_radius : as for
         `displacement_adjustment` (a support's command bound and masks,
         `precomp.fea.support`; the tool's reach). None: the defaults.

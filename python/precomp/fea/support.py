@@ -120,8 +120,7 @@ def bottom_node_grid(setup: FormingSetup) -> Tuple[np.ndarray, np.ndarray, np.nd
     """(ids, x, y), each (n + 1, n + 1) [row j, column i], of the bottom
     nodes (z = -t) of the structured blank mesh: node (i, j, 0) has id
     j (n + 1) + i and sits at (-L/2 + i dx, -L/2 + j dx), n elements per
-    side, dx = L / n (include/sparlab/mesh/StructuredMesh.hpp; the Tet4 mesh
-    splits the same cells and keeps the nodes)."""
+    side, dx = L / n (include/sparlab/mesh/StructuredMesh.hpp)."""
     n = setup.elements_per_side
     L = setup.meshed_blank_size
     c = -0.5 * L + L * np.arange(n + 1) / n

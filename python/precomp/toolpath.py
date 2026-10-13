@@ -18,11 +18,11 @@ at a wall of angle theta, which is the gouge the grid can hide (0.5 um for
 h = 0.25 mm, R = 5 mm, theta = 45 deg). Outside the grid the surface is
 taken as continuing flat at the border height (border mode 'nearest').
 
-Paths. `contour_toolpath` follows z-level loops: the tool tip descends by
+Paths. `spiral_toolpath` is built on z-level loops: the tool tip descends by
 `step_down` per level, i.e. level k has the tool centre at the constant height
 ``R - k step_down``, and the loop is the level set of the drop-cutter surface
-at that height, so every point touches the target without gouging.
-`spiral_toolpath` descends continuously: along each revolution the height
+at that height, so every point of it touches the target without gouging. The
+spiral descends continuously between them: along each revolution the height
 falls linearly with arc length from one level to the next, and the x-y
 position is found on the segment between corresponding points of the two
 loops where the drop-cutter surface has exactly that height (bisection), so
@@ -380,120 +380,10 @@ def _ordered_loops(cz: HeightMap, levels: Sequence[float], spacing: float, direc
     return out
 
 
-def _link(cz: HeightMap, a: np.ndarray, b: np.ndarray, spacing: float,
-          safe_z: float) -> Tuple[np.ndarray, bool]:
-    """Points strictly between tool positions a and b (3-vectors) [m].
-
-    A straight move whose height never has to exceed the higher end to stay
-    above the drop-cutter surface is used directly (its height is lifted to
-    that surface where needed); otherwise the tool retracts to `safe_z`,
-    traverses and plunges. Returns (points, is_air_move).
-    """
-    dist = float(np.linalg.norm(b[:2] - a[:2]))
-    n = max(1, int(math.ceil(dist / spacing)))
-    u = (np.arange(1, n) / n)[:, None]
-    xy = a[:2] + u * (b[:2] - a[:2])
-    zl = a[2] + u[:, 0] * (b[2] - a[2])
-    if len(xy):
-        cs = cz.interpolate(xy[:, 0], xy[:, 1], masked=False)
-        z = np.maximum(zl, cs)
-        if np.all(z <= max(a[2], b[2]) + 1e-12):
-            return np.column_stack([xy, z]), False
-    else:
-        return np.empty((0, 3)), False
-    up = np.array([a[0], a[1], safe_z])
-    over = np.array([b[0], b[1], safe_z])
-    return np.vstack([up, over]), True
-
-
-def _lift_to_surface(cz: HeightMap, pts: np.ndarray) -> np.ndarray:
-    """Raise points below the (bilinear) drop-cutter surface onto it."""
-    cs = cz.interpolate(pts[:, 0], pts[:, 1], masked=False)
-    out = pts.copy()
-    out[:, 2] = np.maximum(out[:, 2], cs)
-    return out
-
-
 def _min_loop(target: HeightMap, spacing: float, given: Optional[float]) -> float:
     if given is not None:
         return float(given)
     return max(2.0 * spacing, 4.0 * math.pi * target.grid.h)
-
-
-def contour_toolpath(target: HeightMap, tool_radius: float, step_down: float,
-                     spacing: float = 1e-3, *, direction: str = "ccw",
-                     alternate: bool = False, start_angle_deg: float = 0.0,
-                     clearance: float = 2e-3,
-                     min_loop_length: Optional[float] = None) -> Toolpath:
-    """Z-level contour tool path over the target surface.
-
-    Parameters
-    ----------
-    target : the tool-side target surface [m].
-    tool_radius : ball radius R [m].
-    step_down : vertical increment of the tool tip between levels [m].
-    spacing : arc-length spacing of the points along a loop [m] (the actual
-        spacing is the loop length over ceil(length / spacing)).
-    direction : 'ccw' or 'cw' seen from +z (from the tool side).
-    alternate : reverse the direction on every other level.
-    start_angle_deg : the first loop starts at its extreme point in this
-        direction [deg from +x]; later loops start at their point nearest to
-        the previous loop's start.
-    clearance : height of the tool tip above the sheet plane for the
-        approach, the final retract and traverses between separate loops [m].
-    min_loop_length : loops shorter than this are skipped [m] (default the
-        larger of 2 spacings and the circumference of a circle of radius two
-        grid spacings, below which a loop is not resolved by the grid - e.g.
-        the last loop around the pole of a dome).
-
-    Level k (k = 1, 2, ...) holds the tool centre at height R - k step_down
-    (the tip at -k step_down); the last level lies step_down / 1000 above the
-    deepest point, so the deepest loop traces the boundary of a flat floor
-    (the floor itself is not swept, as is usual in SPIF). Moves between loops
-    descend directly when unobstructed, otherwise through a retract.
-    """
-    R = require_positive("tool_radius", tool_radius)
-    step_down = require_positive("step_down", step_down)
-    spacing = require_positive("spacing", spacing)
-    cz = tool_center_surface(target, R)
-    levels = _centre_levels(cz, R, step_down)
-    min_loop = _min_loop(target, spacing, min_loop_length)
-    levels, raised = _resolvable_deepest(cz, levels, R, min_loop, single=False)
-    per_level = _ordered_loops(cz, levels, spacing, direction, alternate, start_angle_deg,
-                               min_loop)
-    safe_z = R + clearance
-    pts: List[np.ndarray] = []
-    lvl: List[np.ndarray] = []
-    current: Optional[np.ndarray] = None
-    for k, (height, loops) in enumerate(per_level, start=1):
-        for loop in loops:
-            xy = resample_loop(loop, spacing)
-            ring = np.column_stack([np.vstack([xy, xy[:1]]),
-                                    np.full(len(xy) + 1, height)])
-            ring = _lift_to_surface(cz, ring)
-            if current is None:
-                start = np.array([ring[0, 0], ring[0, 1], safe_z])
-                pts.append(start[None])
-                lvl.append(np.array([AIR]))
-                current = start
-            link, air = _link(cz, current, ring[0], spacing, safe_z)
-            if len(link):
-                pts.append(link)
-                lvl.append(np.full(len(link), AIR if air else k))
-            pts.append(ring)
-            lvl.append(np.full(len(ring), k))
-            current = ring[-1]
-    end = np.array([current[0], current[1], safe_z])
-    pts.append(end[None])
-    lvl.append(np.array([AIR]))
-    meta = {"style": "contour", "step_down": step_down, "spacing": spacing,
-            "direction": direction, "alternate": bool(alternate),
-            "level_heights": [h for h, _ in per_level],
-            "loops_per_level": [len(l) for _, l in per_level], "clearance": clearance,
-            "deepest_level_raised_m": raised}
-    path = Toolpath(np.vstack(pts), np.concatenate(lvl), R, meta)
-    path.metadata["max_gouge_m"] = max_gouge(path, cz)
-    return path
 
 
 def spiral_toolpath(target: HeightMap, tool_radius: float, step_down: float,
@@ -512,8 +402,10 @@ def spiral_toolpath(target: HeightMap, tool_radius: float, step_down: float,
     exactly that height (bisection on its bilinear interpolant), so the tool
     touches the target all along the revolution and the height never
     increases. With `final_loop` a last
-    revolution at the deepest level closes the path. Parameters as for
-    `contour_toolpath`; every level must have exactly one loop (one pocket
+    revolution at the deepest level closes the path. `step_down` is the
+    vertical step of the tool tip per revolution [m] and `spacing` the
+    distance between path points [m]; every level must have exactly one loop
+    (one pocket
     without islands), otherwise ValueError.
     """
     R = require_positive("tool_radius", tool_radius)
@@ -528,7 +420,7 @@ def spiral_toolpath(target: HeightMap, tool_radius: float, step_down: float,
     for k, (_, loops) in enumerate(per_level, start=1):
         if len(loops) != 1:
             raise ValueError(f"spiral_toolpath needs one loop per level; level {k} has "
-                             f"{len(loops)}. Use contour_toolpath for this part.")
+                             f"{len(loops)} (a part with several pockets on one level).")
     levels = [h for h, _ in per_level]
     loops = [l[0] for _, l in per_level]
     heights = [R] + list(levels)

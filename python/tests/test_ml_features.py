@@ -85,10 +85,9 @@ def test_local_features_do_not_change_when_the_part_moves_in_plane():
                           fb.region[m + dj:grid.ny - m + dj, m + di:grid.nx - m + di])
 
 
-def test_time_frac_of_a_contour_path_moves_little_with_the_part():
+def test_time_frac_of_a_spiral_path_moves_with_the_part():
     """With the tool path as time source, time_frac is rebuilt from the path of
-    the moved part: a spiral gives the same values, a contour path differs at
-    a few nodes by up to ~0.03 (where its loops start)."""
+    the moved part: the spiral gives the same values."""
     part = Pyramid(0.045, 0.035, 50.0, 0.02, 0.03, 0.004, 0.004)
     h = 2e-3
     grid = Grid.centered(0.2, h)
@@ -99,13 +98,10 @@ def test_time_frac_of_a_contour_path_moves_little_with_the_part():
     cfg = FeatureConfig()
     j = cfg.names.index("time_frac")
     m = 30
-    for style, bound in (("spiral", 1e-9), ("contour", 0.05)):
-        st = SETUP.replace(toolpath_style=style)
-        a = feature_maps(base, st, config=cfg).values[m:-m, m:-m, j]
-        b = feature_maps(moved, st, config=cfg).values[m + dj:grid.ny - m + dj,
-                                                       m + di:grid.nx - m + di, j]
-        d = np.abs(a - b)
-        assert d.max() <= bound and np.mean(d > 1e-9) < 0.01, (style, d.max())
+    a = feature_maps(base, SETUP, config=cfg).values[m:-m, m:-m, j]
+    b = feature_maps(moved, SETUP, config=cfg).values[m + dj:grid.ny - m + dj,
+                                                      m + di:grid.nx - m + di, j]
+    assert np.abs(a - b).max() <= 1e-9
 
 
 def test_ring_extrema_equal_the_footprint_filters_exactly(rng):

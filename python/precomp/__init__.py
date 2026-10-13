@@ -16,8 +16,8 @@ geometry      HeightMap (the tool-side surface as a height field), Grid,
               parametric part families
 materials     Material (elasticity, J2 hardening, optional Hill48 and
               Armstrong-Frederick data), a nominal alloy library, SparLab JSON
-toolpath      drop-cutter tool-centre surface, contour and spiral tool paths,
-              the SparLab trajectory file
+toolpath      drop-cutter tool-centre surface, the spiral tool path, the
+              DSIF support and edge-pass paths, the SparLab trajectory file
 fea           FormingSetup, the sparlab_form deck, a content-addressed run
               cache, parallel runs, and the result loader
 metrology     robust point-to-plane ICP, signed normal and vertical

@@ -7,8 +7,7 @@ parameter bounds, the process parameters (tool radius, step-down, thickness,
 friction) and the material choice; a draw that the family refuses, or whose
 part does not fit the unclamped window with the tool, is skipped and the
 sequence continues, so the design is deterministic for a seed and the first
-n points of a family are the same for any `n_per_family` >= n. (Freeform
-parts are drawn by `Freeform.sample` from a seed taken from the Sobol point.)
+n points of a family are the same for any `n_per_family` >= n.
 
 Variants. Every design point yields up to three commanded surfaces:
 
@@ -47,7 +46,7 @@ from .._util import PrecompError, canonical_json, read_json, to_jsonable
 from ..compensation import displacement_adjustment, limit_wall_angle
 from ..fea.setup import FormingSetup
 from ..geometry.heightmap import Grid, HeightMap
-from ..geometry.parts import MAX_WALL_ANGLE_DEG, Freeform, Part, families
+from ..geometry.parts import MAX_WALL_ANGLE_DEG, Part, families
 from ..materials import get_material
 from ..metrology import part_mask
 from .dataset import Dataset, Sample
@@ -275,8 +274,8 @@ def design_points(space: DesignSpace, n_per_family: int, seed: int, *,
     for fam in space.families:
         cls = families()[fam]
         pbounds = space.bounds_of(fam)
-        pkeys = [] if cls is Freeform else sorted(pbounds)
-        d = len(pkeys) + len(proc_keys) + 1 + (1 if cls is Freeform else 0)
+        pkeys = sorted(pbounds)
+        d = len(pkeys) + len(proc_keys) + 1
         sampler = _sobol(d, np.random.SeedSequence([int(seed), stable_hash(fam)]))
         found: List[DesignPoint] = []
         draws = 0
@@ -294,15 +293,11 @@ def design_points(space: DesignSpace, n_per_family: int, seed: int, *,
                 draws += 1
                 k = 0
                 try:
-                    if cls is Freeform:
-                        part = Freeform.sample(np.random.default_rng(int(u[0] * (2 ** 31 - 1))))
-                        k = 1
-                    else:
-                        params = {key: pbounds[key][0] + u[k + j] * (pbounds[key][1]
-                                                                     - pbounds[key][0])
-                                  for j, key in enumerate(pkeys)}
-                        k += len(pkeys)
-                        part = cls(**params)
+                    params = {key: pbounds[key][0] + u[k + j] * (pbounds[key][1]
+                                                                 - pbounds[key][0])
+                              for j, key in enumerate(pkeys)}
+                    k += len(pkeys)
+                    part = cls(**params)
                     proc = {key: space.process[key][0] + u[k + j] * (space.process[key][1]
                                                                    - space.process[key][0])
                             for j, key in enumerate(proc_keys)}

@@ -11,7 +11,7 @@ from precomp._util import PrecompError
 from precomp.fea import FormingSetup
 from precomp.geometry import Grid, TruncatedCone
 from precomp.materials import get_material
-from ml_support import family_split, grouped_split, index_frame
+from ml_support import grouped_split, index_frame
 from precomp.ml.dataset import Dataset, Sample, build_table, source_label
 from precomp.ml.features import FeatureConfig
 from precomp.toolpath import spiral_toolpath
@@ -116,6 +116,3 @@ def test_grouped_splits_never_put_a_part_on_both_sides(proxy_samples):
         assert set(tr).isdisjoint(te) and len(tr) + len(te) == len(idx)
         k = key(by)
         assert {k[i] for i in tr}.isdisjoint({k[i] for i in te})
-    rest, fam = family_split(idx, "dome")
-    assert set(idx.set_index("sample_id").loc[fam, "family"]) == {"dome"}
-    assert "dome" not in set(idx.set_index("sample_id").loc[rest, "family"])
