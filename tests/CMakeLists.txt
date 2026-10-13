@@ -45,7 +45,16 @@ include(Catch)
 # busy with work instead (the forming cases under ctest -j4 on four cores:
 # 30 s instead of 78 s in all, the release case 3.9 s instead of 21.6 s).
 # The thread-determinism tests set their own thread counts to compare them.
+# A Debug build (no optimisation, Eigen's assertions) is about 40 times
+# slower: the springback beam and the single-point forming cases take 17 s
+# and 12 s in Release but 11 to 16 min in Debug on a GitHub runner, past
+# the 900 s that is ample in Release.
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(SPARLAB_TEST_TIMEOUT 3600)
+else()
+  set(SPARLAB_TEST_TIMEOUT 900)
+endif()
 catch_discover_tests(sparlab_tests
   TEST_PREFIX "sparlab."
-  PROPERTIES TIMEOUT 900 ENVIRONMENT "OMP_NUM_THREADS=1"
+  PROPERTIES TIMEOUT ${SPARLAB_TEST_TIMEOUT} ENVIRONMENT "OMP_NUM_THREADS=1"
 )
