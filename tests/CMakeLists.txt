@@ -23,6 +23,7 @@ set(SPARLAB_TEST_SOURCES
   test_plasticity.cpp
   test_anisotropy.cpp
   test_logarithmic.cpp
+  test_hyperelastic.cpp
   test_forming.cpp
   test_incompatible_modes.cpp
   test_explicit.cpp
