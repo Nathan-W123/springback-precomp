@@ -2,9 +2,10 @@
 // 40 mm x 1 mm aluminium blank (Hex8, 20 x 20 x 2, mean dilatation) clamped
 // on a 5 mm frame, formed by a 5 mm radius sphere along two contour levels
 // to 2 mm depth (spif_smoke_toolpath.csv, written by
-// python/scripts/make_forming_toolpath.py --tool-radius 0.005 --radius 0.008
-// --dr 0.001 --dz 0.001 --levels 2 --segments 24), the tool retracted, the
-// blank unclamped onto 3-2-1 supports at three corners.
+// make_forming_toolpath.py --tool-radius 0.005 --radius 0.008 --dr 0.001
+// --dz 0.001 --levels 2 --segments 24; the script is in the history at commit
+// 7d571e6), the tool retracted, the blank unclamped onto 3-2-1 supports at
+// three corners.
 {
   "name": "spif_smoke",
   "description": "SPIF smoke case: 40 x 40 x 1 mm blank, 5 mm tool, 2 contours to 2 mm, retract, unclamp",
