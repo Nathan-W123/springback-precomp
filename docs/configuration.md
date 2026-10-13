@@ -88,7 +88,7 @@ errors on a `file` mesh.
 | `poisson_ratio` | number | required | in `(-1, 0.5)` so the constitutive matrix stays positive definite |
 | `density` | number [kg/m^3] | `0` | `>= 0`; a `form_explicit` step needs a positive density of every material |
 | `thermal_expansion`, `reference_temperature`, `conductivity` | number | `0` | accepted and checked (finite; `conductivity >= 0`), without effect: the forming analysis applies no temperature |
-| `plasticity` | object | none | plasticity, below; without it the material is elastic |
+| `plasticity` | object | none | plasticity, below; without it the material is elastic, which only `small_strain` kinematics take: `sparlab_form` models elastoplastic sheets, and under `finite` or `finite_logarithmic` kinematics a material without plasticity is refused (the elastic large-strain laws were removed; [`forming.md`](forming.md), section 2) |
 
 ### `material.plasticity`
 
@@ -178,7 +178,7 @@ over the step (so a uniaxial path is exact at any step size);
 "material_regions": [
   { "name": "aluminium_half", "region": { "box": { "xmin": 0.1 } },
     "material": { "name": "aluminium", "youngs_modulus": 70.0e9, "poisson_ratio": 0.33,
-                  "density": 2700.0 } }
+                  "density": 2700.0, "plasticity": { "yield_stress": 120e6 } } }
 ]
 ```
 
@@ -187,7 +187,9 @@ every element region) the `material`, which takes the same keys as the top-level
 `material`. Later entries override earlier ones on shared elements; every
 other element keeps the top-level material. A region that selects no element
 is an error. Every evaluation of an element - its stiffness and internal
-forces, its plasticity, its mass - uses the element's own material.
+forces, its plasticity, its mass - uses the element's own material; under
+`finite` or `finite_logarithmic` kinematics a region's material needs a
+`plasticity` block too.
 
 ## `model`
 
@@ -200,7 +202,7 @@ A sheet of solid Hex8, one element layer through its thickness along `z`:
 
 | Key | Type | Default | Meaning |
 |-----|------|---------|---------|
-| `element_formulation` | string | `standard` | `standard`: the trilinear Hex8; `incompatible_modes`: the Hex8 with Wilson-Taylor incompatible modes (nine condensed parameters, Taylor's correction), which does not lock in bending - one or two elements through a sheet's thickness bend correctly. Every kinematics and material of the forming analysis (elastic, neo-Hookean, J2, Hill48, Chaboche); not with `mean_dilatation: all` (`auto` leaves it off for these elements) (`docs/formulation.md`, "The Hex8 with incompatible modes") |
+| `element_formulation` | string | `standard` | `standard`: the trilinear Hex8; `incompatible_modes`: the Hex8 with Wilson-Taylor incompatible modes (nine condensed parameters, Taylor's correction), which does not lock in bending - one or two elements through a sheet's thickness bend correctly. Every kinematics and material of the forming analysis (J2, Hill48, Chaboche; elastic with `small_strain`); not with `mean_dilatation: all` (`auto` leaves it off for these elements) (`docs/formulation.md`, "The Hex8 with incompatible modes") |
 | `integration.stiffness_points` | integer | `2` | Gauss points per direction for the stiffness and the internal forces, 1-4 (2 x 2 x 2) |
 | `integration.mass_points` | integer | `3` | Gauss points per direction for the consistent element mass, 1-4, whose row sums are the lumped mass of a `form_explicit` step |
 | `integration.thickness_points` | integer | `0` (= `stiffness_points`) | Gauss points through the thickness of a sheet, 1-7, for the stiffness rule `stiffness_points` x `stiffness_points` x `thickness_points` (standard or incompatible modes): 5 to 7 integrate the kinked elastic-plastic stress of a bent sheet, which springback is sensitive to. The plastic history, the stress points and the outputs follow the rule. With `element_formulation: incompatible_modes` a one-point rule (here or in `stiffness_points`) is refused: the mode gradients vanish at the element centre |
