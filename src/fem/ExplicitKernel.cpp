@@ -162,7 +162,6 @@ struct ElementJob {
   const Scalar* dilatation = nullptr;  ///< A, B, V
   const Predictor* predictor = nullptr;
   const IsotropicMaterial* material = nullptr;
-  const Scalar* elasticity = nullptr;  ///< D, row-major
   PointBlock* block = nullptr;         ///< the points' history (compact)
   PlasticState* full = nullptr;        ///< the points' history (general), 8 of them
   StressState state = StressState::ThreeDimensional;
@@ -271,33 +270,14 @@ Scalar element_kernel(const ElementJob& job, Scalar* out) {
     }
   }
 
-  // The stresses: S = D E for an elastic element with finite kinematics;
-  // otherwise return_3d's elastic predictor for the points that stay
+  // The stresses: return_3d's elastic predictor for the points that stay
   // elastic, the return itself for the others (and for all of them when the
   // energy is wanted or the material needs the general return).
   alignas(64) Scalar s[6][kP];
   Scalar energy = 0.0;
   const Predictor& pr = *job.predictor;
-  const bool svk = job.finite && !job.plastic;
   bool need_return[kP];
-  if (svk) {
-    const Scalar* d = job.elasticity;
-    for (int r = 0; r < 6; ++r) {
-      for (int q = 0; q < kP; ++q) {
-        s[r][q] = d[6 * r] * e[0][q] + d[6 * r + 1] * e[1][q] + d[6 * r + 2] * e[2][q] +
-                  d[6 * r + 3] * e[3][q] + d[6 * r + 4] * e[4][q] + d[6 * r + 5] * e[5][q];
-      }
-    }
-    if (job.want_energy) {
-      for (int q = 0; q < kP; ++q) {
-        Scalar product = 0.0;
-        for (int r = 0; r < 6; ++r) product += e[r][q] * s[r][q];
-        energy += w[q] * (0.5 * product);
-      }
-      *job.elastic = energy;
-    }
-    for (int q = 0; q < kP; ++q) need_return[q] = false;
-  } else if (pr.radial && !job.want_energy && job.full == nullptr) {
+  if (pr.radial && !job.want_energy && job.full == nullptr) {
     PointBlock* b = job.block;
     alignas(64) Scalar es[6][kP];
     for (int r = 0; r < 6; ++r) {
@@ -350,50 +330,48 @@ Scalar element_kernel(const ElementJob& job, Scalar* out) {
   } else {
     for (int q = 0; q < kP; ++q) need_return[q] = true;
   }
-  if (!svk) {
-    for (int q = 0; q < kP; ++q) {
-      if (!need_return[q]) continue;
-      Vector6 strain;
-      for (int r = 0; r < 6; ++r) strain(r) = e[r][q];
-      PlasticState committed;
-      if (job.full != nullptr) {
-        committed = job.full[q];
-      } else if (job.block != nullptr) {
-        const PointBlock& b = *job.block;
-        for (int r = 0; r < 6; ++r) {
-          committed.plastic_strain(r) = b.plastic[r][q];
-          committed.back_stress(r) = b.back[r][q];
-        }
-        committed.equivalent_plastic_strain = b.alpha[q];
-        committed.thickness_strain = b.thickness[q];
-        committed.loading = b.loading[q] != 0;
+  for (int q = 0; q < kP; ++q) {
+    if (!need_return[q]) continue;
+    Vector6 strain;
+    for (int r = 0; r < 6; ++r) strain(r) = e[r][q];
+    PlasticState committed;
+    if (job.full != nullptr) {
+      committed = job.full[q];
+    } else if (job.block != nullptr) {
+      const PointBlock& b = *job.block;
+      for (int r = 0; r < 6; ++r) {
+        committed.plastic_strain(r) = b.plastic[r][q];
+        committed.back_stress(r) = b.back[r][q];
       }
-      const PlasticResponse ret =
-          plastic_return(*job.material, job.state, strain, committed, 0.0, false);
-      for (int r = 0; r < 6; ++r) s[r][q] = ret.stress(r);
-      energy += w[q] * ret.energy;
-      if (job.want_energy) {
-        // The elastic part, 1/2 sigma : (eps - eps_p) (isotropic linear
-        // elasticity in the strain measure; engineering shears).
-        Scalar product = 0.0;
-        for (int r = 0; r < 6; ++r) {
-          product += ret.stress(r) * (e[r][q] - ret.state.plastic_strain(r));
-        }
-        *job.elastic += w[q] * (0.5 * product);
+      committed.equivalent_plastic_strain = b.alpha[q];
+      committed.thickness_strain = b.thickness[q];
+      committed.loading = b.loading[q] != 0;
+    }
+    const PlasticResponse ret =
+        plastic_return(*job.material, job.state, strain, committed, 0.0, false);
+    for (int r = 0; r < 6; ++r) s[r][q] = ret.stress(r);
+    energy += w[q] * ret.energy;
+    if (job.want_energy) {
+      // The elastic part, 1/2 sigma : (eps - eps_p) (isotropic linear
+      // elasticity in the strain measure; engineering shears).
+      Scalar product = 0.0;
+      for (int r = 0; r < 6; ++r) {
+        product += ret.stress(r) * (e[r][q] - ret.state.plastic_strain(r));
       }
-      if (!job.commit || !job.plastic) continue;
-      if (job.full != nullptr) {
-        job.full[q] = ret.state;
-      } else if (job.block != nullptr) {
-        PointBlock& b = *job.block;
-        for (int r = 0; r < 6; ++r) {
-          b.plastic[r][q] = ret.state.plastic_strain(r);
-          b.back[r][q] = ret.state.back_stress(r);
-        }
-        b.alpha[q] = ret.state.equivalent_plastic_strain;
-        b.thickness[q] = ret.state.thickness_strain;
-        b.loading[q] = static_cast<unsigned char>(ret.state.loading);
+      *job.elastic += w[q] * (0.5 * product);
+    }
+    if (!job.commit || !job.plastic) continue;
+    if (job.full != nullptr) {
+      job.full[q] = ret.state;
+    } else if (job.block != nullptr) {
+      PointBlock& b = *job.block;
+      for (int r = 0; r < 6; ++r) {
+        b.plastic[r][q] = ret.state.plastic_strain(r);
+        b.back[r][q] = ret.state.back_stress(r);
       }
+      b.alpha[q] = ret.state.equivalent_plastic_strain;
+      b.thickness[q] = ret.state.thickness_strain;
+      b.loading[q] = static_cast<unsigned char>(ret.state.loading);
     }
   }
 
@@ -510,10 +488,11 @@ ExplicitInternalForce::ExplicitInternalForce(const FemModel& model, const Assemb
                                              const NonlinearOptions& options,
                                              bool allow_dedicated)
     : model_(model), assembler_(assembler), options_(options) {
+  // (The system refuses an elastic material under finite kinematics, so
+  // with finite or logarithmic kinematics every element is elastoplastic.)
   system_ = std::make_unique<detail::NonlinearSystem>(model, assembler, options_);
   // The dedicated kernel covers what it reproduces exactly; everything else
   // takes the element dispatch.
-  const Mesh& mesh = model.mesh();
   if (!allow_dedicated) {
     reason_ = "the dedicated kernel is switched off";
   } else if (options_.kinematics != Kinematics::Finite &&
@@ -527,19 +506,6 @@ ExplicitInternalForce::ExplicitInternalForce(const FemModel& model, const Assemb
   } else {
     logarithmic_ = options_.kinematics == Kinematics::FiniteLogarithmic;
     finite_ = options_.kinematics == Kinematics::Finite || logarithmic_;
-    bool elastic_element = false;
-    for (Index e = 0; e < mesh.num_elements(); ++e) {
-      if (!system_->elastoplastic(e)) elastic_element = true;
-    }
-    if (logarithmic_ && elastic_element) {
-      reason_ = "the dedicated kernel's logarithmic kinematics are written for elastoplastic "
-                "elements";
-    }
-    if (reason_.empty() && finite_ && elastic_element &&
-        options_.law != HyperelasticModel::SaintVenantKirchhoff) {
-      reason_ = "the dedicated kernel's elastic law with finite kinematics is Saint "
-                "Venant-Kirchhoff";
-    }
   }
   if (reason_.empty()) build_dedicated();
 }
@@ -597,10 +563,6 @@ void ExplicitInternalForce::build_dedicated() {
     auto it = std::find(materials_.begin(), materials_.end(), mat);
     if (it == materials_.end()) {
       materials_.push_back(mat);
-      const Matrix d = mat->constitutive(StressState::ThreeDimensional);
-      for (int r = 0; r < 6; ++r) {
-        for (int c = 0; c < 6; ++c) elasticity_.push_back(d(r, c));
-      }
       Predictor pr;
       const PlasticityParameters& pp = mat->plasticity();
       pr.shear = mat->shear_modulus();
@@ -881,7 +843,6 @@ void ExplicitInternalForce::dedicated_forces(const Vector& u, Scalar lambda, boo
       job.dilatation = dilatation_.data() + geometric * 89;
       job.predictor = &predictor_[static_cast<std::size_t>(mi)];
       job.material = materials_[static_cast<std::size_t>(mi)];
-      job.elasticity = elasticity_.data() + 36 * static_cast<std::size_t>(mi);
       job.state = state;
       job.finite = finite_;
       job.logarithmic = logarithmic_;

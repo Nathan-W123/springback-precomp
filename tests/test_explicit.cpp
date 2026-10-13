@@ -9,12 +9,12 @@
 /// eigenvalue bound must lie above it, power iteration on it). Mass scaling
 /// is checked against its definition, the dedicated Hex8 kernel against the
 /// generic element dispatch it replaces (small and finite kinematics,
-/// elastic, J2, Hill48 and Chaboche, mean dilatation, uniform and distorted
-/// meshes), the energy balance by its order in the step and by the sign of
-/// the plastic dissipation, determinism by comparing thread counts bit for
-/// bit, and the step loop by counting its heap allocations. The explicit
-/// forming step hands its state to an implicit release exactly, and the
-/// `explicit` block of a deck is read strictly.
+/// elastic under small strain, J2, Hill48 and Chaboche, mean dilatation,
+/// uniform and distorted meshes), the energy balance by its order in the
+/// step and by the sign of the plastic dissipation, determinism by comparing
+/// thread counts bit for bit, and the step loop by counting its heap
+/// allocations. The explicit forming step hands its state to an implicit
+/// release exactly, and the `explicit` block of a deck is read strictly.
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
@@ -455,15 +455,16 @@ TEST_CASE("selective mass scaling reaches its target step with the added mass it
 TEST_CASE("dynamic selective mass scaling holds the target step as elements thin, and books "
           "the added mass's energy",
           "[explicit]") {
-  // A block crushed to 70 % of its height (finite kinematics): its elements
-  // thin and stiffen, and their stable steps fall.
+  // A block crushed to 70 % of its height (finite kinematics, elastic in
+  // effect): its elements thin and stiffen, and their stable steps fall.
   const FemModel model = finalised(
-      hex_block(2, 2, 2, 0.01, 0.01, 0.01), default_material(),
+      hex_block(2, 2, 2, 0.01, 0.01, 0.01), never_yielding_material(),
       {clamp(box(-kInf, kInf, -kInf, kInf, -kInf, 1.0e-9)),
        clamp(box(-kInf, kInf, -kInf, kInf, 0.01 - 1.0e-9, kInf), {2}, Vector3(0, 0, -0.003))});
   const Assembler assembler(model);
   const Vector zero = Vector::Zero(model.dofs().num_dofs());
   NonlinearOptions nl;  // finite
+  nl.mean_dilatation = MeanDilatation::None;  // an elastic block's elements
   ExplicitOptions probe;
   const Scalar crit = ExplicitDynamics(model, assembler, nl, {}, probe)
                           .element_time_steps(zero)
@@ -517,13 +518,14 @@ TEST_CASE("a stopped run reports the mass of the state it keeps, not the mass ad
   // keeps its start state - whose mass is the start's, whatever dynamic
   // scaling added on the way.
   const FemModel model = finalised(
-      hex_block(2, 2, 2, 0.01, 0.01, 0.01), default_material(),
+      hex_block(2, 2, 2, 0.01, 0.01, 0.01), never_yielding_material(),
       {clamp(box(-kInf, kInf, -kInf, kInf, -kInf, 1.0e-9)),
        clamp(box(-kInf, kInf, -kInf, kInf, 0.01 - 1.0e-9, kInf), {2}, Vector3(0, 0, -0.003))});
   const Assembler assembler(model);
   const Index n = model.dofs().num_dofs();
   const Vector zero = Vector::Zero(n);
   NonlinearOptions nl;
+  nl.mean_dilatation = MeanDilatation::None;  // an elastic block's elements
   ExplicitOptions probe;
   const Scalar crit =
       ExplicitDynamics(model, assembler, nl, {}, probe).element_time_steps(zero).minCoeff();
@@ -602,8 +604,8 @@ TEST_CASE("the dedicated Hex8 kernel gives the internal forces of the element di
   for (const Material& mat : materials) {
     for (const Kinematics kin :
          {Kinematics::SmallStrain, Kinematics::Finite, Kinematics::FiniteLogarithmic}) {
-      // The kernel's logarithmic kinematics are for elastoplastic elements.
-      if (kin == Kinematics::FiniteLogarithmic && !mat.m.plasticity().enabled()) continue;
+      // Finite kinematics take elastoplastic materials only.
+      if (kin != Kinematics::SmallStrain && !mat.m.plasticity().enabled()) continue;
       for (const MeanDilatation md : {MeanDilatation::Auto, MeanDilatation::None}) {
         for (const bool regular : {true, false}) {
           INFO(mat.name << (kin == Kinematics::Finite ? ", finite"
@@ -723,25 +725,31 @@ TEST_CASE("the dedicated kernel's logarithmic strain holds at equal and nearly e
   WARN("largest relative difference at equal stretches: " << worst);
 }
 
-TEST_CASE("other laws and kinematics take the generic element dispatch",
+TEST_CASE("the kernel switched off takes the generic element dispatch; an elastic material "
+          "under finite kinematics is refused",
           "[explicit]") {
   const FemModel model = finalised(hex_block(2, 1, 1, 0.002, 0.001, 0.001), j2_material(),
                                    {clamp(box(-kInf, 1.0e-9))});
   const Assembler assembler(model);
   NonlinearOptions nl;
   nl.kinematics = Kinematics::FiniteLogarithmic;
-  // Logarithmic kinematics: in the kernel for elastoplastic elements, not
-  // for elastic ones.
+  // Logarithmic kinematics: in the kernel.
   ExplicitDynamics log_kin(model, assembler, nl, {}, ExplicitOptions());
   REQUIRE(log_kin.dedicated());
+  // An elastic material: refused under finite and logarithmic kinematics
+  // (sparlab_form models elastoplastic sheets), in the kernel under small
+  // strain.
   const FemModel elastic = finalised(hex_block(2, 1, 1, 0.002, 0.001, 0.001), default_material(),
                                      {clamp(box(-kInf, 1.0e-9))});
   const Assembler elastic_assembler(elastic);
-  REQUIRE_FALSE(ExplicitDynamics(elastic, elastic_assembler, nl, {}, ExplicitOptions()).dedicated());
-  // Neo-Hookean elastic elements at finite strain.
-  NonlinearOptions neo;
-  neo.law = HyperelasticModel::NeoHookean;
-  REQUIRE_FALSE(ExplicitDynamics(elastic, elastic_assembler, neo, {}, ExplicitOptions()).dedicated());
+  for (const Kinematics kin : {Kinematics::Finite, Kinematics::FiniteLogarithmic}) {
+    NonlinearOptions finite;
+    finite.kinematics = kin;
+    REQUIRE_THROWS_AS(ExplicitDynamics(elastic, elastic_assembler, finite, {}, ExplicitOptions()),
+                      ConfigError);
+  }
+  REQUIRE(ExplicitDynamics(elastic, elastic_assembler, small_strain(), {}, ExplicitOptions())
+              .dedicated());
   ExplicitOptions off;
   off.dedicated_kernel = false;
   ExplicitDynamics generic(model, assembler, small_strain(), {}, off);

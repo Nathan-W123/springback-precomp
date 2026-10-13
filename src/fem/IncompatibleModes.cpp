@@ -5,7 +5,6 @@
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/elements/Hex8.hpp"
 #include "sparlab/elements/Hex8Incompatible.hpp"
-#include "sparlab/material/Hyperelastic.hpp"
 #include "sparlab/material/LogarithmicStrain.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
@@ -41,13 +40,6 @@ using MatrixIU = Eigen::Matrix<Scalar, kA, kU>;
 using MatrixII = Eigen::Matrix<Scalar, kA, kA>;
 using MatrixGeo = Eigen::Matrix<Scalar, kAug, kAug>;
 
-/// Which constitutive update a point runs.
-enum class Law {
-  Return,               ///< plastic_return (J2, Hill48, Chaboche; elastic too)
-  SaintVenantKirchhoff, ///< S = D (E - E_theta) / theta (TotalLagrangian.hpp)
-  NeoHookean            ///< evaluate_hyperelastic
-};
-
 /// Everything one integration point keeps between the passes of the local
 /// iteration: the alpha-independent geometry, and the kinematics and the
 /// constitutive response at the current parameters.
@@ -58,10 +50,6 @@ struct PointWork {
   Scalar delta_t = 0.0;               ///< temperature change per unit load factor [K]
   Scalar change = 0.0;                ///< the return's temperature change at lambda [K]
   Scalar rate = 0.0;                  ///< its derivative with respect to lambda [K]
-  // Saint Venant-Kirchhoff with a temperature (TotalLagrangian.cpp).
-  Vector6 thermal_green = Vector6::Zero();  ///< E_theta at lambda
-  Vector6 thermal_unit = Vector6::Zero();   ///< the linear thermal strain of dT0
-  Scalar theta = 1.0;                       ///< the free thermal stretch at lambda
   // At the current parameters.
   Matrix3 h = Matrix3::Zero();        ///< H = U G^T + A G~^T
   OperatorA mb = OperatorA::Zero();   ///< the strain variation: B (small) or B_NL
@@ -142,18 +130,15 @@ struct Setting {
   const FemModel* model = nullptr;
   Index e = 0;
   Kinematics kinematics = Kinematics::SmallStrain;
-  Law law = Law::Return;
   bool thermal = false;       ///< some point has a temperature change
   bool symmetric = true;      ///< the material tangent is symmetric
   Eigen::Matrix<Scalar, 3, 8> u = Eigen::Matrix<Scalar, 3, 8>::Zero();
   Eigen::Matrix<Scalar, kU, 1> ue = Eigen::Matrix<Scalar, kU, 1>::Zero();
-  Matrix6 d = Matrix6::Zero();  ///< Saint Venant-Kirchhoff: D
 };
 
 /// Fills the workspace with the alpha-independent data of every point.
 Workspace& set_up(Setting& set, const FemModel& model, Index e, const Vector& ue,
-                  Kinematics kinematics, Law law, const Vector* temperature,
-                  Scalar temperature_scale) {
+                  Kinematics kinematics, const Vector* temperature, Scalar temperature_scale) {
   const Element& element = model.element();
   if (element.type() != ElementType::Hex8 || element.num_internal_nodes() != kModes) {
     throw ModelError("the incompatible-mode kernel is written for the Hex8 with three modes");
@@ -167,11 +152,9 @@ Workspace& set_up(Setting& set, const FemModel& model, Index e, const Vector& ue
   set.model = &model;
   set.e = e;
   set.kinematics = kinematics;
-  set.law = law;
   const Mesh& mesh = model.mesh();
   const IsotropicMaterial& mat = model.material_of(e);
-  set.symmetric = law != Law::Return || mat.plasticity().symmetric_tangent();
-  if (law == Law::SaintVenantKirchhoff) set.d = mat.constitutive(StressState::ThreeDimensional);
+  set.symmetric = mat.plasticity().symmetric_tangent();
   for (int a = 0; a < kNodes; ++a) {
     for (int k = 0; k < 3; ++k) set.u(k, a) = ue(3 * a + k);
   }
@@ -221,26 +204,8 @@ Workspace& set_up(Setting& set, const FemModel& model, Index e, const Vector& ue
                   mat.reference_temperature();
     }
     if (p.delta_t != 0.0) set.thermal = true;
-    if (law == Law::Return) {
-      elastoplastic_temperature_change(mat, kinematics, p.delta_t, temperature_scale, p.change,
-                                       p.rate);
-    } else {
-      // Saint Venant-Kirchhoff (TotalLagrangian.cpp): the Green strain of the
-      // free thermal stretch at lambda, the stretch, and the linear thermal
-      // strain of the unit change.
-      const Scalar dt = temperature_scale * p.delta_t;
-      p.theta = thermal_stretch(mat, dt);
-      p.thermal_green.setZero();
-      p.thermal_unit.setZero();
-      if (heated) {
-        const Scalar effective = thermal_green_lagrange_change(mat, dt);
-        if (effective != 0.0) {
-          p.thermal_green = mat.thermal_strain(StressState::ThreeDimensional, effective);
-        }
-        p.thermal_unit = mat.thermal_strain(StressState::ThreeDimensional, p.delta_t);
-      }
-      p.change = dt;
-    }
+    elastoplastic_temperature_change(mat, kinematics, p.delta_t, temperature_scale, p.change,
+                                     p.rate);
     if (kinematics == Kinematics::SmallStrain) {
       green_lagrange_operator_11(Matrix3::Identity(), p.g, p.mb);
     }
@@ -278,64 +243,36 @@ void kinematics_at(const Setting& set, Workspace& points, const VectorI& alpha) 
   }
 }
 
-/// The constitutive response of every point (with the tangent).
-void respond(const Setting& set, Workspace& points, const std::vector<PlasticState>* committed) {
+/// The constitutive response of every point (with the tangent): the return
+/// of Plasticity.hpp (J2, Hill48, Chaboche; elastic too) from the point's
+/// committed state.
+void respond(const Setting& set, Workspace& points, const std::vector<PlasticState>& committed) {
   const IsotropicMaterial& mat = set.model->material_of(set.e);
   const Scalar expansion = mat.thermal_expansion();
   for (std::size_t q = 0; q < points.size(); ++q) {
     PointWork& p = points[q];
-    switch (set.law) {
-      case Law::Return: {
-        const PlasticResponse r = plastic_return(mat, StressState::ThreeDimensional, p.strain,
-                                                 (*committed)[q], p.change, true);
-        p.own = r.stress;
-        p.energy = r.energy;
-        p.state = r.state;
-        p.yielding = r.yielding;
-        p.strain_33 = r.strain_33;
-        Vector6 cm = Vector6::Zero();
-        if (set.thermal && p.rate != 0.0) {
-          Vector6 m = Vector6::Zero();
-          m.head<3>().setConstant(expansion * p.rate);
-          cm = r.tangent * m;
-        }
-        if (set.kinematics == Kinematics::FiniteLogarithmic) {
-          p.s = logarithmic_stress(p.log, r.stress);
-          p.material = p.log.projection.transpose() * r.tangent * p.log.projection +
-                       logarithmic_curvature(p.log, r.stress);
-          p.ts = -(p.log.projection.transpose() * cm);
-        } else {
-          p.s = r.stress;
-          p.material = r.tangent;
-          p.ts = -cm;
-        }
-        break;
-      }
-      case Law::SaintVenantKirchhoff: {
-        const Vector6 elastic = p.strain - p.thermal_green;
-        p.material = set.d / p.theta;
-        p.s = p.material * elastic;
-        p.own = p.s;
-        p.energy = 0.5 * elastic.dot(p.s);
-        p.ts.setZero();
-        if (set.thermal) {
-          const Vector6 rate =
-              p.thermal_unit + (expansion * p.delta_t / (p.theta * p.theta)) * elastic;
-          p.ts = -(set.d * rate);
-        }
-        break;
-      }
-      case Law::NeoHookean: {
-        const HyperelasticResponse r = evaluate_hyperelastic(
-            HyperelasticModel::NeoHookean, mat, StressState::ThreeDimensional, Matrix(p.h),
-            p.change);
-        p.s = r.stress;
-        p.own = p.s;
-        p.material = r.tangent;
-        p.energy = r.energy;
-        p.ts.setZero();
-        break;
-      }
+    const PlasticResponse r = plastic_return(mat, StressState::ThreeDimensional, p.strain,
+                                             committed[q], p.change, true);
+    p.own = r.stress;
+    p.energy = r.energy;
+    p.state = r.state;
+    p.yielding = r.yielding;
+    p.strain_33 = r.strain_33;
+    Vector6 cm = Vector6::Zero();
+    if (set.thermal && p.rate != 0.0) {
+      Vector6 m = Vector6::Zero();
+      m.head<3>().setConstant(expansion * p.rate);
+      cm = r.tangent * m;
+    }
+    if (set.kinematics == Kinematics::FiniteLogarithmic) {
+      p.s = logarithmic_stress(p.log, r.stress);
+      p.material = p.log.projection.transpose() * r.tangent * p.log.projection +
+                   logarithmic_curvature(p.log, r.stress);
+      p.ts = -(p.log.projection.transpose() * cm);
+    } else {
+      p.s = r.stress;
+      p.material = r.tangent;
+      p.ts = -cm;
     }
   }
 }
@@ -414,7 +351,7 @@ struct Condensed {
 /// Solves r_alpha(u, alpha) = 0 from the committed parameters, then
 /// condenses (IncompatibleModes.hpp).
 Condensed solve_and_condense(const Setting& set, Workspace& points,
-                             const std::vector<PlasticState>* committed, const Vector* start,
+                             const std::vector<PlasticState>& committed, const Vector* start,
                              bool want_tangent) {
   VectorI alpha = VectorI::Zero();
   if (start != nullptr && start->size() > 0) {
@@ -437,7 +374,7 @@ Condensed solve_and_condense(const Setting& set, Workspace& points,
     accumulate_local(set, points, sums);
   };
   // A pass at a trial of the iteration: false where the trial inverts a
-  // point (SolverError of the logarithmic kinematics or of the law).
+  // point (SolverError of the logarithmic kinematics or of the return).
   const auto try_pass = [&](const VectorI& at) {
     try {
       pass(at);
@@ -481,9 +418,9 @@ Condensed solve_and_condense(const Setting& set, Workspace& points,
   // potential (d^T r_alpha < 0) on its directional residual phi(s) =
   // d^T r_alpha(alpha + s d) (Crisfield 1991, sec. 9.3; Matthies and Strang
   // 1979), the derivative of the potential along d wherever one exists (an
-  // associative return, a hyperelastic law): its root is the minimum of the
-  // potential on the line, so every such step lowers it. The full step is
-  // taken when it lowers |r_alpha|. Otherwise, with phi(0) < 0 < phi(reach),
+  // associative return): its root is the minimum of the potential on the
+  // line, so every such step lowers it. The full step is taken when it
+  // lowers |r_alpha|. Otherwise, with phi(0) < 0 < phi(reach),
   // regula falsi with the Illinois modification, each trial kept a tenth of
   // the bracket from its ends (a kinked phi would otherwise creep along one
   // end), to |phi(s)| <= kLineSearchRatio |phi(0)|; a trial that inverts a
@@ -679,13 +616,12 @@ ElastoplasticElement incompatible_elastoplastic_element(
     const Vector* internal, const Vector* temperature, Scalar temperature_scale,
     bool want_tangent, Kinematics kinematics) {
   Setting set;
-  Workspace& points =
-      set_up(set, model, e, ue, kinematics, Law::Return, temperature, temperature_scale);
+  Workspace& points = set_up(set, model, e, ue, kinematics, temperature, temperature_scale);
   if (committed.size() != points.size()) {
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
   }
-  Condensed c = solve_and_condense(set, points, &committed, internal, want_tangent);
+  Condensed c = solve_and_condense(set, points, committed, internal, want_tangent);
   ElastoplasticElement out;
   out.internal_force = std::move(c.force);
   out.tangent = std::move(c.tangent);
@@ -702,29 +638,6 @@ ElastoplasticElement incompatible_elastoplastic_element(
   return out;
 }
 
-TotalLagrangianElement incompatible_total_lagrangian_element(const FemModel& model, Index e,
-                                                             const Vector& ue,
-                                                             HyperelasticModel law,
-                                                             const Vector* temperature,
-                                                             Scalar temperature_scale,
-                                                             bool want_tangent,
-                                                             const Vector* internal) {
-  Setting set;
-  const Law kind =
-      law == HyperelasticModel::NeoHookean ? Law::NeoHookean : Law::SaintVenantKirchhoff;
-  Workspace& points =
-      set_up(set, model, e, ue, Kinematics::Finite, kind, temperature, temperature_scale);
-  Condensed c = solve_and_condense(set, points, nullptr, internal, want_tangent);
-  TotalLagrangianElement out;
-  out.internal_force = std::move(c.force);
-  out.tangent = std::move(c.tangent);
-  out.thermal_force_rate = std::move(c.thermal_rate);
-  out.energy = c.energy;
-  out.internal = std::move(c.alpha);
-  out.internal_iterations = c.iterations;
-  return out;
-}
-
 ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Index e,
                                                       const Vector& ue,
                                                       const std::vector<PlasticState>& committed,
@@ -733,8 +646,7 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
                                                       Scalar temperature_scale,
                                                       Kinematics kinematics) {
   Setting set;
-  Workspace& points =
-      set_up(set, model, e, ue, kinematics, Law::Return, temperature, temperature_scale);
+  Workspace& points = set_up(set, model, e, ue, kinematics, temperature, temperature_scale);
   if (committed.size() != points.size()) {
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
@@ -789,40 +701,6 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
   out.logarithmic_strain /= count;
   out.von_mises = von_mises_stress(out.cauchy);
   if (!finite && !logarithmic) out.min_jacobian = 1.0;
-  return out;
-}
-
-TotalLagrangianStress incompatible_total_lagrangian_stress(const FemModel& model, Index e,
-                                                           const Vector& ue,
-                                                           HyperelasticModel law,
-                                                           const Vector* temperature,
-                                                           Scalar temperature_scale,
-                                                           const Vector* internal) {
-  Setting set;
-  const Law kind =
-      law == HyperelasticModel::NeoHookean ? Law::NeoHookean : Law::SaintVenantKirchhoff;
-  Workspace& points =
-      set_up(set, model, e, ue, Kinematics::Finite, kind, temperature, temperature_scale);
-  VectorI alpha = VectorI::Zero();
-  if (internal != nullptr && internal->size() == kA) alpha = *internal;
-  kinematics_at(set, points, alpha);
-  const IsotropicMaterial& mat = model.material_of(e);
-  TotalLagrangianStress out;
-  out.cauchy = Vector::Zero(6);
-  for (const PointWork& p : points) {
-    const Matrix h = p.h;
-    const HyperelasticResponse resp =
-        evaluate_hyperelastic(law, mat, StressState::ThreeDimensional, h, p.change);
-    Scalar szz = 0.0;
-    out.cauchy += cauchy_from_piola_kirchhoff(h, resp, StressState::ThreeDimensional, &szz);
-    const Vector6 strain = green_lagrange_6(p.h);
-    for (int c = 0; c < 6; ++c) {
-      const Scalar tensor_component = c < 3 ? strain(c) : 0.5 * strain(c);
-      out.max_green_strain = std::max(out.max_green_strain, std::abs(tensor_component));
-    }
-  }
-  const Scalar count = static_cast<Scalar>(points.size());
-  out.cauchy /= count;
   return out;
 }
 

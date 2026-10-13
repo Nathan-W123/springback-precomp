@@ -129,7 +129,6 @@
 #include "sparlab/fem/ExplicitDynamics.hpp"
 #include "sparlab/fem/FemModel.hpp"
 #include "sparlab/fem/RigidTool.hpp"
-#include "sparlab/material/Hyperelastic.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
 #include <functional>
@@ -201,7 +200,6 @@ struct FormingOptions {
   std::vector<RigidTool> tools;
   std::vector<FormingStep> steps;
   Kinematics kinematics = Kinematics::Finite;
-  HyperelasticModel law = HyperelasticModel::SaintVenantKirchhoff;
   MeanDilatation mean_dilatation = MeanDilatation::Auto;
   FrictionTangent friction_tangent = FrictionTangent::Exact;
   int max_iterations = 30;             ///< Newton iterations per increment
@@ -343,12 +341,14 @@ bool forming_suitesparse_available();
 /// The forming analysis of a finalised model (continuum elements).
 class FormingAnalysis {
  public:
-  /// \throws ConfigError for invalid options: no step, an unknown tool name,
-  ///         a release step keeping a tool the step before it did not have
-  ///         active, a time window that is empty or starts before the
-  ///         previous step ended, a tool active in two consecutive steps
-  ///         that would jump between them, constraints that leave a
-  ///         rigid-body motion free, or a tool whose surface selects no face.
+  /// \throws ConfigError for invalid options: an elastic material under finite
+  ///         or logarithmic kinematics (sparlab_form models elastoplastic
+  ///         sheets: require_elastoplastic_materials), no step, an unknown tool
+  ///         name, a release step keeping a tool the step before it did not
+  ///         have active, a time window that is empty or starts before the
+  ///         previous step ended, a tool active in two consecutive steps that
+  ///         would jump between them, constraints that leave a rigid-body
+  ///         motion free, or a tool whose surface selects no face.
   FormingAnalysis(const FemModel& model, const Assembler& assembler, FormingOptions options);
 
   /// Run every step from the reference state (u = 0, virgin history).

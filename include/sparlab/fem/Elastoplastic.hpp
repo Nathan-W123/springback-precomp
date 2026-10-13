@@ -18,22 +18,23 @@
 /// **Finite kinematics** (large displacement and rotation, small strain).
 /// The return takes the Green-Lagrange strain \f$E\f$ for the strain and
 /// gives the second Piola-Kirchhoff stress \f$S\f$: the additive split
-/// \f$E = E^e + E^p + E^\theta\f$ with \f$S = D E^e\f$, the elastoplastic
-/// counterpart of the Saint Venant-Kirchhoff law and, like it, exact under
-/// any rigid rotation and meant for strains that stay small (with small
-/// strains the materially-non-linear-only relations may be written between
-/// \f$S\f$ and \f$E\f$ at large displacement and rotation: Bathe, *Finite
-/// Element Procedures*, 1996, ch. 6). Then
+/// \f$E = E^e + E^p + E^\theta\f$ with \f$S = D E^e\f$ (linear elasticity
+/// written in the Green-Lagrange strain, the Saint Venant-Kirchhoff form),
+/// exact under any rigid rotation and meant for strains that stay small
+/// (with small strains the materially-non-linear-only relations may be
+/// written between \f$S\f$ and \f$E\f$ at large displacement and rotation:
+/// Bathe, *Finite Element Procedures*, 1996, ch. 6). Then
 /// \f[
 ///   f_e = \int B_{NL}^T S\,dV_0 ,\qquad
 ///   K_e = \int B_{NL}^T C\,B_{NL}\,dV_0 + \int (G^T\mathbf{S}\,G)\otimes I\,dV_0
 /// \f]
 /// with the operators of TotalLagrangian.hpp. The thermal strain
-/// \f$E^\theta\f$ is the Green strain of the free thermal stretch, as in
-/// Hyperelastic.hpp, so a freely heated body is stress-free, but the elastic
-/// stiffness is not rescaled by the thermal stretch as the Saint
-/// Venant-Kirchhoff law's is (a relative difference of \f$\alpha\Delta T\f$
-/// in a thermal stress, below the model's small-strain premise).
+/// \f$E^\theta\f$ is the Green strain of the free thermal stretch
+/// \f$\vartheta = 1 + \alpha\Delta T\f$, \f$\alpha\Delta T\,(1 + \alpha\Delta T/2)\f$
+/// in each direction, so a freely heated body is stress-free; the elastic
+/// stiffness is not rescaled by the thermal stretch (a relative difference
+/// of \f$\alpha\Delta T\f$ in a thermal stress, below the model's
+/// small-strain premise).
 ///
 /// **Mean dilatation.** Plastic flow is isochoric. On an element with
 /// several integration points (the Hex8) each point's dilatation is
@@ -76,10 +77,10 @@
 ///       + \int (G^T\mathbf{S}\,G)\otimes I\,dV_0 ,
 /// \f]
 /// \f$T : \mathbb{L}\f$ the Hessian of \f$T : E_{\log}(E)\f$ at fixed T.
-/// The elasticity is Hencky's (quadratic in \f$E_{\log}\f$), elastic
-/// elements included. The thermal strain is the log strain of the free
-/// thermal stretch \f$1 + \alpha\Delta T\f$ (the stretch of the finite
-/// path), \f$\ln(1 + \alpha\Delta T)\,I\f$, which the return takes as the
+/// The elasticity is Hencky's (quadratic in \f$E_{\log}\f$). The thermal
+/// strain is the log strain of the free thermal stretch
+/// \f$1 + \alpha\Delta T\f$ (the stretch of the finite path),
+/// \f$\ln(1 + \alpha\Delta T)\,I\f$, which the return takes as the
 /// change \f$\ln(1 + \alpha\Delta T)/\alpha\f$: a freely heated body is
 /// stress-free. In plane stress the return finds \f$E_{\log,33}\f$ with
 /// \f$T_{33} = 0\f$ (which is \f$S_{33} = 0\f$: the normal is principal),
@@ -118,15 +119,16 @@
 ///
 /// Where this fits: Simulations stage - one element's force, tangent and plastic return.
 /// Called from: fem/NonlinearSystem.hpp:NonlinearSystem::evaluate (elastoplastic_element),
-///   fem/Forming.cpp:FormingAnalysis::run (elastoplastic_stress)
-/// Calls into: material/Plasticity (plastic_return), material/Hyperelastic,
+///   fem/Forming.cpp:FormingAnalysis::run (elastoplastic_stress),
+///   fem/Forming.cpp:FormingAnalysis::FormingAnalysis and
+///   fem/NonlinearSystem.hpp:NonlinearSystem::NonlinearSystem (require_elastoplastic_materials)
+/// Calls into: material/Plasticity (plastic_return), fem/TotalLagrangian,
 ///   material/LogarithmicStrain, fem/IncompatibleModes
 /// Start reading at: elastoplastic_element (fem/Elastoplastic.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"
 #include "sparlab/fem/FemModel.hpp"
-#include "sparlab/material/Hyperelastic.hpp"
 #include "sparlab/material/Plasticity.hpp"
 
 #include <string>
@@ -147,6 +149,16 @@ std::string to_string(Kinematics kinematics);
 /// "finite", "small_strain" or "finite_logarithmic".
 Kinematics parse_kinematics(const std::string& text);
 
+/// sparlab_form models elastoplastic sheets: under "finite" or
+/// "finite_logarithmic" kinematics the material of every element must have
+/// a plasticity block (the elastic large-strain laws, Saint Venant-Kirchhoff
+/// and neo-Hookean, were removed). "small_strain" takes any material, an
+/// elastic one as linear elasticity. The forming analysis and every
+/// non-linear system check it before they evaluate an element.
+/// \throws ConfigError naming the first material without plasticity under
+///         finite kinematics.
+void require_elastoplastic_materials(const FemModel& model, Kinematics kinematics);
+
 /// Which elements of an elastoplastic material average their dilatation (see
 /// above); elastic materials always keep their plain operator, and plane
 /// stress and one-point elements have nothing to average.
@@ -163,11 +175,6 @@ MeanDilatation parse_mean_dilatation(const std::string& text);
 /// How the elements of a non-linear system are evaluated (NonlinearSystem.hpp,
 /// the forming analysis and the explicit integrator).
 struct NonlinearOptions {
-  /// The elastic law with finite kinematics (small strain is linear
-  /// elasticity, logarithmic kinematics Hencky's law, which leaves it at its
-  /// default); an elastoplastic material takes the Saint Venant-Kirchhoff
-  /// form.
-  HyperelasticModel law = HyperelasticModel::SaintVenantKirchhoff;
   Kinematics kinematics = Kinematics::Finite;
   MeanDilatation mean_dilatation = MeanDilatation::Auto;
 };

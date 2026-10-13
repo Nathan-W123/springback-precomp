@@ -5,7 +5,6 @@
 #include "IncompatibleModes.hpp"
 #include "sparlab/core/Exceptions.hpp"
 #include "sparlab/fem/TotalLagrangian.hpp"
-#include "sparlab/material/Hyperelastic.hpp"
 #include "sparlab/material/LogarithmicStrain.hpp"
 
 #include <Eigen/Dense>
@@ -191,7 +190,7 @@ void thermal_change(const IsotropicMaterial& mat, Kinematics kinematics, Scalar 
   const Scalar dt = lambda * dt0;
   const Scalar alpha = mat.thermal_expansion();
   if (kinematics == Kinematics::Finite) {
-    change = thermal_green_lagrange_change(mat, dt);
+    change = dt * (1.0 + 0.5 * alpha * dt);
     rate = dt0 * (1.0 + mat.thermal_expansion() * dt);
   } else if (kinematics == Kinematics::FiniteLogarithmic && alpha != 0.0) {
     const Scalar stretch = 1.0 + alpha * dt;
@@ -238,6 +237,20 @@ Kinematics parse_kinematics(const std::string& text) {
   if (text == "finite_logarithmic") return Kinematics::FiniteLogarithmic;
   throw ConfigError("unknown kinematics '" + text +
                     "'; expected \"finite\", \"finite_logarithmic\" or \"small_strain\"");
+}
+
+void require_elastoplastic_materials(const FemModel& model, Kinematics kinematics) {
+  if (kinematics == Kinematics::SmallStrain) return;
+  for (Index e = 0; e < model.mesh().num_elements(); ++e) {
+    const IsotropicMaterial& mat = model.material_of(e);
+    if (mat.plasticity().enabled()) continue;
+    throw ConfigError("material '" + mat.name() + "' has no plasticity block, and the \"" +
+                      to_string(kinematics) + "\" kinematics takes elastoplastic materials "
+                      "only: sparlab_form models elastoplastic sheets, and its elastic "
+                      "large-strain laws (Saint Venant-Kirchhoff, neo-Hookean) were removed. "
+                      "Give the material a 'plasticity' block, or use the \"small_strain\" "
+                      "kinematics for a linear-elastic model");
+  }
 }
 
 MeanDilatation parse_mean_dilatation(const std::string& text) {

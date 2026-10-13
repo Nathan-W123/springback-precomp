@@ -115,8 +115,8 @@
 /// beyond `energy_limit` stops the run, as do non-finite values and an
 /// inverted element.
 ///
-/// **Internal forces.** A dedicated kernel for Hex8 (finite, logarithmic -
-/// elastoplastic elements only - or small-strain kinematics; elastic, or
+/// **Internal forces.** A dedicated kernel for Hex8 (finite, logarithmic or
+/// small-strain kinematics - elastic elements under small strain only;
 /// elastoplastic through the return of
 /// Plasticity.hpp; mean dilatation) keeps the reference gradients and
 /// weights of every point (one set on a uniform structured mesh), updates
@@ -374,9 +374,11 @@ class ExplicitInternalForce;
 /// The explicit integrator of a finalised continuum model.
 class ExplicitDynamics {
  public:
-  /// `nonlinear` gives the kinematics, elastic law and mean dilatation.
+  /// `nonlinear` gives the kinematics and mean dilatation.
   /// \throws ConfigError for invalid options, a model with a material
-  ///         without density or with shells, or an invalid tool.
+  ///         without density or with shells, an elastic material under
+  ///         finite kinematics (require_elastoplastic_materials), or an
+  ///         invalid tool.
   ExplicitDynamics(const FemModel& model, const Assembler& assembler,
                    const NonlinearOptions& nonlinear, std::vector<RigidTool> tools,
                    ExplicitOptions options);

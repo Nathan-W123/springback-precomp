@@ -3,9 +3,8 @@
 ///        (Hex8Incompatible.hpp): the local Newton iteration for the nine
 ///        mode parameters and the static condensation of the force, the
 ///        tangent and the thermal load rate. Internal to the library; the
-///        public entry points are `elastoplastic_element`,
-///        `elastoplastic_stress`, `total_lagrangian_element` and
-///        `total_lagrangian_stress`, which dispatch here.
+///        public entry points are `elastoplastic_element` and
+///        `elastoplastic_stress`, which dispatch here.
 ///
 /// **The augmented element.** With the parameters \f$\alpha\f$ of the three
 /// modes as the displacements of three pseudo-nodes whose reference
@@ -14,10 +13,10 @@
 /// an eleven-node element of 33 degrees of freedom \f$(u, \alpha)\f$: its
 /// force \f$r = (f_u, r_\alpha)\f$ and tangent
 /// \f$\begin{bmatrix}K_{uu} & K_{u\alpha}\\ K_{\alpha u} & K_{\alpha\alpha}\end{bmatrix}\f$
-/// are those of Elastoplastic.hpp and TotalLagrangian.hpp on the augmented
-/// gradients - small strain, finite (Green-Lagrange) and logarithmic
-/// kinematics alike, with the same returns (J2, Hill48, Chaboche) and the
-/// same hyperelastic laws.
+/// are those of Elastoplastic.hpp (on the operators of TotalLagrangian.hpp)
+/// on the augmented gradients - small strain, finite (Green-Lagrange) and
+/// logarithmic kinematics alike, with the same returns (J2, Hill48,
+/// Chaboche).
 ///
 /// **Local solve.** The modes are internal: they carry no load, so
 /// \f$r_\alpha(u, \alpha) = 0\f$. On every evaluation the parameters are
@@ -49,12 +48,11 @@
 /// \f$\phi(s) = d^T r_\alpha(\alpha + s d)\f$ (regula falsi, Crisfield
 /// 1991, *Non-linear finite element analysis of solids and structures*
 /// vol. 1, sec. 9.3), whose root minimises the incremental potential along
-/// the direction wherever there is one (an associative return, a
-/// hyperelastic law), each trial kept a tenth of the bracket from its ends;
-/// where \f$\phi\f$ brackets no root on the step (\f$K_{\alpha\alpha}\f$ not
-/// positive definite, a non-convex potential) the step is halved on
-/// \f$\|r_\alpha\|\f$ and the best trial kept. Elastic small strain is
-/// linear in \f$\alpha\f$ and
+/// the direction wherever there is one (an associative return), each trial
+/// kept a tenth of the bracket from its ends; where \f$\phi\f$ brackets no
+/// root on the step (\f$K_{\alpha\alpha}\f$ not positive definite, a
+/// non-convex potential) the step is halved on \f$\|r_\alpha\|\f$ and the
+/// best trial kept. Elastic small strain is linear in \f$\alpha\f$ and
 /// converges in one iteration.
 ///
 /// **Condensation** at the converged parameters:
@@ -85,14 +83,12 @@
 ///
 /// Where this fits: Simulations stage - the incompatible-mode Hex8: solves its mode
 ///   parameters and condenses them out of the element's force and tangent.
-/// Called from: fem/Elastoplastic.cpp:elastoplastic_element, elastoplastic_stress,
-///   fem/TotalLagrangian.cpp:total_lagrangian_element
-/// Calls into: elements/Hex8Incompatible, material/Plasticity, material/Hyperelastic
+/// Called from: fem/Elastoplastic.cpp:elastoplastic_element, elastoplastic_stress
+/// Calls into: elements/Hex8Incompatible, material/Plasticity, material/LogarithmicStrain
 /// Start reading at: incompatible_elastoplastic_element, solve_and_condense (IncompatibleModes.cpp)
 #pragma once
 
 #include "sparlab/fem/Elastoplastic.hpp"
-#include "sparlab/fem/TotalLagrangian.hpp"
 
 #include <vector>
 
@@ -147,21 +143,6 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
                                                       const Vector* temperature,
                                                       Scalar temperature_scale,
                                                       Kinematics kinematics);
-
-TotalLagrangianElement incompatible_total_lagrangian_element(const FemModel& model, Index e,
-                                                             const Vector& ue,
-                                                             HyperelasticModel law,
-                                                             const Vector* temperature,
-                                                             Scalar temperature_scale,
-                                                             bool want_tangent,
-                                                             const Vector* internal);
-
-TotalLagrangianStress incompatible_total_lagrangian_stress(const FemModel& model, Index e,
-                                                           const Vector& ue,
-                                                           HyperelasticModel law,
-                                                           const Vector* temperature,
-                                                           Scalar temperature_scale,
-                                                           const Vector* internal);
 
 /// Shared with Elastoplastic.cpp: SolverError at an inverted point
 /// (logarithmic kinematics), and the temperature change the return sees at
