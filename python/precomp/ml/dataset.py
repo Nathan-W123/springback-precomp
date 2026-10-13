@@ -38,11 +38,11 @@ from typing import (Any, Callable, Dict, Iterable, Iterator, List, Mapping, Opti
 import numpy as np
 import pandas as pd
 
-from .._util import (PathLike, PrecompError, call_with_target, canonical_json, read_json,
+from .._util import (PathLike, PrecompError, canonical_json, read_json,
                      safe_name, to_jsonable)
 from ..geometry.heightmap import Grid, HeightMap
 from ..toolpath import Toolpath
-from .features import (DEFAULT_CONFIG, PRIOR_FEATURE, REGION_NAMES, FeatureConfig, as_setup,
+from .features import (DEFAULT_CONFIG, REGION_NAMES, FeatureConfig, as_setup,
                        feature_maps)
 
 DATASET_FORMAT = "precomp.ml.Dataset/1"
@@ -333,7 +333,7 @@ def _mask_of(sample: Sample, part: np.ndarray, mask: str) -> np.ndarray:
 def sample_table(sample: Sample, config: FeatureConfig = DEFAULT_CONFIG, *,
                  target: str = "dz", points_per_sample: Optional[int] = 2000,
                  mask: str = "part", rng: Optional[np.random.Generator] = None,
-                 stratify: bool = True, prior: Any = None) -> Table:
+                 stratify: bool = True) -> Table:
     """The table of one sample (see `build_table`)."""
     if target != "dz":
         raise ValueError(f"target must be 'dz' (the vertical deviation), got {target!r}")
@@ -348,15 +348,6 @@ def sample_table(sample: Sample, config: FeatureConfig = DEFAULT_CONFIG, *,
     nodes = stratified_nodes(cand, fm.region, points_per_sample, rng, stratify)
     X = fm.gather(nodes)
     names = list(fm.names)
-    if prior is not None:
-        # the prior simulates on the fixture the label run had: the sample's target's
-        p = np.asarray(call_with_target(prior.prior_deviation, sample.commanded,
-                                        sample.forming_setup(), target=sample.target), float)
-        if p.shape != sample.grid.shape or not np.all(np.isfinite(p)):
-            raise PrecompError("the prior returned a field of the wrong shape or non-finite "
-                               "values")
-        X = np.column_stack([X, p.ravel()[nodes]])
-        names.append(PRIOR_FEATURE)
     y = sample.dz.ravel()[nodes]
     n = len(nodes)
     return Table(X, y, np.full(n, sample.sample_id, dtype=object), names,
@@ -367,7 +358,7 @@ def sample_table(sample: Sample, config: FeatureConfig = DEFAULT_CONFIG, *,
 def build_table(samples: Iterable[Sample], config: FeatureConfig = DEFAULT_CONFIG, *,
                 target: str = "dz", points_per_sample: Optional[int] = 2000,
                 mask: str = "part", rng: Union[None, int, np.random.Generator] = None,
-                stratify: bool = True, prior: Any = None, n_jobs: int = 1) -> Table:
+                stratify: bool = True, n_jobs: int = 1) -> Table:
     """Features and targets of many samples.
 
     points_per_sample : nodes drawn per sample (None: every node in the mask).
@@ -377,10 +368,6 @@ def build_table(samples: Iterable[Sample], config: FeatureConfig = DEFAULT_CONFI
     mask : "part" (commanded depth > part_eps) or "all" (every valid node).
     rng : a Generator or a seed; each sample gets its own child stream in
         order, so the table is reproducible for the same samples and seed.
-    prior : an object with ``prior_deviation(commanded, setup) -> (ny, nx)``
-        whose value is appended as the column `prior_dz` (hybrid models); a
-        prior that takes ``target=`` gets each sample's target (the part a
-        support's fixture is made for, `models.FEAPrior`).
     n_jobs : processes for featurisation (joblib); keep <= 2 on shared machines.
     """
     samples = list(samples)
@@ -390,7 +377,7 @@ def build_table(samples: Iterable[Sample], config: FeatureConfig = DEFAULT_CONFI
                 else np.random.SeedSequence(0 if rng is None else int(rng)))
     children = seed_seq.spawn(len(samples))
     kw = dict(target=target, points_per_sample=points_per_sample, mask=mask,
-              stratify=stratify, prior=prior)
+              stratify=stratify)
     if n_jobs == 1 or len(samples) == 1:
         tables = [sample_table(s, config, rng=np.random.default_rng(c), **kw)
                   for s, c in zip(samples, children)]
@@ -540,12 +527,12 @@ class Dataset:
                  points_per_sample: Optional[int] = 2000, mask: str = "part",
                  rng: Union[None, int, np.random.Generator] = None,
                  ids: Optional[Sequence[str]] = None, stratify: bool = True,
-                 prior: Any = None, n_jobs: int = 1) -> Table:
+                 n_jobs: int = 1) -> Table:
         """X, y, groups (and more, see `Table`) of the samples `ids` (default:
         all); see `build_table` for the arguments."""
         return build_table(self.samples(ids), features, target=target,
                            points_per_sample=points_per_sample, mask=mask, rng=rng,
-                           stratify=stratify, prior=prior, n_jobs=n_jobs)
+                           stratify=stratify, n_jobs=n_jobs)
 
 
 # ---------------------------------------------------------------------------

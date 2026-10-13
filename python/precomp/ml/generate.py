@@ -179,9 +179,7 @@ class ProxySimulator:
     sample, metric and plot made from it is labelled "proxy - not physics".
     It knows single-point forming only: as a simulator or a model it refuses
     a setup with support from below (`FormingSetup.support`) rather than give
-    single-point numbers under the supported setup's name; as a prior
-    (`prior_deviation`) it gives single-point forming's dz for any setup, a
-    crude estimate the residual learner corrects.
+    single-point numbers under the supported setup's name.
 
     `run` (the `Simulator` protocol) also builds the setup's tool path of
     every job, as the deck builder does, and fails the job without one;
@@ -190,7 +188,7 @@ class ProxySimulator:
 
     source = "proxy"
     label = PROXY_LABEL
-    #: as a model or prior (ResidualModel): what its numbers are
+    #: as a model: what its numbers are
     data_source = PROXY_LABEL
 
     def __init__(self, params: Optional[ProxyParams] = None, *, check_toolpath: bool = True,
@@ -221,14 +219,12 @@ class ProxySimulator:
         self.params = ProxyParams(**state["params"])
         self.check_toolpath = bool(state.get("check_toolpath", True))
 
-    def deviation(self, commanded: HeightMap, setup: Any, *,
-                  any_support: bool = False) -> np.ndarray:
+    def deviation(self, commanded: HeightMap, setup: Any) -> np.ndarray:
         """(ny, nx) dz [m] of forming `commanded` with `setup` (single-point
-        forming; PrecompError for a setup with a support unless
-        `any_support`)."""
+        forming; PrecompError for a setup with a support)."""
         p = self.params
         s = as_setup(setup)
-        if s.support != "none" and not any_support:
+        if s.support != "none":
             raise PrecompError(
                 f"the proxy has no model of support from below (support {s.support!r}); its "
                 "dz would be single-point forming's under the supported setup's name - "
@@ -293,10 +289,7 @@ class ProxySimulator:
                                 metadata={"source": "proxy", "label": PROXY_LABEL,
                                           "version": PROXY_VERSION})
 
-    # protocols: a prior (models.ResidualModel), a FieldModel, a Simulator
-    def prior_deviation(self, commanded: HeightMap, setup: Any) -> np.ndarray:
-        return self.deviation(commanded, setup, any_support=True)
-
+    # protocols: a FieldModel, a Simulator
     def predict_deviation(self, commanded: HeightMap, setup: Any
                           ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         return self.deviation(commanded, setup), None

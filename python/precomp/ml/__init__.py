@@ -12,7 +12,7 @@ features     the versioned per-node feature schema (FEATURE_SCHEMA_VERSION,
 dataset      Sample, the on-disk Dataset, feature tables, grouped splits
 generate     design of experiments, commanded-shape variants, SparlabSimulator,
              ProxySimulator (analytic, NOT physics), data generation
-models       GBMEnsemble, MLPEnsemble, ResidualModel, TransferModel
+models       GBMEnsemble, MLPEnsemble, TransferModel
 uncertainty  grouped split-conformal calibration
 ood          the training envelope (Mahalanobis + kNN, point and part level)
 surrogate    DeviationSurrogate (model + features + calibration + envelope),
@@ -34,8 +34,7 @@ from .features import (FEATURE_SCHEMA_VERSION, FeatureConfig, FeatureSpec, featu
                        global_features, region_labels)
 from .generate import (DesignPoint, DesignSpace, PerturbationSpec, ProxyParams, ProxySimulator,
                        SparlabSimulator, design_points, generate, simulate_samples)
-from .models import (FEAPrior, GBMEnsemble, MLPEnsemble, ResidualModel, TransferModel,
-                     model_from_state)
+from .models import GBMEnsemble, MLPEnsemble, TransferModel, model_from_state
 from .ood import OODEnvelope
 from .registry import load_model, read_manifest, save_model
 from .surrogate import DeviationSurrogate, train_surrogate, transfer_surrogate
@@ -48,7 +47,7 @@ __all__ = [
     "family_split", "source_label", "SOURCE_LABELS",
     "DesignSpace", "DesignPoint", "design_points", "PerturbationSpec", "ProxyParams",
     "ProxySimulator", "SparlabSimulator", "generate", "simulate_samples",
-    "GBMEnsemble", "MLPEnsemble", "ResidualModel", "TransferModel", "FEAPrior",
+    "GBMEnsemble", "MLPEnsemble", "TransferModel",
     "model_from_state",
     "ConformalCalibrator", "OODEnvelope",
     "DeviationSurrogate", "train_surrogate", "transfer_surrogate",

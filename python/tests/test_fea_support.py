@@ -520,17 +520,11 @@ def _runs(work):
     return out
 
 
-def test_the_fe_prior_and_predict_form_on_the_targets_plate(tmp_path, base, cone, counter):
+def test_fe_da_forms_on_the_targets_plate(tmp_path, base, cone, counter):
     """A compensated command (its rim raised to the plane: a smaller outline)
-    is formed on the plate made for the target wherever a simulation sees
-    it with the target: FEAPredictor (the FE-DA predictor), the FE prior
-    of a hybrid model in its training table (each sample's target, as the
-    label run had) and in prediction (compensate's predictor). Without the
-    target the command's own, different plate is used."""
-    from precomp.compensation import SurrogatePredictor
-    from precomp.ml import FEAPrior, GBMEnsemble, ResidualModel, Sample, train_surrogate
-    from precomp.ml.dataset import sample_table
-
+    is formed on the plate made for the target when the FE-DA predictor is
+    given the target. Without the target the command's own, different plate
+    is used."""
     setup = base.replace(support="backing_plate")
     sd = signed_outline_distance(cone).z
     comp = cone.with_z(np.where(sd > -1.5e-3, 0.0, cone.z))
@@ -540,27 +534,6 @@ def test_the_fe_prior_and_predict_form_on_the_targets_plate(tmp_path, base, cone
     assert _runs(tmp_path / "api") == [("target", plate)]
     FEAPredictor(setup, tmp_path / "own")(comp)
     assert _runs(tmp_path / "own") == [("commanded", plate_nodes(setup, comp)[0])]
-    FEAPrior(str(tmp_path / "prior")).prior_deviation(comp, setup, target=cone)
-    assert _runs(tmp_path / "prior") == [("target", plate)]
-    # training: each sample's prior run is on its target's plate
-    samples = [Sample(f"s{i}", c, c.with_z(c.z - 1e-4), setup, "sim", "sparlab:test",
-                      "compensated", None, f"p{i}", cone, None,
-                      {"created_at": "test", "sparlab_version": "test", "deck_hash": "h"})
-               for i, c in enumerate([comp, comp.with_z(comp.z * 0.9)])]
-    sample_table(samples[0], prior=FEAPrior(str(tmp_path / "table")), points_per_sample=50)
-    assert _runs(tmp_path / "table") == [("target", plate)]
-    sur = train_surrogate(ResidualModel(FEAPrior(str(tmp_path / "hyb")),
-                                        GBMEnsemble(2, max_iter=5, target_scale=None,
-                                                    n_threads=1)),
-                          samples, points_per_sample=50, envelope=False)
-    assert {r[0] for r in _runs(tmp_path / "hyb")} == {"target"}
-    # prediction: the surrogate predictor hands the target to the model's prior
-    new = comp.with_z(comp.z * 0.95)
-    SurrogatePredictor(sur, setup, target=cone)(new)
-    runs = _runs(tmp_path / "hyb")
-    assert len(runs) == 3 and all(r == ("target", plate) for r in runs)
-    mu, _ = sur.predict_deviation(new, setup)                      # no target: another run
-    assert ("commanded", plate_nodes(setup, new)[0]) in _runs(tmp_path / "hyb")
 
 
 # ---------------------------------------------------------------------------
@@ -611,8 +584,6 @@ def test_the_proxy_refuses_a_setup_with_support(base, cone):
         assert not out.ok and "no model of support" in out.error
         with pytest.raises(PrecompError, match="no model of support"):
             proxy.predict_deviation(cone, s)
-        # as a prior it is a crude single-point estimate, for any setup
-        assert np.array_equal(proxy.prior_deviation(cone, s), proxy.deviation(cone, base))
 
 
 def test_a_scan_update_adjusts_the_strip_the_rim_pass_sweeps(tmp_path, base, cone):

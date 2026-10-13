@@ -119,7 +119,7 @@ def evaluate_surrogate(surrogate: DeviationSurrogate, samples: Sequence[Sample],
     rows, pooled = [], []
     for s in samples:
         try:
-            mu, sd = surrogate.predict_deviation(s.commanded, s.setup, s.target)
+            mu, sd = surrogate.predict_deviation(s.commanded, s.setup)
             fm = surrogate.feature_maps(s.commanded, s.setup)
         except (ValueError, PrecompError) as exc:
             raise PrecompError(f"sample {s.sample_id}: {exc}") from exc

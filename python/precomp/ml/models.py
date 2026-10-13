@@ -3,8 +3,8 @@
 The protocol, `DeviationModel` (a point model): ``fit(X, y, groups)`` on a
 feature table (rows = grid nodes, `groups` = sample ids), ``predict(X) ->
 (mean, std)`` in metres, ``feature_names``, ``to_state()`` /
-``from_state(state)``. The implementations are `GBMEnsemble`, `MLPEnsemble`,
-`ResidualModel` and `TransferModel`.
+``from_state(state)``. The implementations are `GBMEnsemble`, `MLPEnsemble`
+and `TransferModel`.
 
 `precomp.ml.surrogate.DeviationSurrogate` turns a model into what the
 compensation code consumes (``predict_deviation(commanded, setup)``).
@@ -25,7 +25,6 @@ import contextlib
 import copy
 import math
 import os
-from dataclasses import dataclass, field
 from typing import (Any, Dict, Iterator, List, Mapping, Optional, Protocol, Sequence, Tuple,
                     runtime_checkable)
 
@@ -37,8 +36,6 @@ import numpy as np
 from sklearn.ensemble import HistGradientBoostingRegressor
 
 from .._util import PrecompError
-from ..geometry.heightmap import HeightMap
-from .features import PRIOR_FEATURE, as_setup
 
 THREADS_ENV = "PRECOMP_ML_THREADS"
 
@@ -514,99 +511,8 @@ class MLPEnsemble:
 
 
 # ---------------------------------------------------------------------------
-# Hybrid physics + ML
+# Transfer to a new process from a few parts
 # ---------------------------------------------------------------------------
-@dataclass
-class FEAPrior:
-    """A coarse finite-element prior: dz of a sparlab_form run of the commanded
-    surface with `overrides` applied to the setup (e.g. {"element_size": 5e-3,
-    "layers": 1}), through the run cache in `work_dir`. Needs the executable
-    whenever the prior is evaluated (training and prediction). `target` is
-    the part a support's fixture is made for (`precomp.fea.simulate`): the
-    training table passes each sample's target (`Sample.target`), a
-    prediction the target it is given, so the prior forms a compensated
-    command on the same backing plate / rim pass band as the label runs."""
-
-    work_dir: str
-    overrides: Dict[str, Any] = field(default_factory=dict)
-    step: Any = -1
-
-    #: what the prior's values are
-    data_source = "SparLab simulation"
-
-    def prior_deviation(self, commanded: HeightMap, setup: Any,
-                        target: Optional[HeightMap] = None) -> np.ndarray:
-        from ..fea.runner import simulate
-        s = as_setup(setup).replace(**self.overrides)
-        res = simulate(s, commanded, self.work_dir, target=target)
-        formed = res.formed_surface(self.step, grid=commanded.grid)
-        return formed.z - commanded.z
-
-    def describe(self) -> Dict[str, Any]:
-        return {"name": "FEAPrior", "overrides": dict(self.overrides), "step": self.step,
-                "data_source": self.data_source}
-
-
-class ResidualModel:
-    """prior + learned residual: the learner fits y - prior on the table.
-
-    `prior` is an object with ``prior_deviation(commanded, setup) -> (ny, nx)``
-    dz [m] (a coarse FE run, `FEAPrior`, or a closed-form estimate); the
-    surrogate evaluates it on each commanded surface and appends its value
-    as the last feature column, `prior_dz`; a prior that takes ``target=``
-    gets the part a support's fixture is made for, in training (each
-    sample's target) and in prediction alike. The learner (a point model) sees
-    that column as a feature too unless `prior_as_feature` is False. mean =
-    prior + learner mean; std = learner std (the prior counts as exact).
-    """
-
-    kind = "point"
-
-    def __init__(self, prior: Any, learner: DeviationModel, *, prior_as_feature: bool = True):
-        if not hasattr(prior, "prior_deviation"):
-            raise TypeError("the prior must implement prior_deviation(commanded, setup)")
-        self.prior = prior
-        self.learner = learner
-        self.prior_as_feature = bool(prior_as_feature)
-        self.feature_names: List[str] = []
-
-    def _split(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        if self.feature_names and self.feature_names[-1] != PRIOR_FEATURE:
-            raise ValueError(f"ResidualModel expects '{PRIOR_FEATURE}' as the last feature "
-                             "column (build the table with prior=...)")
-        p = X[:, -1]
-        return (X if self.prior_as_feature else X[:, :-1]), p
-
-    def fit(self, X: np.ndarray, y: np.ndarray, groups: np.ndarray, *,
-            feature_names: Optional[Sequence[str]] = None) -> "ResidualModel":
-        X, y, groups = _check_table(X, y, groups)
-        self.feature_names = list(feature_names) if feature_names is not None else \
-            [f"x{i}" for i in range(X.shape[1] - 1)] + [PRIOR_FEATURE]
-        Xl, p = self._split(X)
-        names = self.feature_names if self.prior_as_feature else self.feature_names[:-1]
-        self.learner.fit(Xl, y - p, groups, feature_names=names)
-        return self
-
-    def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        (X,) = _check_table(X)
-        _check_names(self, X)
-        Xl, p = self._split(X)
-        mu, sd = self.learner.predict(Xl)
-        return p + mu, sd
-
-    def to_state(self) -> Dict[str, Any]:
-        return {"class": "ResidualModel", "prior": self.prior,
-                "learner": self.learner.to_state(), "prior_as_feature": self.prior_as_feature,
-                "feature_names": list(self.feature_names)}
-
-    @classmethod
-    def from_state(cls, state: Mapping[str, Any]) -> "ResidualModel":
-        m = cls(state["prior"], model_from_state(state["learner"]),
-                prior_as_feature=state["prior_as_feature"])
-        m.feature_names = list(state["feature_names"])
-        return m
-
-
 class TransferModel:
     """A frozen simulation-trained base plus a correction fitted on a few real parts.
 
@@ -615,20 +521,14 @@ class TransferModel:
     from one to three real parts it made the base two to five times worse on
     proxy data, also when the "real" data equalled the simulation.)
 
-    correction :
-      "linear" (default) - y = a + (1 + b) mu, mu the base mean: a relative
-          change of the springback magnitude, b ~ N(0, prior_gain^2), and an
-          offset a ~ N(0, (prior_offset s)^2), s the RMS base prediction over
-          the real parts;
-      "gain" - y = (1 + b) mu, the gain alone;
-      "gbm" - a small, heavily regularised gradient-boosting correction of
-          y - mu on [features, base mean, base std], whose std is its
-          in-sample residual std (optimistic).
-    The linear corrections are Bayesian regressions with a FIXED prior in
-    which every real part weighs one observation (its nodes are not
-    independent: they share weight 1), the noise variance estimated from the
-    part-weighted residuals; the predictive std combines the base std and
-    the parameter uncertainty in quadrature.
+    correction : "linear" (the only one) - y = a + (1 + b) mu, mu the base
+      mean: a relative change of the springback magnitude, b ~ N(0,
+      prior_gain^2), and an offset a ~ N(0, (prior_offset s)^2), s the RMS
+      base prediction over the real parts. It is a Bayesian regression with a
+      FIXED prior in which every real part weighs one observation (its nodes
+      are not independent: they share weight 1), the noise variance estimated
+      from the part-weighted residuals; the predictive std combines the base
+      std and the parameter uncertainty in quadrature.
 
     Validation: a correction is kept only if its leave-one-real-part-out
     error - fitted without a part, scored on it, for every part - is below
@@ -638,22 +538,19 @@ class TransferModel:
     number of real parts (groups) seen; with none the model IS the base.
 
     On proxy data (a GBM base, ten held-out parts, 1-4 "real" parts in three
-    draws each): with no shift, or 50 um noise, the validated "linear"
-    correction was never accepted (error = the base's), while "gain" was
-    accepted - wrongly - in 2 of 12 cases (+21-38 % error); with the rim and
-    curvature 30-40 % stronger (base 0.18 mm) it cut the error to
-    0.09-0.15 mm from two parts on; with one part nothing changes.
+    draws each): with no shift, or 50 um noise, the validated correction was
+    never accepted (error = the base's); with the rim and curvature 30-40 %
+    stronger (base 0.18 mm) it cut the error to 0.09-0.15 mm from two parts
+    on; with one part nothing changes.
     """
 
     kind = "point"
-    CORRECTIONS = ("gain", "linear", "gbm")
+    CORRECTIONS = ("linear",)
 
     def __init__(self, base: DeviationModel, correction: str = "linear", *, seed: int = 0,
                  prior_gain: float = 0.5, prior_offset: float = 0.5, min_parts: int = 2):
         if correction not in self.CORRECTIONS:
-            raise ValueError(f"correction must be one of {self.CORRECTIONS}, got {correction!r} "
-                             "(the former 'bayesian_ridge' on every feature extrapolated "
-                             "wildly from a few parts and was removed)")
+            raise ValueError(f"correction must be one of {self.CORRECTIONS}, got {correction!r}")
         if not (prior_gain > 0 and prior_offset > 0):
             raise ValueError("prior_gain and prior_offset must be > 0")
         if int(min_parts) < 2:
@@ -670,17 +567,15 @@ class TransferModel:
         self.validation: Dict[str, Any] = {"reason": "no real parts"}
         self.theta: Optional[np.ndarray] = None
         self.cov: Optional[np.ndarray] = None
-        self.estimator: Any = None
-        self.resid_std = 0.0
 
     @property
     def feature_names(self) -> List[str]:
         return list(getattr(self.base, "feature_names", []))
 
-    # -- the corrections ------------------------------------------------------
-    def _design(self, mu: np.ndarray) -> np.ndarray:
-        return mu[:, None] if self.correction == "gain" else np.column_stack(
-            [np.ones_like(mu), mu])
+    # -- the correction -------------------------------------------------------
+    @staticmethod
+    def _design(mu: np.ndarray) -> np.ndarray:
+        return np.column_stack([np.ones_like(mu), mu])
 
     def _fit_linear(self, mu: np.ndarray, y: np.ndarray, groups: np.ndarray
                     ) -> Tuple[np.ndarray, np.ndarray]:
@@ -690,8 +585,7 @@ class TransferModel:
         r = y - mu
         s = float(np.sqrt(np.sum(w * mu * mu) / k)) or 1.0
         Phi = self._design(mu)
-        prec = np.array([1.0 / self.prior_gain ** 2]) if self.correction == "gain" else \
-            np.array([1.0 / (self.prior_offset * s) ** 2, 1.0 / self.prior_gain ** 2])
+        prec = np.array([1.0 / (self.prior_offset * s) ** 2, 1.0 / self.prior_gain ** 2])
         Lam = np.diag(prec)
         PtW = (Phi * w[:, None]).T
         s2 = max(float(np.sum(w * r * r)) / k, (1e-3 * s) ** 2)
@@ -703,26 +597,8 @@ class TransferModel:
         theta = np.linalg.solve(A, PtW @ r / s2)
         return theta, np.linalg.inv(A)
 
-    def _fit_gbm(self, X: np.ndarray, mu: np.ndarray, sd: np.ndarray, y: np.ndarray):
-        est = HistGradientBoostingRegressor(max_iter=60, learning_rate=0.05, max_depth=3,
-                                            min_samples_leaf=200, l2_regularization=10.0,
-                                            early_stopping=False, random_state=self.seed)
-        Z = np.column_stack([X, mu, sd])
-        est.fit(Z, y - mu)
-        return est, float(np.std(y - mu - est.predict(Z)))
-
-    def _fit_correction(self, X: np.ndarray, mu: np.ndarray, sd: np.ndarray, y: np.ndarray,
-                        groups: np.ndarray) -> Any:
-        if self.correction == "gbm":
-            return self._fit_gbm(X, mu, sd, y)
-        return self._fit_linear(mu, y, groups)
-
-    def _apply(self, fitted: Any, X: np.ndarray, mu: np.ndarray, sd: np.ndarray
+    def _apply(self, fitted: Any, mu: np.ndarray, sd: np.ndarray
                ) -> Tuple[np.ndarray, np.ndarray]:
-        if self.correction == "gbm":
-            est, rs = fitted
-            c = est.predict(np.column_stack([X, mu, sd]))
-            return mu + c, np.sqrt(sd * sd + rs * rs)
         theta, cov = fitted
         Phi = self._design(mu)
         var = np.einsum("ij,jk,ik->i", Phi, cov, Phi)
@@ -733,7 +609,7 @@ class TransferModel:
             feature_names: Optional[Sequence[str]] = None) -> "TransferModel":
         """`groups`: the real PART of every row (the unit of validation)."""
         y = np.asarray(y, dtype=float).ravel()
-        self.theta = self.cov = self.estimator = None
+        self.theta = self.cov = None
         self.accepted = False
         if len(y) == 0:
             self.n_real, self.real_groups = 0, []
@@ -754,8 +630,8 @@ class TransferModel:
         per = []
         for g in self.real_groups:
             out = groups == g
-            fitted = self._fit_correction(X[~out], mu[~out], sd[~out], y[~out], groups[~out])
-            c, _ = self._apply(fitted, X[out], mu[out], sd[out])
+            fitted = self._fit_linear(mu[~out], y[~out], groups[~out])
+            c, _ = self._apply(fitted, mu[out], sd[out])
             per.append({"part": g, "base_rms_m": rms(mu[out], y[out]),
                         "corrected_rms_m": rms(c, y[out])})
         b = float(np.mean([p["base_rms_m"] for p in per]))
@@ -766,12 +642,8 @@ class TransferModel:
                            "n_parts": self.n_real, "lopo_base_rms_m": b,
                            "lopo_corrected_rms_m": c, "per_part": per}
         if self.accepted:
-            fitted = self._fit_correction(X, mu, sd, y, groups)
-            if self.correction == "gbm":
-                self.estimator, self.resid_std = fitted
-            else:
-                self.theta, self.cov = fitted
-                self.validation["theta"] = [float(t) for t in self.theta]
+            self.theta, self.cov = self._fit_linear(mu, y, groups)
+            self.validation["theta"] = [float(t) for t in self.theta]
         return self
 
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -779,9 +651,7 @@ class TransferModel:
             return self.base.predict(X)
         (X,) = _check_table(X)
         mu, sd = self.base.predict(X)
-        fitted = (self.estimator, self.resid_std) if self.correction == "gbm" else \
-            (self.theta, self.cov)
-        return self._apply(fitted, X, mu, sd)
+        return self._apply((self.theta, self.cov), mu, sd)
 
     def to_state(self) -> Dict[str, Any]:
         return {"class": "TransferModel", "base": self.base.to_state(),
@@ -789,8 +659,7 @@ class TransferModel:
                 "prior_gain": self.prior_gain, "prior_offset": self.prior_offset,
                 "min_parts": self.min_parts, "n_real": self.n_real,
                 "real_groups": list(self.real_groups), "accepted": self.accepted,
-                "validation": self.validation, "theta": self.theta, "cov": self.cov,
-                "estimator": self.estimator, "resid_std": self.resid_std}
+                "validation": self.validation, "theta": self.theta, "cov": self.cov}
 
     @classmethod
     def from_state(cls, state: Mapping[str, Any]) -> "TransferModel":
@@ -803,13 +672,11 @@ class TransferModel:
         m.validation = dict(state["validation"])
         m.theta = None if state["theta"] is None else np.asarray(state["theta"])
         m.cov = None if state["cov"] is None else np.asarray(state["cov"])
-        m.estimator = state["estimator"]
-        m.resid_std = float(state["resid_std"])
         return m
 
 
 MODEL_CLASSES = {"GBMEnsemble": GBMEnsemble, "MLPEnsemble": MLPEnsemble,
-                 "ResidualModel": ResidualModel, "TransferModel": TransferModel}
+                 "TransferModel": TransferModel}
 
 
 def model_from_state(state: Mapping[str, Any]):
@@ -821,5 +688,5 @@ def model_from_state(state: Mapping[str, Any]):
     return cls.from_state(state)
 
 
-__all__ = ["DeviationModel", "GBMEnsemble", "MLPEnsemble", "ResidualModel", "TransferModel", "FEAPrior", "model_from_state", "thread_limit",
-           "MODEL_CLASSES", "THREADS_ENV"]
+__all__ = ["DeviationModel", "GBMEnsemble", "MLPEnsemble", "TransferModel", "model_from_state",
+           "thread_limit", "MODEL_CLASSES", "THREADS_ENV"]

@@ -14,9 +14,8 @@ envelope, and states the data source it learned from. It implements what
   a query whose value was never seen in training is outside the envelope.
 
 What it predicts (`target`, "dz") is the TOTAL vertical deviation of the
-formed surface from the commanded one - also for a ResidualModel, whose
-prior is evaluated inside the model - never a residual over a simulation, so
-it must not be added to one.
+formed surface from the commanded one - never a residual over a simulation,
+so it must not be added to one.
 
 A point model is trained on the nodes of `domain` ("part" by default); it is
 evaluated at every node so the formed surface is defined everywhere, but only
@@ -37,12 +36,12 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .._util import PrecompError, call_with_target, canonical_json
+from .._util import PrecompError, canonical_json
 from ..geometry.heightmap import HeightMap
 from .dataset import Sample, build_table, source_label
-from .features import (DEFAULT_CONFIG, PRIOR_FEATURE, FeatureConfig, FeatureMaps, as_setup,
-                       feature_maps, global_features)
-from .models import ResidualModel, TransferModel, model_from_state
+from .features import (DEFAULT_CONFIG, FeatureConfig, FeatureMaps, as_setup, feature_maps,
+                       global_features)
+from .models import TransferModel, model_from_state
 from .ood import OODEnvelope
 from .uncertainty import ConformalCalibrator
 
@@ -179,40 +178,13 @@ def seen_ids(training: Mapping[str, Any]) -> Tuple[set, set]:
     return samples, parts
 
 
-def describe_prior(prior: Any) -> Dict[str, Any]:
-    """What a ResidualModel's prior is, for the manifest: its own
-    `describe()` when it has one, with its data-source label."""
-    d = dict(prior.describe()) if hasattr(prior, "describe") else {}
-    d.setdefault("name", type(prior).__name__)
-    label = getattr(prior, "data_source", None) or getattr(prior, "label", None)
-    if label is None:
-        label = "SparLab simulation" if type(prior).__name__ == "FEAPrior" else "unknown"
-    d["data_source"] = label
-    return d
-
-
-def _key(commanded: HeightMap, setup: Any, target: Optional[HeightMap] = None) -> str:
+def _key(commanded: HeightMap, setup: Any) -> str:
     h = hashlib.sha256()
     h.update(np.ascontiguousarray(commanded.z).tobytes())
     h.update(np.ascontiguousarray(commanded.mask).tobytes())
     h.update(canonical_json(commanded.grid.to_dict()).encode())
     h.update(canonical_json(as_setup(setup).physics_dict()).encode())
-    if target is not None and as_setup(setup).support != "none":
-        # the fixture a support is made for changes what the FE prior simulates
-        h.update(b"target")
-        h.update(np.ascontiguousarray(target.z).tobytes())
-        h.update(np.ascontiguousarray(target.mask).tobytes())
-        h.update(canonical_json(target.grid.to_dict()).encode())
     return h.hexdigest()
-
-
-def model_prior(model: Any) -> Any:
-    """The physics prior a model needs as its last column, or None."""
-    if isinstance(model, ResidualModel):
-        return model.prior
-    if isinstance(model, TransferModel):
-        return model_prior(model.base)
-    return None
 
 
 class DeviationSurrogate:
@@ -255,10 +227,7 @@ class DeviationSurrogate:
 
     @property
     def feature_names(self) -> List[str]:
-        names = self.features.names
-        if model_prior(self.model) is not None:
-            names = names + [PRIOR_FEATURE]
-        return names
+        return self.features.names
 
     @property
     def model_class(self) -> str:
@@ -301,52 +270,31 @@ class DeviationSurrogate:
             del self._cache[k]
         return val
 
-    @property
-    def prior(self) -> Any:
-        """The physics prior evaluated inside the model (ResidualModel), or None."""
-        return model_prior(self.model)
-
     def feature_maps(self, commanded: HeightMap, setup: Any) -> FeatureMaps:
         return self._cached("maps:" + _key(commanded, setup),
                             lambda: feature_maps(commanded, setup, None, self.features))
 
-    def _point_matrix(self, commanded: HeightMap, setup: Any,
-                      target: Optional[HeightMap] = None) -> np.ndarray:
-        X = self.feature_maps(commanded, setup).gather(None)
-        prior = model_prior(self.model)
-        if prior is not None:
-            p = np.asarray(call_with_target(prior.prior_deviation, commanded, as_setup(setup),
-                                            target=target), float)
-            if p.shape != commanded.grid.shape or not np.all(np.isfinite(p)):
-                raise PrecompError("the model's prior returned a field of the wrong shape or "
-                                   "non-finite values")
-            X = np.column_stack([X, p.ravel()])
-        return X
+    def _point_matrix(self, commanded: HeightMap, setup: Any) -> np.ndarray:
+        return self.feature_maps(commanded, setup).gather(None)
 
-    def predict_deviation(self, commanded: HeightMap, setup: Any,
-                          target: Optional[HeightMap] = None
+    def predict_deviation(self, commanded: HeightMap, setup: Any
                           ) -> Tuple[np.ndarray, np.ndarray]:
-        """(mean, std) of dz [m], (ny, nx), at every node of the commanded grid.
-        `target`: the part a support's fixture is made for, which a model's
-        FE prior simulates with (`models.FEAPrior`; None: the commanded
-        surface's outline)."""
+        """(mean, std) of dz [m], (ny, nx), at every node of the commanded grid."""
         def make():
-            X = self._point_matrix(commanded, setup, target)
+            X = self._point_matrix(commanded, setup)
             mu, sd = self.model.predict(X)
             shape = commanded.grid.shape
             return np.asarray(mu, float).reshape(shape), np.asarray(sd, float).reshape(shape)
-        mu, sd = self._cached("pred:" + _key(commanded, setup, target), make)
+        mu, sd = self._cached("pred:" + _key(commanded, setup), make)
         return mu.copy(), sd.copy()
 
-    def predict_interval(self, commanded: HeightMap, setup: Any, level: float = 0.9,
-                         target: Optional[HeightMap] = None
+    def predict_interval(self, commanded: HeightMap, setup: Any, level: float = 0.9
                          ) -> Tuple[np.ndarray, np.ndarray]:
-        """Conformal (lower, upper) bounds of dz [m] at coverage `level`
-        (`target` as for `predict_deviation`)."""
+        """Conformal (lower, upper) bounds of dz [m] at coverage `level`."""
         if self.calibrator is None or not self.calibrator.fitted:
             raise PrecompError("this surrogate has no conformal calibration; train it with "
                                "calibration samples")
-        mu, sd = self.predict_deviation(commanded, setup, target)
+        mu, sd = self.predict_deviation(commanded, setup)
         region = self.feature_maps(commanded, setup).region if self.calibrator.mondrian \
             else None
         return self.calibrator.intervals(mu, sd, level, region)
@@ -388,7 +336,6 @@ class DeviationSurrogate:
     def describe(self) -> Dict[str, Any]:
         return {"model_class": self.model_class, "kind": self.kind, "target": self.target,
                 "data_source": self.data_source, "domain": self.domain,
-                "prior": None if self.prior is None else describe_prior(self.prior),
                 "features": self.features.to_dict(), "training": self.training,
                 "calibration": None if self.calibrator is None else self.calibrator.summary(),
                 "ood": None if self.ood is None else self.ood.summary()}
@@ -427,7 +374,7 @@ def calibrate(surrogate: DeviationSurrogate, samples: Sequence[Sample], *,
     rng = np.random.default_rng(seed)
     for s in samples:
         try:
-            mu, sd = surrogate.predict_deviation(s.commanded, s.setup, s.target)
+            mu, sd = surrogate.predict_deviation(s.commanded, s.setup)
             fm = surrogate.feature_maps(s.commanded, s.setup)
         except (ValueError, PrecompError) as exc:
             raise PrecompError(f"sample {s.sample_id}: {exc}") from exc
@@ -458,13 +405,12 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
                     group_by: str = "sample") -> DeviationSurrogate:
     """Fit `model` on `train`, then the envelope, then calibrate on `calibration`.
 
-    The model gets a stratified table (`points_per_sample` per sample, the
-    physics prior's column appended for residual models). `calibration` must hold parts that are not
-    in `train` (checked by part id); without it the surrogate has no
-    intervals. The training provenance - sample and part ids (and a hash),
-    families, sources, the data-source label, the setup fields seen
-    (`setup_envelope`), the prior of a residual model, seed and sizes - is
-    kept in `surrogate.training`.
+    The model gets a stratified table (`points_per_sample` per sample).
+    `calibration` must hold parts that are not in `train` (checked by part
+    id); without it the surrogate has no intervals. The training provenance -
+    sample and part ids (and a hash), families, sources, the data-source
+    label, the setup fields seen (`setup_envelope`), seed and sizes - is kept
+    in `surrogate.training`.
 
     group_by : the groups the model's bootstrap (GBMEnsemble) or
         early-stopping split (MLPEnsemble) draws: "sample" (default) or
@@ -503,10 +449,8 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
         "calibration_sample_ids": sorted(s.sample_id for s in cal),
         "calibration_part_ids": sorted({s.part_id for s in cal}),
         "setup": setup_envelope([s.setup for s in train])}
-    if model_prior(model) is not None:
-        info["prior"] = describe_prior(model_prior(model))
     table = build_table(train, features, points_per_sample=points_per_sample, mask=mask,
-                        rng=seed, stratify=True, prior=model_prior(model), n_jobs=n_jobs)
+                        rng=seed, stratify=True, n_jobs=n_jobs)
     model.fit(table.X, table.y, table.groups if group_by == "sample" else table.part_id,
               feature_names=table.feature_names)
     info["n_rows"] = len(table)
@@ -514,8 +458,8 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
     if envelope:
         reuse = None
         if mask == "part":
-            # the training table's part nodes, without a prior column, thinned
-            # to at most 400 per sample (the envelope keeps 5000 anyway)
+            # the training table's part nodes, thinned to at most 400 per
+            # sample (the envelope keeps 5000 anyway)
             ncol = len(features.names)
             rng = np.random.default_rng(seed + 101)
             keep = np.concatenate([rng.permutation(np.flatnonzero(table.groups == g))[:400]
@@ -548,8 +492,6 @@ def transfer_surrogate(base: DeviationSurrogate, real: Sequence[Sample], *,
     samples, parts and families (so evaluation refuses both), and the real
     calibration ids.
     """
-    if base.kind != "point":
-        raise TypeError("transfer learning is implemented for point models")
     real = list(real)
     cal = list(calibration or [])
     overlap = {s.part_id for s in real} & {s.part_id for s in cal}
@@ -565,7 +507,7 @@ def transfer_surrogate(base: DeviationSurrogate, real: Sequence[Sample], *,
     model = TransferModel(base.model, correction, seed=seed, **correction_kwargs)
     if real:
         table = build_table(real, base.features, points_per_sample=points_per_sample,
-                            mask=base.domain, rng=seed, prior=model_prior(base.model))
+                            mask=base.domain, rng=seed)
         model.fit(table.X, table.y, table.part_id, feature_names=table.feature_names)
     info = dict(base.training)
     info["base"] = {k: base.training.get(k) for k in ("sample_ids_sha256", "n_samples",
@@ -639,5 +581,5 @@ def setup_envelope_union(a: Mapping[str, Any], b: Mapping[str, Any]) -> Dict[str
 
 
 __all__ = ["DeviationSurrogate", "train_surrogate", "transfer_surrogate", "calibrate",
-           "fit_envelope", "model_prior", "setup_envelope", "setup_mismatch", "seen_ids",
-           "describe_prior", "explicit_support_settings", "SURROGATE_FORMAT"]
+           "fit_envelope", "setup_envelope", "setup_mismatch", "seen_ids",
+           "explicit_support_settings", "SURROGATE_FORMAT"]

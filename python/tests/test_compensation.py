@@ -5,8 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from precomp.compensation import (CompositePredictor, SurrogatePredictor,
-                                  displacement_adjustment, limit_wall_angle,
+from precomp.compensation import (SurrogatePredictor, displacement_adjustment, limit_wall_angle,
                                   linear_springback_predictor, smooth_update, update_from_scan)
 from precomp.geometry import Grid, Pyramid, TruncatedCone
 from precomp.metrology import flange_mask, part_mask, rotation_matrix
@@ -119,14 +118,12 @@ class _ConstantModel:
         return -0.1 * commanded.z, np.full(commanded.grid.shape, 1e-5)
 
 
-def test_surrogate_and_composite_predictors(target):
+def test_the_surrogate_predictor(target):
     sp = SurrogatePredictor(_ConstantModel(), setup=None)
     formed, std = sp.predict_with_uncertainty(target)
     assert np.allclose(formed.z, 0.9 * target.z) and np.all(std == 1e-5)
     res = displacement_adjustment(target, sp, iterations=4, max_wall_angle_deg=None)
     assert res.rms_history[-1] < 1e-3 * res.rms_history[0]
-    comp = CompositePredictor(linear_springback_predictor(1.0), _ConstantModel(), None)
-    assert np.allclose(comp(target).z, 0.9 * target.z)
     with pytest.raises(TypeError):
         SurrogatePredictor(object(), None)
 

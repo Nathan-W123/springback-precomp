@@ -8,12 +8,11 @@ the same kind of error.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import math
 import os
 from pathlib import Path
-from typing import Any, Callable, Dict, Union
+from typing import Any, Dict, Union
 
 import numpy as np
 
@@ -121,24 +120,3 @@ def require_nonnegative(name: str, value: float) -> float:
     if not (math.isfinite(v) and v >= 0.0):
         raise ValueError(f"{name} must be a finite number >= 0, got {value!r}")
     return v
-
-
-def takes_target(fn: Callable[..., Any]) -> bool:
-    """Whether `fn` accepts a `target` keyword (by name or through **kwargs)."""
-    try:
-        params = inspect.signature(fn).parameters.values()
-    except (TypeError, ValueError):
-        return False
-    return any(p.name == "target" and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
-               or p.kind is p.VAR_KEYWORD for p in params)
-
-
-def call_with_target(fn: Callable[..., Any], *args: Any, target: Any = None) -> Any:
-    """``fn(*args, target=target)`` when a target is given and `fn` takes
-    one (`takes_target`), else ``fn(*args)``: the target part a support's
-    fixture is made for (`precomp.fea.support`) reaches the predictors and
-    priors that simulate with it, and every other callable keeps its
-    two-argument protocol."""
-    if target is not None and takes_target(fn):
-        return fn(*args, target=target)
-    return fn(*args)

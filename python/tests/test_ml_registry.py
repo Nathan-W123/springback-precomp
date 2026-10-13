@@ -142,22 +142,3 @@ def test_saving_checks_everything_before_touching_a_file(tmp_path, gbm_surrogate
     d2 = save_model(gbm_surrogate, tmp_path / "n", {"created_at": ML_CREATED_AT, "metrics": {
         "held_out": {"coverage_mean": float("nan"), "data_source": "proxy - not physics"}}})
     assert read_manifest(d2)["metrics"]["held_out"]["coverage_mean"] is None
-
-
-def test_a_residual_model_records_its_prior(tmp_path, proxy_split, ml_features):
-    """SparLab-labelled data with the proxy as prior: the manifest says both."""
-    from precomp.ml import GBMEnsemble, ProxySimulator, ResidualModel, Sample, train_surrogate
-
-    sim = [Sample(s.sample_id, s.commanded, s.formed, s.setup, "sim", "sparlab:test", s.kind,
-                  s.part, s.part_id, s.target, None,
-                  {"created_at": ML_CREATED_AT, "sparlab_version": "test", "deck_hash": "h"})
-           for s in proxy_split["train"][:6]]
-    sur = train_surrogate(ResidualModel(ProxySimulator(), GBMEnsemble(2, max_iter=20,
-                                                                      target_scale=None)),
-                          sim, features=ml_features, points_per_sample=100, envelope=False)
-    d = save_model(sur, tmp_path / "r", {"created_at": ML_CREATED_AT})
-    doc = read_manifest(d)
-    assert doc["data_source"] == "SparLab simulation" and doc["target"] == "dz"
-    prior = doc["training"]["prior"]
-    assert prior["name"] == "ProxySimulator" and prior["data_source"] == "proxy - not physics"
-    assert load_model(d).describe()["prior"]["data_source"] == "proxy - not physics"

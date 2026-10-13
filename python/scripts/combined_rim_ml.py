@@ -335,7 +335,7 @@ def combined(ctx: Ctx, sel: pd.DataFrame, max_time: float) -> Dict[str, Any]:
                               "max_abs_change_from_da_mm":
                                   float(np.abs(comp.z - dres.compensated.z).max()) / MM}}
         # the transfer model's prediction for the UNCOMPENSATED target (rim pass)
-        mu, _ = sur.predict_deviation(target, ctx.setup, target)
+        mu, _ = sur.predict_deviation(target, ctx.setup)
         info["target_predicted"] = {k: v for k, v in sv.deviation(
             target.with_z(target.z + mu), target, ctx.cfg["upper_band_depth"]).items()
             if k in COLS}

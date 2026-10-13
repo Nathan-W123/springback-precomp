@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .._util import PathLike, PrecompError, call_with_target, to_jsonable, write_json
+from .._util import PathLike, PrecompError, to_jsonable, write_json
 from ..compensation import SurrogatePredictor as _BaseSurrogatePredictor
 from ..compensation import _condition, displacement_adjustment, smooth_update
 from ..geometry.heightmap import HeightMap
@@ -51,8 +51,8 @@ class SurrogatePredictor(_BaseSurrogatePredictor):
     """`precomp.compensation.SurrogatePredictor` that keeps the std map of its
     last prediction (`last_std`, [m]) and counts its calls."""
 
-    def __init__(self, model: Any, setup: Any, target: Optional[HeightMap] = None):
-        super().__init__(model, setup, target)
+    def __init__(self, model: Any, setup: Any):
+        super().__init__(model, setup)
         self.last_std: Optional[np.ndarray] = None
         self.calls = 0
 
@@ -198,7 +198,7 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
             f"{ood_t['part_score']:.3g}): the surrogate would extrapolate. Train on such parts, "
             "or pass allow_out_of_envelope=True (--allow-out-of-envelope) to compensate "
             "anyway")
-    pred = SurrogatePredictor(surrogate, setup, target)
+    pred = SurrogatePredictor(surrogate, setup)
     cal = getattr(surrogate, "calibrator", None)
     can_interval = (hasattr(surrogate, "predict_interval") and cal is not None
                     and cal.fitted and cal.supports(level))
@@ -239,8 +239,7 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
             stopped = "tolerance"
             break
         if interval_stop and can_interval:
-            lo, hi = call_with_target(surrogate.predict_interval, da.commanded, setup, level,
-                                      target=target)
+            lo, hi = surrogate.predict_interval(da.commanded, setup, level)
             hw = float(np.sqrt(np.mean((0.5 * (hi - lo))[pm] ** 2)))
             h["interval_halfwidth_rms_m"] = hw
             if rms <= hw:
@@ -263,8 +262,7 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
                              model_data_source=getattr(surrogate, "data_source", None))
     interval = None
     if can_interval:
-        lo, hi = call_with_target(surrogate.predict_interval, comp, setup, level,
-                                  target=target)
+        lo, hi = surrogate.predict_interval(comp, setup, level)
         interval = (residual.with_z(comp.z + lo - target.z),
                     residual.with_z(comp.z + hi - target.z))
     ood = verdicts.get(kbest) if has_env else None
@@ -424,7 +422,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
     region = adjust & ~hold
     B = correction_basis(target, region, level_knots, angular_orders, basis_smoothing)
     n = B.shape[0]
-    pred = SurrogatePredictor(surrogate, setup, target)
+    pred = SurrogatePredictor(surrogate, setup)
     pm = part_mask(target)
     sel: Optional[np.ndarray] = None
 
@@ -555,8 +553,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
     interval = None
     if (hasattr(surrogate, "predict_interval") and cal is not None and cal.fitted
             and cal.supports(level)):
-        lo, hi = call_with_target(surrogate.predict_interval, comp, setup, level,
-                                  target=target)
+        lo, hi = surrogate.predict_interval(comp, setup, level)
         interval = (residual.with_z(comp.z + lo - target.z),
                     residual.with_z(comp.z + hi - target.z))
     return SurrogateCompensation(target, comp, cur["formed"], residual, interval, cur["std"],

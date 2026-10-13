@@ -11,8 +11,8 @@ import pytest
 from conftest import ML_CREATED_AT
 from precomp._util import PrecompError
 from precomp.materials import get_material
-from precomp.ml import (GBMEnsemble, ProxySimulator, ResidualModel, build_table,
-                        evaluate_surrogate, simulate_samples, train_surrogate, transfer_surrogate)
+from precomp.ml import (GBMEnsemble, ProxySimulator, build_table,
+                        evaluate_surrogate, simulate_samples, transfer_surrogate)
 from precomp.ml.generate import DesignSpace, design_points
 from precomp.ml.surrogate import calibrate
 from ml_support import partition_coverage
@@ -201,24 +201,6 @@ def test_transfer_does_not_make_the_base_worse_when_real_equals_simulation(
     for n in (2, 3):
         t = transfer_surrogate(base, real[:n], points_per_sample=400, seed=0)
         assert _err(t.model, tb) <= 1.05 * _err(base.model, tb), t.training["transfer"]
-
-
-def test_residual_model_learns_what_its_prior_misses(proxy_split, shifted_samples, ml_features):
-    """A proxy prior of the wrong strength plus a GBM on the residual: the
-    hybrid path. On the shifted data it beats the prior alone by far."""
-    prior = ProxySimulator()
-    model = ResidualModel(prior, GBMEnsemble(2, max_iter=60, target_scale=None))
-    sur = train_surrogate(model, shifted_samples[:8], features=ml_features,
-                          points_per_sample=300, envelope=False)
-    assert sur.feature_names[-1] == "prior_dz"
-    err_prior, err_hyb = [], []
-    for s in shifted_samples[8:]:
-        sel = s.commanded.z < -1e-6
-        mu, _ = sur.predict_deviation(s.commanded, s.setup)
-        err_hyb.append(np.sqrt(np.mean((mu - s.dz)[sel] ** 2)))
-        err_prior.append(np.sqrt(np.mean((prior.deviation(s.commanded, s.setup) - s.dz)[sel]
-                                         ** 2)))
-    assert np.mean(err_hyb) < 0.5 * np.mean(err_prior)
 
 
 def test_gbm_is_deterministic_and_validates_its_input():

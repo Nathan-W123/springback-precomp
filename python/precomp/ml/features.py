@@ -62,8 +62,6 @@ KINDS = ("local", "placement", "global", "process", "material")
 #: Region codes returned by `region_labels` (index = code).
 REGION_NAMES = ("flange", "rim", "wall", "base")
 
-#: Name of the extra column a physics prior adds (see models.ResidualModel).
-PRIOR_FEATURE = "prior_dz"
 
 #: Plastic strains [-] at which the flow stress is reported.
 FLOW_STRAINS = (0.2, 0.5)
@@ -75,7 +73,7 @@ BACKSTRESS_STRAIN = 0.5
 @dataclass(frozen=True)
 class FeatureSpec:
     """One feature: `name`, `unit` ("m", "rad", "Pa", "-", ...), a one-line
-    `description` and its `kind` (one of KINDS, or "prior")."""
+    `description` and its `kind` (one of KINDS)."""
 
     name: str
     unit: str
