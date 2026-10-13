@@ -16,7 +16,7 @@ import pytest
 from precomp import PrecompError
 from precomp._util import canonical_json, read_json, sha256_bytes
 from precomp.compensation import FEAPredictor, displacement_adjustment
-from precomp.fea import FormingSetup, build_deck, deck_document, deck_hash, load_result, simulate
+from precomp.fea import FormingSetup, build_deck, deck_document, deck_hash, simulate
 from precomp.fea.support import (COMMAND_TOLERANCE, PLATE_TOOL, SUPPORT_PATH_FILE, SUPPORT_TOOL,
                                  bottom_node_grid, check_command, command_upper_bound,
                                  compensation_masks, outline_distance, part_distance,
@@ -523,11 +523,10 @@ def _runs(work):
 def test_the_fe_prior_and_predict_form_on_the_targets_plate(tmp_path, base, cone, counter):
     """A compensated command (its rim raised to the plane: a smaller outline)
     is formed on the plate made for the target wherever a simulation sees
-    it with the target: api.predict ("fea"; "hybrid" likewise), the FE prior
+    it with the target: FEAPredictor (the FE-DA predictor), the FE prior
     of a hybrid model in its training table (each sample's target, as the
     label run had) and in prediction (compensate's predictor). Without the
     target the command's own, different plate is used."""
-    from precomp import api
     from precomp.compensation import SurrogatePredictor
     from precomp.ml import FEAPrior, GBMEnsemble, ResidualModel, Sample, train_surrogate
     from precomp.ml.dataset import sample_table
@@ -537,9 +536,9 @@ def test_the_fe_prior_and_predict_form_on_the_targets_plate(tmp_path, base, cone
     comp = cone.with_z(np.where(sd > -1.5e-3, 0.0, cone.z))
     plate = plate_nodes(setup, cone)[0]
     assert plate_nodes(setup, comp)[0] != plate                    # the outlines differ
-    api.predict(comp, setup, method="fea", work_dir=tmp_path / "api", target=cone)
+    FEAPredictor(setup, tmp_path / "api", target=cone)(comp)
     assert _runs(tmp_path / "api") == [("target", plate)]
-    api.predict(comp, setup, method="fea", work_dir=tmp_path / "own")
+    FEAPredictor(setup, tmp_path / "own")(comp)
     assert _runs(tmp_path / "own") == [("commanded", plate_nodes(setup, comp)[0])]
     FEAPrior(str(tmp_path / "prior")).prior_deviation(comp, setup, target=cone)
     assert _runs(tmp_path / "prior") == [("target", plate)]
@@ -620,7 +619,6 @@ def test_a_scan_update_adjusts_the_strip_the_rim_pass_sweeps(tmp_path, base, con
     """update_from_scan takes the masks and the bound of displacement
     adjustment, so a measured part gives the command FE-DA would: the swept
     flange strip adjusted, the rim raised where the rim pass reaches."""
-    from precomp.cli import main
     from precomp.compensation import update_from_scan
 
     rim = base.replace(support="dsif", support_settings={"rim_pass": True, "radius": 1.5e-3})
@@ -636,42 +634,3 @@ def test_a_scan_update_adjusts_the_strip_the_rim_pass_sweeps(tmp_path, base, con
     held, _ = update_from_scan(cone, scan, cone, upper_bound=bound)   # the whole flange held
     fl = flange_mask(cone)
     assert np.array_equal(held.z[fl], cone.z[fl]) and held.z.max() < 0.1 * new.z.max()
-    # the command line, given the next run's setup
-    rim_json = tmp_path / "rim.json"
-    rim_json.write_text(json.dumps(rim.to_dict()))
-    cone.save(tmp_path / "t.npz")
-    scan.save(tmp_path / "scan.npz")
-    X, Y = scan.grid.mesh()
-    pts = np.column_stack([X.ravel(), Y.ravel(), scan.z.ravel()])
-    np.savetxt(tmp_path / "scan.xyz", pts)
-    for extra, out in (([], "plain.npz"), (["--setup", str(rim_json)], "rim.npz")):
-        assert main(["scan", "update", "--scan", str(tmp_path / "scan.xyz"), "--commanded",
-                     str(tmp_path / "t.npz"), "--target", str(tmp_path / "t.npz"),
-                     "--align", "none", "--out", str(tmp_path / out)] + extra) == 0
-    plain = HeightMap.load(tmp_path / "plain.npz")
-    supported = HeightMap.load(tmp_path / "rim.npz")
-    assert plain.z.max() <= 0.0 and supported.z.max() > 3e-4
-    check_command(rim, supported, cone)
-
-
-def test_the_command_line_writes_and_simulates_a_supported_setup(tmp_path, base, cone, counter,
-                                                                 capsys):
-    from precomp.cli import main
-
-    out = tmp_path / "setup.json"
-    assert main(["setup", "--out", str(out), "--set", "blank_size=0.04",
-                 "clamp_margin=0.005", "element_size=0.002", "tool_radius=0.004",
-                 "step_down=0.001", "support=backing_plate",
-                 'support_settings={"clearance": 0.002}',
-                 f"executable={base.executable}"]) == 0
-    doc = read_json(out)
-    assert doc["support"] == "backing_plate" and doc["support_settings"] == {"clearance": 0.002}
-    cone.save(tmp_path / "target.npz")
-    capsys.readouterr()
-    assert main(["simulate", "--setup", str(out), "--commanded", str(tmp_path / "target.npz"),
-                 "--target", str(tmp_path / "target.npz"),
-                 "--work-dir", str(tmp_path / "w")]) == 0
-    res = json.loads(capsys.readouterr().out)
-    prov = read_json(Path(res["result"]).parent / "precomp_deck.json")
-    assert prov["support"]["outline_from"] == "target"
-    assert prov["support"]["plate"]["clearance_m"] == 0.002

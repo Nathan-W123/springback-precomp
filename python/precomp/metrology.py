@@ -556,8 +556,7 @@ def signed_deviation(formed: Union[HeightMap, np.ndarray], target: HeightMap, *,
       invalid. The plane misses a surface of curvature kappa by about
       kappa s^2 / 2 at point spacing s - a few um on gently curved walls,
       tens of um in tight fillets - so for dense scans gridding the cloud
-      first (`HeightMap.from_points`, as `api.compare_scan` does) is the
-      more accurate route.
+      first (`HeightMap.from_points`) is the more accurate route.
 
     `max_distance` [m] invalidates larger |s|; `mask` (ny, nx) restricts the
     nodes. The result is on the target grid, metadata {"quantity":

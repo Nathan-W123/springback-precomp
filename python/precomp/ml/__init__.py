@@ -20,14 +20,11 @@ surrogate    DeviationSurrogate (model + features + calibration + envelope),
 registry     save_model / load_model: bundles with manifests
 evaluate     held-out, cross-validated and leave-family-out evaluation
 compensate   surrogate displacement adjustment, surrogate_optimize, verify_with_fea
-active       ranking of candidate parts for the next simulations
-cli          `precomp dataset|train|evaluate|active`
 
 Every metric states its data source: "SparLab simulation", "proxy - not
 physics" or "scan". torch is needed only for MLPEnsemble.
 """
 
-from .active import Candidate, rank_candidates
 from .compensate import (SurrogateCompensation, SurrogatePredictor, correction_basis,
                          surrogate_compensate, surrogate_optimize, verify_with_fea,
                          verify_with_simulator)
@@ -60,5 +57,4 @@ __all__ = [
     "EvaluationReport", "evaluate_surrogate", "cross_validate", "family_holdout",
     "SurrogatePredictor", "SurrogateCompensation", "surrogate_compensate",
     "surrogate_optimize", "correction_basis", "verify_with_fea", "verify_with_simulator",
-    "Candidate", "rank_candidates",
 ]

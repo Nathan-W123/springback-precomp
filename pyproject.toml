@@ -23,9 +23,6 @@ dependencies = [
 torch = ["torch>=2.0"]
 dev = ["pytest>=7"]
 
-[project.scripts]
-precomp = "precomp.cli:main"
-
 [tool.setuptools]
 package-dir = { "" = "python" }
 

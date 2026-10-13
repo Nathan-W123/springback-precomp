@@ -190,7 +190,7 @@ class ProxySimulator:
 
     source = "proxy"
     label = PROXY_LABEL
-    #: as a model or prior (`precomp.api`, ResidualModel): what its numbers are
+    #: as a model or prior (ResidualModel): what its numbers are
     data_source = PROXY_LABEL
 
     def __init__(self, params: Optional[ProxyParams] = None, *, check_toolpath: bool = True,

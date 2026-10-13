@@ -2,7 +2,7 @@
 
 The Python layer around the SparLab forming solver: part geometry, tool paths,
 the forming deck and its results, scan metrology, displacement-adjustment
-compensation, robot compliance and reporting. Machine-learned surrogates live
+compensation and robot compliance. Machine-learned surrogates live
 in `precomp.ml`, which is built on the public API of the modules below.
 
 Units are strict SI everywhere (m, N, Pa, s), as in SparLab
@@ -25,9 +25,6 @@ metrology     point-cloud readers, robust point-to-plane ICP, signed normal
 compensation  displacement adjustment over any predictor, the one-step update
               from a scan, predictor adapters
 robot         Cartesian compliance of the robot and path pre-compensation
-api           predict / compensate / compare_scan
-cli           the `precomp` command
-report        deviation maps, histograms, profiles and a Markdown report
 """
 
 from __future__ import annotations

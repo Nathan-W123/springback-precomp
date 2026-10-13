@@ -3,7 +3,7 @@
 `DeviationSurrogate` wraps a trained point model with the feature
 configuration it was trained under, its conformal calibrator and its OOD
 envelope, and states the data source it learned from. It implements what
-`precomp.compensation` and `precomp.api` expect of a model:
+`precomp.compensation` and `precomp.ml.compensate` expect of a model:
 
 * ``predict_deviation(commanded, setup) -> (mean, std)`` - dz [m] at every
   node of the commanded grid;
@@ -16,7 +16,7 @@ envelope, and states the data source it learned from. It implements what
 What it predicts (`target`, "dz") is the TOTAL vertical deviation of the
 formed surface from the commanded one - also for a ResidualModel, whose
 prior is evaluated inside the model - never a residual over a simulation, so
-it must not be added to one (`precomp.api` refuses method "hybrid" with it).
+it must not be added to one.
 
 A point model is trained on the nodes of `domain` ("part" by default); it is
 evaluated at every node so the formed surface is defined everywhere, but only
@@ -53,7 +53,7 @@ SURROGATE_FORMAT = "precomp.ml.DeviationSurrogate/1"
 FEATURE_SETUP_FIELDS = ("material", "thickness", "tool_radius", "step_down", "friction")
 #: Fields that are labels, not physics.
 LABEL_SETUP_FIELDS = ("name",)
-#: Process fields whose training ranges `precomp active` draws candidates from.
+#: Process fields whose training ranges the envelope records.
 PROCESS_FIELDS = ("tool_radius", "step_down", "thickness", "friction")
 
 

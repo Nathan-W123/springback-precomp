@@ -6,13 +6,12 @@ import json
 import numpy as np
 import pytest
 
-from conftest import ML_CREATED_AT, run_count
-from precomp import api
+from conftest import run_count
 from precomp._util import PrecompError
 from precomp.fea import FormingSetup
 from precomp.geometry import Grid, TruncatedCone
 from precomp.materials import get_material
-from precomp.ml import (ProxySimulator, save_model, surrogate_compensate, verify_with_fea,
+from precomp.ml import (ProxySimulator, surrogate_compensate, verify_with_fea,
                         verify_with_simulator)
 
 
@@ -95,11 +94,9 @@ def test_the_envelope_is_enforced(gbm_surrogate, proxy_split):
     assert len(res.history) == 2 and res.history[-1]["predicted"] is False
 
 
-def test_verification_through_sparlab_form_and_the_api(tmp_path, gbm_surrogate, fake_solver,
-                                                       counter):
+def test_verification_through_sparlab_form(tmp_path, gbm_surrogate, fake_solver, counter):
     """The plumbing of the SparLab check, with the test double (formed = 0.9 x
-    commanded): the record names the solver build and the deck, and a bundle
-    directory is accepted by precomp.api and the command line."""
+    commanded): the record names the solver build and the deck."""
     setup = FormingSetup(get_material("AA5754-O"), executable=str(fake_solver), layers=1,
                          element_size=4e-3, clamp_margin=0.02, step_down=1.5e-3,
                          toolpath_spacing=3e-3)
@@ -119,27 +116,6 @@ def test_verification_through_sparlab_form_and_the_api(tmp_path, gbm_surrogate, 
     # the prediction
     assert v["achieved_part_rms_m"] > 5 * v["predicted_part_rms_m"]
     assert v["uncompensated"]["vertical_deviation"]["part"]["rms"] > 0
-    d = save_model(gbm_surrogate, tmp_path / "model", {"created_at": ML_CREATED_AT})
-    with pytest.raises(PrecompError, match="outside the model's training envelope"):
-        api.compensate(target, setup, str(d), method="surrogate", iterations=2,
-                       work_dir=tmp_path / "runs")
-    r = api.compensate(target, setup, str(d), method="surrogate", iterations=2,
-                       work_dir=tmp_path / "runs", allow_out_of_envelope=True)
-    assert r.ood is not None and r.interval is not None and r.verification["source"] == "fea"
-    assert r.in_envelope is False and r.verified is not None
-    assert r.model_data_source == "proxy - not physics"
-    assert all(h["predicted"] and "in_envelope" in h for h in r.history)
-    doc = json.loads((r.save(tmp_path / "api") / "compensation.json").read_text())
-    assert doc["model_data_source"] == "proxy - not physics" and doc["in_envelope"] is False
-    assert (tmp_path / "api" / "verified.npz").is_file()
-    p = api.predict(target, setup, d, method="surrogate")
-    assert p.details["model_data_source"] == "proxy - not physics" and p.std is not None
-    # a bundle predicts the total dz: adding it to a simulation counts springback twice
-    with pytest.raises(ValueError, match="counted twice"):
-        api.predict(target, setup, d, method="hybrid", work_dir=tmp_path / "runs")
-    # the proxy as a model says what it is
-    q = api.predict(target, setup, ProxySimulator(), method="surrogate")
-    assert q.details["model_data_source"] == "proxy - not physics"
 
 
 def test_surrogate_compensation_passes_the_conditioning_on(gbm_surrogate, proxy_split):

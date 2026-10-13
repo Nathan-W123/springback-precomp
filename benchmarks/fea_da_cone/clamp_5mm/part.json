@@ -1,8 +1,0 @@
-{
-  "bottom_fillet": 0.002,
-  "depth": 0.003,
-  "family": "truncated_cone",
-  "top_fillet": 0.002,
-  "top_radius": 0.009,
-  "wall_angle_deg": 45
-}
