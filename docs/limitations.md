@@ -48,12 +48,12 @@ What it does not do:
 * the backward-Euler return is first-order accurate on a non-proportional
   path, whatever the law;
 * no purely elastic model at large rotation or strain: `finite` and
-  `finite_logarithmic` kinematics take elastoplastic materials only (every
-  material and material region needs a `plasticity` block; an elastic one
-  is refused), and an elastic material runs with `small_strain` kinematics
-  only, as linear elasticity. The elastic large-strain laws (Saint
-  Venant-Kirchhoff, neo-Hookean) and their deck key `forming.material_model`
-  were removed.
+  `finite_logarithmic` kinematics take elastoplastic materials only (the
+  material of every element, after `material_regions`, needs a `plasticity`
+  block; an element of elastic material is refused), and an elastic
+  material runs with `small_strain` kinematics only, as linear elasticity.
+  The elastic large-strain laws (Saint Venant-Kirchhoff, neo-Hookean) and
+  their deck key `forming.material_model` were removed.
 
 **No temperature.** The material block still accepts thermal expansion,
 reference temperature and conductivity (precomp writes them), but the forming
