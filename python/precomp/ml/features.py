@@ -557,21 +557,6 @@ def feature_maps(commanded: HeightMap, setup: Union[FormingSetup, Mapping[str, A
     return FeatureMaps(values, names, config, part, region)
 
 
-def point_features(commanded: HeightMap, setup: Union[FormingSetup, Mapping[str, Any]],
-                   toolpath: Optional[Toolpath] = None, points: Any = None, *,
-                   config: FeatureConfig = DEFAULT_CONFIG) -> Tuple[np.ndarray, List[str]]:
-    """Feature matrix X (n, F) and the feature names.
-
-    points : None for every node (row-major, x fastest), a boolean mask of the
-        grid shape, an integer array of flat node indices, or an (n, 2) array
-        of x, y [m] (bilinear interpolation of the feature maps).
-    toolpath : the path of the commanded surface, for time_frac with
-        `config.time_source == "toolpath"` (built from the setup when None).
-    """
-    fm = feature_maps(commanded, setup, toolpath, config)
-    return fm.gather(points, commanded.grid), list(fm.names)
-
-
 def region_labels(commanded: HeightMap, setup: Union[FormingSetup, Mapping[str, Any]],
                   config: FeatureConfig = DEFAULT_CONFIG, *, part: Optional[np.ndarray] = None,
                   rim_dist: Optional[np.ndarray] = None) -> np.ndarray:

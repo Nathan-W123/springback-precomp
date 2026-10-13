@@ -1,18 +1,17 @@
-"""Surrogate compensation, verified by the ProxySimulator (NOT physics) and,
-for the plumbing of the SparLab path, by the test-double solver."""
+"""Surrogate compensation, checked by forming with the ProxySimulator (NOT
+physics)."""
 
 import json
 
 import numpy as np
 import pytest
 
-from conftest import run_count
 from precomp._util import PrecompError
 from precomp.fea import FormingSetup
 from precomp.geometry import Grid, TruncatedCone
 from precomp.materials import get_material
-from precomp.ml import (ProxySimulator, surrogate_compensate, verify_with_fea,
-                        verify_with_simulator)
+from precomp.metrology import metrics, region_masks, vertical_deviation
+from precomp.ml import ProxySimulator, surrogate_compensate
 
 
 def test_surrogate_compensation_cuts_the_verified_deviation_by_a_large_factor(
@@ -22,6 +21,7 @@ def test_surrogate_compensation_cuts_the_verified_deviation_by_a_large_factor(
     against forming the target itself (both measured by the proxy)."""
     parts = [s for s in proxy_split["test"] if s.kind == "uncompensated"
              and gbm_surrogate.assess(s.target, s.setup)["in_envelope"]][:3]
+    proxy = ProxySimulator()
     factors = []
     for s in parts:
         res = surrogate_compensate(s.target, s.setup, gbm_surrogate, iterations=6)
@@ -34,9 +34,13 @@ def test_surrogate_compensation_cuts_the_verified_deviation_by_a_large_factor(
         assert all(h["in_envelope"] for h in res.history)
         pm = res.predicted_metrics()
         assert pm["interval_halfwidth_mean_m"] > 0 and pm["interval_level"] == 0.9
-        v = verify_with_simulator(res, s.setup, ProxySimulator())
-        assert v["data_source"] == "proxy - not physics" and res.verification is v
-        factors.append(v["improvement_factor"])
+        part = region_masks(s.target)["part"]
+
+        def rms(commanded):    # vertical deviation of the proxy-formed part from the target
+            dev = vertical_deviation(proxy.formed(commanded, s.setup), s.target)
+            return metrics(dev, part & dev.mask)["rms"]
+
+        factors.append(rms(s.target) / rms(res.compensated))
     assert min(factors) > 2.5 and np.median(factors) > 4.0, factors
 
 
@@ -94,28 +98,18 @@ def test_the_envelope_is_enforced(gbm_surrogate, proxy_split):
     assert len(res.history) == 2 and res.history[-1]["predicted"] is False
 
 
-def test_verification_through_sparlab_form(tmp_path, gbm_surrogate, fake_solver, counter):
-    """The plumbing of the SparLab check, with the test double (formed = 0.9 x
-    commanded): the record names the solver build and the deck."""
-    setup = FormingSetup(get_material("AA5754-O"), executable=str(fake_solver), layers=1,
-                         element_size=4e-3, clamp_margin=0.02, step_down=1.5e-3,
-                         toolpath_spacing=3e-3)
+def test_a_setup_outside_the_training_envelope_is_refused_unless_allowed(gbm_surrogate):
+    """Surrogate DA refuses a setup the model was not trained on (one layer, 4 mm
+    elements, 1.5 mm steps), unless allowed - and then says so."""
+    setup = FormingSetup(get_material("AA5754-O"), layers=1, element_size=4e-3,
+                         clamp_margin=0.02, step_down=1.5e-3, toolpath_spacing=3e-3)
     target = TruncatedCone(0.045, 45.0, 0.015, 0.005, 0.005).heightmap(
         Grid.centered(setup.meshed_blank_size, 4e-3))
-    # the double's setup (one layer, 4 mm elements, 1.5 mm steps) is not the
-    # training setup: refused, unless allowed - this test is about the plumbing
     with pytest.raises(PrecompError, match="setup.layers"):
         surrogate_compensate(target, setup, gbm_surrogate, iterations=3)
     res = surrogate_compensate(target, setup, gbm_surrogate, iterations=3,
                                allow_out_of_envelope=True)
-    v = verify_with_fea(res, setup, tmp_path / "runs", max_workers=1)
-    assert v["data_source"] == "SparLab simulation" and "test double" in v["sparlab_version"]
-    assert len(v["deck_hash"]) == 64 and run_count(counter) == 2
-    # the double springs back 10 % of the depth, the proxy-trained model
-    # predicted otherwise: the check exposes the mismatch instead of echoing
-    # the prediction
-    assert v["achieved_part_rms_m"] > 5 * v["predicted_part_rms_m"]
-    assert v["uncompensated"]["vertical_deviation"]["part"]["rms"] > 0
+    assert res.in_envelope is False and res.compensated.grid.matches(target.grid)
 
 
 def test_surrogate_compensation_passes_the_conditioning_on(gbm_surrogate, proxy_split):

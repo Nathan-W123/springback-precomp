@@ -25,12 +25,8 @@ the DA command it searches a smooth, low-dimensional correction field (depth
 level x angle) that minimises the predicted deviation over the part, under
 the same constraints and the envelope, with a penalty on the model's std.
 
-A prediction is not a result. `verify_with_fea` simulates the compensated
-shape with sparlab_form and reports the achieved deviation from the target
-(and, optionally, that of the uncompensated target for the improvement
-factor): the check to run before trusting a surrogate compensation.
-`verify_with_simulator` does the same through any `Simulator`, e.g. the
-ProxySimulator for CI - labelled "proxy - not physics".
+A prediction is not a result: the workflow simulates every compensated shape
+with sparlab_form before reporting it (python/scripts/combined_rim_ml.py).
 """
 
 from __future__ import annotations
@@ -47,9 +43,7 @@ from ..compensation import SurrogatePredictor as _BaseSurrogatePredictor
 from ..compensation import _condition, displacement_adjustment, smooth_update
 from ..geometry.heightmap import HeightMap
 from ..geometry.parts import MAX_WALL_ANGLE_DEG
-from ..metrology import (flange_mask, metrics, part_mask, region_masks, signed_deviation,
-                         vertical_deviation)
-from .dataset import SOURCE_LABELS
+from ..metrology import flange_mask, metrics, part_mask, vertical_deviation
 from .features import as_setup
 
 
@@ -84,7 +78,8 @@ class SurrogateCompensation:
     "left_envelope" or "iterations" (`surrogate_compensate`), "optimizer"
     (`surrogate_optimize`). data_source : what the model learned
     from.
-    verification : filled by `verify_with_fea` / `verify_with_simulator`.
+    verification : a record of a check simulation, when the caller made one
+        (saved with the result; None otherwise).
     allowed_out_of_envelope : whether the envelope was overridden.
     """
 
@@ -351,7 +346,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
                        da_kwargs: Optional[Dict[str, Any]] = None) -> SurrogateCompensation:
     """Search the commanded surface whose PREDICTED formed surface is closest
     to `target`, starting from a surrogate DA result: a prediction, not a
-    result (verify it, `verify_with_fea`).
+    result (verify it with a simulation).
 
     DA corrects each node by its own predicted error, so it cannot trade a
     change in one place for an effect in another (a deeper wall that pulls
@@ -570,76 +565,5 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
                                  allowed_out_of_envelope=bool(allow_out_of_envelope))
 
 
-def _deviation_report(formed: HeightMap, target: HeightMap,
-                      tolerance: Optional[float]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    vert = vertical_deviation(formed, target)
-    norm = signed_deviation(formed, target)
-    for key, dev in (("vertical_deviation", vert), ("normal_deviation", norm)):
-        out[key] = {}
-        for name, m in region_masks(target).items():
-            sel = m & dev.mask
-            if sel.any():
-                out[key][name] = metrics(dev, sel, tolerance)
-    return out
-
-
-def verify_with_simulator(result: SurrogateCompensation, setup: Any, simulator: Any, *,
-                          uncompensated: bool = True, tolerance: Optional[float] = None
-                          ) -> Dict[str, Any]:
-    """Form the compensated surface with `simulator` (a `generate.Simulator`)
-    and measure the achieved deviation from the target, per region, vertical
-    and normal [m]; with `uncompensated` also form the target itself and
-    report the improvement factor (uncompensated / compensated RMS vertical
-    deviation over the part). The record states its data source and is stored
-    in `result.verification`."""
-    from .generate import sim_job
-
-    setup = as_setup(setup)
-    jobs = [sim_job(setup, result.compensated, result.target)]
-    if uncompensated:
-        jobs.append(sim_job(setup, result.target, result.target))
-    outcomes = simulator.run(jobs)
-    for oc in outcomes:
-        if not oc.ok:
-            raise PrecompError(f"verification run failed: {oc.error}")
-    source = outcomes[0].provenance.get("source", getattr(simulator, "source", "sim"))
-    rec: Dict[str, Any] = {"data_source": SOURCE_LABELS.get(source, source),
-                           "simulator": outcomes[0].provenance.get("fidelity"),
-                           "compensated": _deviation_report(outcomes[0].formed, result.target,
-                                                            tolerance)}
-    for key in ("sparlab_version", "deck_hash", "runtime_s", "cache_hit"):
-        if key in outcomes[0].provenance:
-            rec[key] = outcomes[0].provenance[key]
-    if uncompensated:
-        rec["uncompensated"] = _deviation_report(outcomes[1].formed, result.target, tolerance)
-        a = rec["uncompensated"]["vertical_deviation"]["part"]["rms"]
-        b = rec["compensated"]["vertical_deviation"]["part"]["rms"]
-        rec["improvement_factor"] = a / b if b > 0 else float("inf")
-        if "deck_hash" in outcomes[1].provenance:
-            rec["uncompensated_deck_hash"] = outcomes[1].provenance["deck_hash"]
-    pred = result.predicted_metrics(tolerance)["rms"]
-    rec["predicted_part_rms_m"] = pred
-    rec["achieved_part_rms_m"] = rec["compensated"]["vertical_deviation"]["part"]["rms"]
-    result.verification = rec
-    return rec
-
-
-def verify_with_fea(result: SurrogateCompensation, setup: Any, work_dir: PathLike, *,
-                    uncompensated: bool = True, tolerance: Optional[float] = None,
-                    max_workers: int = 2) -> Dict[str, Any]:
-    """`verify_with_simulator` with sparlab_form through the run cache in
-    `work_dir` (data source "SparLab simulation", with the solver version
-    and deck hash)."""
-    from .generate import SparlabSimulator
-
-    return verify_with_simulator(result, setup,
-                                 SparlabSimulator(work_dir, max_workers=max_workers,
-                                                  executor="serial" if max_workers == 1
-                                                  else "process"),
-                                 uncompensated=uncompensated, tolerance=tolerance)
-
-
 __all__ = ["SurrogatePredictor", "SurrogateCompensation", "surrogate_compensate",
-           "surrogate_optimize", "correction_basis", "verify_with_fea",
-           "verify_with_simulator"]
+           "surrogate_optimize", "correction_basis"]

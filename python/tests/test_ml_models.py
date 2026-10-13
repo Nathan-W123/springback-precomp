@@ -15,7 +15,8 @@ from precomp.ml import (GBMEnsemble, ProxySimulator, ResidualModel, build_table,
                         evaluate_surrogate, simulate_samples, train_surrogate, transfer_surrogate)
 from precomp.ml.generate import DesignSpace, design_points
 from precomp.ml.surrogate import calibrate
-from precomp.ml.uncertainty import ConformalCalibrator, min_parts, partition_coverage
+from ml_support import partition_coverage
+from precomp.ml.uncertainty import ConformalCalibrator, min_parts
 
 
 def _held_out_arrays(sur, samples):

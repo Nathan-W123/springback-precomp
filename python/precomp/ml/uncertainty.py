@@ -42,7 +42,6 @@ import math
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
-import pandas as pd
 
 from .._util import PrecompError
 from .features import REGION_NAMES
@@ -253,100 +252,4 @@ class ConformalCalibrator:
         return c
 
 
-def intervals(mu: np.ndarray, std: np.ndarray, level: float, calibrator: ConformalCalibrator,
-              region: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
-    """(lower, upper) of dz [m] at `level` from a fitted calibrator."""
-    return calibrator.intervals(mu, std, level, region)
-
-
-def partition_coverage(mu: np.ndarray, std: np.ndarray, y: np.ndarray, groups: np.ndarray, *,
-                       level: float, n_partitions: int = 50, calibration_fraction: float = 0.5,
-                       seed: int = 0, **calibrator_kwargs: Any) -> Dict[str, float]:
-    """Coverage of repeated split-conformal calibration over whole parts.
-
-    The held-out parts (`groups`, part ids) are split at random
-    `n_partitions` times into calibration and test parts; each time a
-    calibrator is fitted on the calibration parts and measured on the test
-    parts: the mean over test parts of each part's coverage (what the
-    guarantee is about: its expectation is >= level), the share of test
-    parts covered at >= level, the worst part, and the mean width - also for
-    the constant-width baseline calibrated on the same parts, so a std that
-    carries no information shows as a width ratio near or above 1.
-    """
-    mu, std, y = (np.asarray(a, dtype=float).ravel() for a in (mu, std, y))
-    groups = np.asarray(groups).astype(str).ravel()
-    uniq = np.unique(groups)
-    if uniq.size < 4:
-        raise ValueError("partition_coverage needs at least four parts")
-    rng = np.random.default_rng(seed)
-    n_cal = int(min(max(2, round(calibration_fraction * uniq.size)), uniq.size - 2))
-    if n_cal < min_parts(level):
-        raise PrecompError(f"{n_cal} calibration parts per partition cannot support level "
-                           f"{level:g} (needs {min_parts(level)}); raise calibration_fraction "
-                           "or hold out more parts")
-    rows = []
-    for _ in range(int(n_partitions)):
-        cal = np.isin(groups, rng.permutation(uniq)[:n_cal])
-        c = ConformalCalibrator(**calibrator_kwargs).fit(mu[cal], std[cal], y[cal],
-                                                         groups[cal])
-        lo, hi = c.intervals(mu[~cal], std[~cal], level)
-        q0 = c.baseline_halfwidth(level)
-        yt, mt, gt = y[~cal], mu[~cal], groups[~cal]
-        per = pd.Series((yt >= lo) & (yt <= hi)).groupby(gt).mean()
-        per0 = pd.Series(np.abs(yt - mt) <= q0).groupby(gt).mean()
-        rows.append((per.mean(), (per >= level).mean(), per.min(), float(np.mean(hi - lo)),
-                     per0.mean(), 2.0 * q0))
-    r = np.array(rows)
-    return {"level": float(level), "mean": float(r[:, 0].mean()), "std": float(r[:, 0].std()),
-            "min": float(r[:, 0].min()), "max": float(r[:, 0].max()),
-            "share_parts_at_level": float(r[:, 1].mean()),
-            "worst_part_median": float(np.median(r[:, 2])),
-            "mean_width_m": float(r[:, 3].mean()),
-            "baseline_mean": float(r[:, 4].mean()), "baseline_width_m": float(r[:, 5].mean()),
-            "width_ratio": float(r[:, 3].mean() / r[:, 5].mean()),
-            "n_partitions": int(n_partitions), "n_parts": int(uniq.size),
-            "n_calibration_parts": n_cal}
-
-
-def coverage_report(y: np.ndarray, lower: np.ndarray, upper: np.ndarray, *, level: float,
-                    data_source: str, groups: Optional[np.ndarray] = None,
-                    region: Optional[np.ndarray] = None,
-                    family: Optional[np.ndarray] = None) -> pd.DataFrame:
-    """Empirical coverage of intervals: overall, per region and per family.
-
-    Columns: scope ("all", "region", "family"), name, level, n_nodes, n_parts,
-    coverage (share of nodes inside), part_coverage_min / _median (over parts,
-    when `groups` is given), mean_width_m, data_source.
-    """
-    y, lower, upper = (np.asarray(a, dtype=float).ravel() for a in (y, lower, upper))
-    inside = (y >= lower) & (y <= upper)
-    width = upper - lower
-    rows = []
-
-    def row(scope: str, name: str, sel: np.ndarray) -> None:
-        if not sel.any():
-            return
-        r = {"scope": scope, "name": name, "level": level, "n_nodes": int(sel.sum()),
-             "coverage": float(inside[sel].mean()), "mean_width_m": float(width[sel].mean()),
-             "data_source": data_source}
-        if groups is not None:
-            g = np.asarray(groups).ravel()[sel]
-            per = pd.Series(inside[sel]).groupby(g).mean()
-            r.update(n_parts=int(per.size), part_coverage_min=float(per.min()),
-                     part_coverage_median=float(per.median()))
-        rows.append(r)
-
-    row("all", "all", np.ones(y.size, bool))
-    if region is not None:
-        reg = np.asarray(region).ravel()
-        for code in np.unique(reg):
-            row("region", REGION_NAMES[int(code)], reg == code)
-    if family is not None:
-        fam = np.asarray(family).ravel()
-        for f in np.unique(fam):
-            row("family", str(f), fam == f)
-    return pd.DataFrame(rows)
-
-
-__all__ = ["ConformalCalibrator", "intervals", "coverage_report", "partition_coverage",
-           "min_parts", "REPORT_LEVELS"]
+__all__ = ["ConformalCalibrator", "min_parts", "REPORT_LEVELS"]

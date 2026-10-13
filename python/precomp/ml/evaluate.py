@@ -1,11 +1,9 @@
 """Evaluation on held-out parts: errors, calibration and the envelope, as tidy frames.
 
-Protocol. A model is only ever scored on WHOLE parts it has not seen: grouped
-K-fold cross-validation (`cross_validate`), a held-out split, or a held-out
-family (`family_holdout`), where every sample of one family is removed from
-training and calibration. Within each training portion a further grouped split
-holds out the calibration parts of the conformal intervals. The error is that
-of dz on the part nodes of the commanded surface (depth > part_eps):
+Protocol. A model is only ever scored on WHOLE parts it has not seen
+(`evaluate_surrogate` refuses samples, parts or families it was trained on).
+The error is that of dz on the part nodes of the commanded surface
+(depth > part_eps):
 
 * per part - rms, mae, max_abs, p95_abs, bias and the share within a
   tolerance of the dz error [m] (`precomp.metrology.metrics`), the rms of dz
@@ -33,17 +31,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
 from .._util import PathLike, PrecompError
 from ..metrology import metrics
-from .dataset import (Sample, family_split, grouped_kfold, grouped_split, index_frame,
-                      source_label)
-from .features import DEFAULT_CONFIG, REGION_NAMES, FeatureConfig
-from .surrogate import DeviationSurrogate, seen_ids, train_surrogate
+from .dataset import Sample, source_label
+from .features import REGION_NAMES
+from .surrogate import DeviationSurrogate, seen_ids
 from .uncertainty import REPORT_LEVELS
 
 #: Default tolerance [m] of the "share within tolerance" metric (0.2 mm).
@@ -92,16 +89,6 @@ class EvaluationReport:
             paths[name] = p
         return paths
 
-    @staticmethod
-    def concatenate(reports: Sequence["EvaluationReport"]) -> "EvaluationReport":
-        if not reports:
-            raise ValueError("no reports")
-        cat = lambda a: pd.concat([getattr(r, a) for r in reports], ignore_index=True)  # noqa
-        labels = sorted({r.data_source for r in reports})
-        return EvaluationReport(cat("per_part"), cat("per_region"), cat("calibration"),
-                                cat("ood"), labels[0] if len(labels) == 1 else
-                                "mixed: " + " + ".join(labels),
-                                {"parts": [r.info for r in reports]})
 
 
 def evaluate_surrogate(surrogate: DeviationSurrogate, samples: Sequence[Sample], *,
@@ -244,78 +231,4 @@ def _finite(v: Any) -> Optional[float]:
     return v if np.isfinite(v) else None
 
 
-ModelFactory = Callable[[], Any]
-
-
-def _fit(make_model: ModelFactory, train: List[Sample], cal: List[Sample],
-         features: FeatureConfig, points_per_sample: Optional[int], seed: int,
-         n_jobs: int) -> DeviationSurrogate:
-    return train_surrogate(make_model(), train, calibration=cal, features=features,
-                           points_per_sample=points_per_sample, seed=seed, n_jobs=n_jobs)
-
-
-def _cal_split(train: List[Sample], fraction: float, seed: int
-               ) -> tuple:
-    byid = {s.sample_id: s for s in train}
-    tr, cal = grouped_split(index_frame(train), test_fraction=fraction, seed=seed)
-    return [byid[i] for i in tr], [byid[i] for i in cal]
-
-
-def cross_validate(samples: Sequence[Sample], make_model: ModelFactory, *, n_splits: int = 5,
-                   seed: int = 0, features: FeatureConfig = DEFAULT_CONFIG,
-                   points_per_sample: Optional[int] = 2000, calibration_fraction: float = 0.25,
-                   tolerance: float = DEFAULT_TOLERANCE, level: float = 0.9,
-                   n_jobs: int = 1) -> EvaluationReport:
-    """Grouped K-fold cross-validation by part id: each fold is scored by a
-    model trained (and calibrated, on a grouped `calibration_fraction` of the
-    training parts) without it. The frames gain a `fold` column."""
-    samples = list(samples)
-    byid = {s.sample_id: s for s in samples}
-    reports = []
-    for k, (tr_ids, te_ids) in enumerate(grouped_kfold(samples, n_splits=n_splits,
-                                                       seed=seed)):
-        train, cal = _cal_split([byid[i] for i in tr_ids], calibration_fraction, seed + k)
-        sur = _fit(make_model, train, cal, features, points_per_sample, seed + k, n_jobs)
-        rep = evaluate_surrogate(sur, [byid[i] for i in te_ids], tolerance=tolerance,
-                                 level=level, split="cross_validation")
-        for f in (rep.per_part, rep.per_region, rep.calibration, rep.ood):
-            f.insert(0, "fold", k)
-        reports.append(rep)
-    return EvaluationReport.concatenate(reports)
-
-
-def family_holdout(samples: Sequence[Sample], family: str, make_model: ModelFactory, *,
-                   seed: int = 0, features: FeatureConfig = DEFAULT_CONFIG,
-                   points_per_sample: Optional[int] = 2000, test_fraction: float = 0.25,
-                   calibration_fraction: float = 0.3, tolerance: float = DEFAULT_TOLERANCE,
-                   level: float = 0.9, n_jobs: int = 1,
-                   model: Optional[DeviationSurrogate] = None) -> EvaluationReport:
-    """Leave-family-out: train on the other families (minus a grouped
-    `test_fraction` of their parts and a calibration split), then score the
-    held-out in-distribution parts (split "in_distribution") and the held-out
-    family (split "held_out_family"). Pass `model` to score an already
-    trained surrogate (it must not have seen the family)."""
-    samples = list(samples)
-    byid = {s.sample_id: s for s in samples}
-    rest, fam = family_split(samples, family)
-    tr_ids, te_ids = grouped_split(index_frame([byid[i] for i in rest]),
-                                   test_fraction=test_fraction, seed=seed)
-    if model is None:
-        train, cal = _cal_split([byid[i] for i in tr_ids], calibration_fraction, seed + 1)
-        model = _fit(make_model, train, cal, features, points_per_sample, seed, n_jobs)
-    elif family in model.training.get("families", []) or family in (
-            model.training.get("transfer") or {}).get("real_families", []):
-        raise PrecompError(f"the model was trained on family {family!r}")
-    a = evaluate_surrogate(model, [byid[i] for i in te_ids], tolerance=tolerance, level=level,
-                           split="in_distribution")
-    b = evaluate_surrogate(model, [byid[i] for i in fam], tolerance=tolerance, level=level,
-                           split="held_out_family")
-    rep = EvaluationReport.concatenate([a, b])
-    rep.info = {"family": family, "model_class": model.model_class,
-                "model_data_source": model.data_source,
-                "in_distribution": a.info, "held_out_family": b.info}
-    return rep
-
-
-__all__ = ["EvaluationReport", "evaluate_surrogate", "cross_validate", "family_holdout",
-           "DEFAULT_TOLERANCE"]
+__all__ = ["EvaluationReport", "evaluate_surrogate", "DEFAULT_TOLERANCE"]

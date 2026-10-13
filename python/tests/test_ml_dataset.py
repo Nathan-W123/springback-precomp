@@ -11,8 +11,8 @@ from precomp._util import PrecompError
 from precomp.fea import FormingSetup
 from precomp.geometry import Grid, TruncatedCone
 from precomp.materials import get_material
-from precomp.ml.dataset import (Dataset, Sample, build_table, check_disjoint, family_split,
-                                grouped_kfold, grouped_split, index_frame, source_label)
+from precomp.ml.dataset import (Dataset, Sample, build_table, family_split, grouped_split,
+                                index_frame, source_label)
 from precomp.ml.features import FeatureConfig
 from precomp.toolpath import spiral_toolpath
 
@@ -109,21 +109,13 @@ def test_tables_share_the_points_among_regions_and_are_reproducible():
 
 def test_grouped_splits_never_put_a_part_on_both_sides(proxy_samples):
     idx = index_frame(proxy_samples)
+    col = {"part": "part_id", "sample": "sample_id", "family": "family"}
+    key = lambda by: dict(zip(idx["sample_id"], idx[col[by]]))  # noqa: E731
     for by in ("part", "sample", "family"):
         tr, te = grouped_split(idx, test_fraction=0.3, seed=5, by=by)
         assert set(tr).isdisjoint(te) and len(tr) + len(te) == len(idx)
-        check_disjoint(tr, te, idx, by=by)
-    tr, te = grouped_split(idx, test_fraction=0.3, seed=5, by="part")
-    check_disjoint(tr, te, idx, by="part")
-    folds = grouped_kfold(idx, n_splits=4, seed=2)
-    tested = [i for _, te in folds for i in te]
-    assert sorted(tested) == sorted(idx["sample_id"])            # each once
-    for tr, te in folds:
-        check_disjoint(tr, te, idx, by="part")
+        k = key(by)
+        assert {k[i] for i in tr}.isdisjoint({k[i] for i in te})
     rest, fam = family_split(idx, "dome")
     assert set(idx.set_index("sample_id").loc[fam, "family"]) == {"dome"}
     assert "dome" not in set(idx.set_index("sample_id").loc[rest, "family"])
-    # a sample split can leak a part (its variants): check_disjoint catches it
-    tr, te = grouped_split(idx, test_fraction=0.3, seed=5, by="sample")
-    with pytest.raises(PrecompError, match="both sides"):
-        check_disjoint(tr, te, idx, by="part")

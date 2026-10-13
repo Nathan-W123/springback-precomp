@@ -9,11 +9,18 @@ from precomp.fea import FormingSetup
 from precomp.geometry import Grid, HeightMap, Pyramid, TruncatedCone, families
 from precomp.materials import get_material
 from precomp.ml.features import (FEATURE_SCHEMA_VERSION, KINDS, REGION_NAMES, FeatureConfig,
-                                 feature_maps, global_features, point_features, region_labels)
+                                 feature_maps, global_features, region_labels)
 from precomp.metrology import part_mask
 
 SETUP = FormingSetup(get_material("AA5754-O"))
 DEPTH_TIME = FeatureConfig(time_source="depth")
+
+
+def point_features(commanded, setup, toolpath=None, *, config):
+    """Feature matrix X (every node, row-major) and the names, as the
+    training table gathers them."""
+    fm = feature_maps(commanded, setup, toolpath, config)
+    return fm.gather(None, commanded.grid), list(fm.names)
 
 
 def test_every_feature_is_finite_documented_and_in_schema_order(rng):

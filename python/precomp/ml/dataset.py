@@ -592,25 +592,6 @@ def grouped_split(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]], *,
     return train, test
 
 
-def grouped_kfold(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]], *, n_splits: int,
-                  seed: int, by: str = "part") -> List[Tuple[List[str], List[str]]]:
-    """K folds of whole groups: every group is tested exactly once."""
-    idx = index_frame(samples)
-    g = _groups(idx, by)
-    uniq = np.unique(g)
-    if not 2 <= n_splits <= uniq.size:
-        raise ValueError(f"n_splits must lie in [2, {uniq.size}] (the number of {by} groups)")
-    perm = np.random.default_rng(seed).permutation(uniq)
-    folds = np.array_split(perm, n_splits)
-    ids = idx["sample_id"].astype(str).to_numpy()
-    out = []
-    for f in folds:
-        fs = set(f)
-        out.append(([i for i, gg in zip(ids, g) if gg not in fs],
-                    [i for i, gg in zip(ids, g) if gg in fs]))
-    return out
-
-
 def family_split(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]],
                  holdout: Union[str, Sequence[str]]) -> Tuple[List[str], List[str]]:
     """Leave-family-out: (ids of the other families, ids of `holdout`)."""
@@ -625,22 +606,7 @@ def family_split(samples: Union[Dataset, pd.DataFrame, Sequence[Sample]],
             [i for i, f in zip(ids, fam) if f in hold])
 
 
-def check_disjoint(train_ids: Sequence[str], test_ids: Sequence[str],
-                   samples: Union[Dataset, pd.DataFrame, Sequence[Sample]],
-                   by: str = "part") -> None:
-    """Raise PrecompError when a `by` group appears on both sides."""
-    idx = index_frame(samples)
-    col = SPLIT_KEYS[by]
-    key = dict(zip(idx["sample_id"].astype(str), idx[col].astype(str)))
-    a = {key[i] for i in train_ids}
-    b = {key[i] for i in test_ids}
-    both = a & b
-    if both:
-        raise PrecompError(f"{len(both)} {by} group(s) on both sides of the split, e.g. "
-                           f"{sorted(both)[:3]}")
-
-
 __all__ = ["Sample", "Dataset", "Table", "build_table", "sample_table", "stratified_nodes",
-           "grouped_split", "grouped_kfold", "family_split", "check_disjoint", "index_frame",
+           "grouped_split", "family_split", "index_frame",
            "source_label", "SOURCES", "SOURCE_LABELS", "KINDS", "MASKS", "REGION_NAMES",
            "DATASET_FORMAT"]
