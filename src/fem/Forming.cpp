@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/Forming.hpp
+
 #include "sparlab/fem/Forming.hpp"
 
 #include "NonlinearSystem.hpp"
@@ -846,6 +848,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
     cev = contact.evaluate(state, t, false);
   };
 
+  // Step loop: the deck's steps in order, each starting from the state the one before left.
   for (std::size_t si = 0; si < options_.steps.size(); ++si) {
     const FormingStep& step = options_.steps[si];
     const std::vector<char>& active = active_[si];
@@ -964,6 +967,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
     const auto newton = [&](Scalar t0, Scalar t1, Scalar s1, FormingIncrement& inc,
                             Evaluation& accepted, ToolContactEvaluation& accepted_contact,
                             Vector& state) -> bool {
+      // Predictor at (t1, s1): prescribed DOFs moved, start imbalance R_0f scaled by 1 - s1.
       const Scalar ramp = 1.0 - s1;
       Vector trial = u;
       Vector dp(nfix);
@@ -979,6 +983,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
         const ToolTrajectory& path = options_.tools[k].trajectory;
         tool_travel = std::max(tool_travel, (path.position(t1) - path.position(t0)).norm());
       }
+      // Contact update: the candidate nodes of each active tool for this increment.
       contact.begin_increment(u, t0, t1, active,
                               2.0 * tool_travel + 2.0 * last_du + contact.min_node_size());
       const Vector& from = u;
@@ -1051,6 +1056,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
       ToolContactEvaluation cev;
       bool have = false;
       int anticipated = 0;  // nodes the active-set prediction added
+      // Newton iteration: assemble residual and tangent, solve, line search, convergence test.
       for (int it = 1; it <= options_.max_iterations; ++it) {
         if (!have) evaluate_tangent(trial, t1, ev, cev);
         have = false;
@@ -1067,6 +1073,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
           failure = "a non-finite residual";
           return false;
         }
+        // Solve K_ff du = -r on the step's free DOFs (PartitionedFactor above).
         bool factorised = false;
         {
           ScopedTimer st(timing, "factorisation");
@@ -1296,6 +1303,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
     std::size_t next_station = 0;
     int cuts_in_a_row = 0;
     bool done = explicit_done;
+    // Increment loop: size the increment (tool travel, stations), run Newton, cut or commit.
     while (started && !done && !explicit_step) {
       if (static_cast<int>(sr.increments.size()) >= options_.max_increments) {
         sr.termination = "the increment budget (max_increments) ran out";
@@ -1325,6 +1333,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
         failure = ex.what();
         ok = false;
       }
+      // Cut: halve the increment and retry from the last converged state.
       if (!ok) {
         ++cuts_in_a_row;
         ++sr.cuts;
@@ -1441,6 +1450,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
         max_strain = std::max(max_strain, st.max_green_strain);
       }
     }
+    // Release check: supports that still carry load hold the part deformed (a warning).
     // (Reactions at their round-off, as those of a body that was never
     // loaded, are not over-constraint.)
     if (release && sr.completed &&
@@ -1474,6 +1484,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
     const bool completed = sr.completed;
     const std::string termination = sr.termination;
     result.steps.push_back(std::move(sr));
+    // Hand the ended step to the observer: sparlab_form writes its files here.
     if (observer_) {
       ScopedTimer st(timing, "output");
       observer_(result);

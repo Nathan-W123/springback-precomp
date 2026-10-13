@@ -4,6 +4,13 @@
 /// Numerical output is written with 17 significant digits by default so that a
 /// value read back into a double is bit-identical to the one computed. Column
 /// headers carry units in brackets, e.g. `ux[m]`.
+///
+/// Where this fits: Simulations stage - the CSV result files (step nodes and elements,
+///   tool_forces.csv) and the output-directory helpers.
+/// Called from: io/FormingWriter.cpp:write_forming_step, io/FormingWriter.cpp:write_tool_forces,
+///   io/ResultWriter.cpp:ResultWriter::ResultWriter (ensure_directory)
+/// Calls into: core/Exceptions (IoError)
+/// Start reading at: CsvWriter::row, ensure_directory
 #pragma once
 
 #include "sparlab/core/Types.hpp"

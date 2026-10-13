@@ -37,6 +37,12 @@ Outputs in --out: config.json, cases.csv (one row per part, strategy and FE
 run: deviation by region, cost, physics checks), tools.csv, summary.csv
 (per strategy and method, mean over the parts), summary_common_parts.csv (the
 same over the parts every strategy and method finished), tables.md, run.json.
+
+Where this fits: the "Compensation" baselines (uncompensated and FE-DA runs of the test parts)
+    that springback_fine_ml.py:baseline_rows reads.
+Called from: the command line (benchmarks/springback_fine/run.sh).
+Calls into: precomp.compensation, precomp.fea.support, precomp.ml.generate, common.
+Start reading at: run_chain, then main.
 """
 
 from __future__ import annotations
@@ -127,6 +133,7 @@ def run_chain(cfg: Dict[str, Any], point, strategy: str, work: Path,
     from precomp.compensation import FEAPredictor, displacement_adjustment
     from precomp.fea.support import command_upper_bound, compensation_masks
 
+    # The strategy's setup, the FE predictor and the support-aware DA masks and bound
     setup = make_setup(cfg, strategy, exe)
     target = point.target()
     pred = FEAPredictor(setup, work / "runs", target=target)
@@ -135,6 +142,7 @@ def run_chain(cfg: Dict[str, Any], point, strategy: str, work: Path,
     records: List[Dict[str, Any]] = []
     t_chain = time.time()
 
+    # Called by displacement_adjustment after each FE run: one record per run
     def cb(k, commanded, formed, error):
         res = pred.results[-1]
         rec: Dict[str, Any] = {
@@ -164,6 +172,7 @@ def run_chain(cfg: Dict[str, Any], point, strategy: str, work: Path,
             f"rim sag {rec['upper_band_bias_mm']:+.3f} mm, {rec['runtime_s']:.0f} s"
             + (" (cached)" if rec["cache_hit"] else ""))
 
+    # The FE-DA chain: the first FE run is the uncompensated target, each next one a DA step
     da = cfg["da"]
     try:
         displacement_adjustment(target, pred, iterations=int(da["fe_runs"]), alpha=da["alpha"],
@@ -347,6 +356,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     out, work = Path(args.out), Path(args.work)
     out.mkdir(parents=True, exist_ok=True)
     work.mkdir(parents=True, exist_ok=True)
+    # Configuration: config.json from PROTOCOL, or the existing one checked against the flags
     cfg_path = out / "config.json"
     if cfg_path.exists():
         cfg = json.loads(cfg_path.read_text())
@@ -374,11 +384,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             exe_copy.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(REPO / "build" / "bin" / "sparlab_form", exe_copy)
         exe = str(exe_copy.resolve())
+    # Step 1: design - the test parts, drawn from benchmarks/springback's design
     old_cfg = json.loads((OLD / "config.json").read_text())
     points = test_points(old_cfg)
     if args.parts:
         points = [p for p in points if p.point_id in set(args.parts)]
     strategies = args.strategies or list(cfg["strategies"])
+    # Step 2: one job per part and strategy, each a DA chain (run_chain)
     # the costliest chains first (plate, then DSIF, then single-point forming)
     jobs = [(p, s) for s in strategies for p in points]
     jobs.sort(key=lambda j: ({"backing_plate": 0, "dsif": 1, "none": 2}.get(j[1], 3),
@@ -419,8 +431,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 log(f"tables not written: {type(exc).__name__}: {exc}")
         return recs
 
+    # Step 3: run the chains (simulations and FE-DA), --workers at a time
     with cf.ThreadPoolExecutor(max_workers=args.workers) as pool:
         list(pool.map(one, jobs))
+    # Step 4: evaluation - the final tables (cases.csv, summary.csv, tables.md)
     flush()
     log(f"done in {time.time() - t0:.0f} s")
     return 0

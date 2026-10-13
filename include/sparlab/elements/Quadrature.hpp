@@ -10,6 +10,13 @@
 ///                 cells, where the Jacobian is not constant),
 ///   * faces:      3 per direction (the tributary areas of the contact
 ///                 nodes).
+///
+/// Where this fits: Simulations stage - the Gauss rules of the Hex8 integrals (with a
+///   separate point count through the sheet thickness) and of the contact faces.
+/// Called from: elements/Hex8Kernels.hpp:hex8_stiffness_rule,
+///   elements/Hex8.cpp:Hex8Element::consistent_mass, elements/FaceGeometry.cpp:face_quadrature
+/// Calls into: core/Exceptions (ConfigError)
+/// Start reading at: gauss_legendre_box, gauss_legendre_cube
 #pragma once
 
 #include "sparlab/core/Types.hpp"

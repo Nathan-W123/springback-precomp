@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/elements/Element.hpp
+
 #include "sparlab/elements/Element.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

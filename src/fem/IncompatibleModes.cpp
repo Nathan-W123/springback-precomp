@@ -1,3 +1,5 @@
+// Where this fits: see src/fem/IncompatibleModes.hpp
+
 #include "IncompatibleModes.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

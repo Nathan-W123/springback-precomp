@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/Elastoplastic.hpp
+
 #include "sparlab/fem/Elastoplastic.hpp"
 
 #include "IncompatibleModes.hpp"
@@ -255,12 +257,14 @@ ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const
                                            bool mean_dilatation, const Vector* temperature,
                                            Scalar temperature_scale, bool want_tangent,
                                            Kinematics kinematics, const Vector* internal) {
+  // Incompatible-mode Hex8: handled in fem/IncompatibleModes.cpp.
   if (model.element().num_internal_dofs() > 0) {
     detail::refuse_mean_dilatation(mean_dilatation);
     return detail::incompatible_elastoplastic_element(model, e, ue, committed, internal,
                                                       temperature, temperature_scale,
                                                       want_tangent, kinematics);
   }
+  // Strain and strain operator at every point (kinematics_of above).
   Kinematic kin = kinematics_of(model, e, ue, kinematics, mean_dilatation, temperature);
   if (committed.size() != kin.points.size()) {
     throw SolverError("elastoplastic element: the stored internal variables do not match "
@@ -281,6 +285,7 @@ ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const
   if (want_tangent) out.tangent = Matrix::Zero(nd, nd);
   if (thermal) out.thermal_force_rate = Vector::Zero(nd);
   out.states.reserve(kin.points.size());
+  // Per point: plastic return (material/Plasticity), then add to force and tangent.
   for (std::size_t q = 0; q < kin.points.size(); ++q) {
     Point& p = kin.points[q];
     Scalar change = 0.0;

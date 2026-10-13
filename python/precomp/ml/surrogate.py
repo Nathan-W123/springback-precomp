@@ -25,6 +25,13 @@ on the part only).
 
 `train_surrogate` does the whole fit: table, model, envelope, calibration on
 held-out whole parts.
+
+Where this fits: "Training" and "Transfer to two-tool + edge pass" build here the
+    DeviationSurrogate that "Compensation" and "Evaluation" query.
+Called from: springback_fine_ml.py:train_or_load (train_surrogate),
+    combined_rim_ml.py:transfer_model (transfer_surrogate), ml/registry.py:load_model (from_state).
+Calls into: ml.dataset (build_table), ml.features (feature_maps), ml.ood, ml.uncertainty.
+Start reading at: train_surrogate, then DeviationSurrogate.predict_deviation.
 """
 
 from __future__ import annotations
@@ -431,6 +438,7 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
         raise PrecompError(f"{len(overlap)} part(s) are in both the training and the "
                            f"calibration set, e.g. {sorted(overlap)[:3]}; calibrate on held-out "
                            "parts")
+    # training record (provenance), kept in surrogate.training and in the bundle manifest
     label = source_label(s.source for s in train)
     info: Dict[str, Any] = {
         "sample_ids": sorted(s.sample_id for s in train),
@@ -447,12 +455,14 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
         "calibration_sample_ids": sorted(s.sample_id for s in cal),
         "calibration_part_ids": sorted({s.part_id for s in cal}),
         "setup": setup_envelope([s.setup for s in train])}
+    # Step 1: feature table (dataset.build_table), then the model fit
     table = build_table(train, features, points_per_sample=points_per_sample, mask=mask,
                         rng=seed, stratify=True, n_jobs=n_jobs)
     model.fit(table.X, table.y, table.groups if group_by == "sample" else table.part_id,
               feature_names=table.feature_names)
     info["n_rows"] = len(table)
     sur = DeviationSurrogate(model, features, data_source=label, training=info, domain=mask)
+    # Step 2: training envelope on the training parts (fit_envelope)
     if envelope:
         reuse = None
         if mask == "part":
@@ -464,6 +474,7 @@ def train_surrogate(model: Any, train: Sequence[Sample], *,
                                    for g in np.unique(table.groups)])
             reuse = (table.X[np.sort(keep), :ncol], table.part_id[np.sort(keep)])
         sur.ood = fit_envelope(train, features, seed=seed, n_jobs=n_jobs, points=reuse)
+    # Step 3: conformal intervals, calibrated on the held-out calibration parts
     if cal:
         sur.calibrator = calibrate(sur, cal, points_per_sample=calibration_points,
                                    mondrian=mondrian, seed=seed)
@@ -492,6 +503,7 @@ def transfer_surrogate(base: DeviationSurrogate, real: Sequence[Sample], *,
     """
     real = list(real)
     cal = list(calibration or [])
+    # calibration parts must be new to both the correction and the base model
     overlap = {s.part_id for s in real} & {s.part_id for s in cal}
     if overlap:
         raise PrecompError(f"calibration parts {sorted(overlap)[:3]} were used for the "
@@ -502,11 +514,13 @@ def transfer_surrogate(base: DeviationSurrogate, real: Sequence[Sample], *,
     if reused:
         raise PrecompError(f"calibration parts {reused[:3]} were used to train or calibrate "
                            "the base model")
+    # fit the correction on the real samples; the base model stays frozen
     model = TransferModel(base.model, correction, seed=seed, **correction_kwargs)
     if real:
         table = build_table(real, base.features, points_per_sample=points_per_sample,
                             mask=base.domain, rng=seed)
         model.fit(table.X, table.y, table.part_id, feature_names=table.feature_names)
+    # training record: the base's ids, families and sources merged with the real samples'
     info = dict(base.training)
     info["base"] = {k: base.training.get(k) for k in ("sample_ids_sha256", "n_samples",
                                                        "n_parts", "families", "data_source")}
@@ -534,6 +548,7 @@ def transfer_surrogate(base: DeviationSurrogate, real: Sequence[Sample], *,
                         "calibration_sample_ids": sorted(s.sample_id for s in cal),
                         "calibration_part_ids": sorted({s.part_id for s in cal}),
                         "accepted": model.accepted, "validation": model.validation}
+    # the base's feature envelope is kept; intervals only from real calibration parts
     sur = DeviationSurrogate(model, base.features, data_source=source_label(info["sources"]),
                              training=info, ood=base.ood, domain=base.domain)
     if cal:

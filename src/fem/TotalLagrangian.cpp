@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/TotalLagrangian.hpp
+
 #include "sparlab/fem/TotalLagrangian.hpp"
 
 #include "IncompatibleModes.hpp"

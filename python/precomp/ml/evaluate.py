@@ -25,6 +25,13 @@ The error is that of dz on the part nodes of the commanded surface
 
 Every frame carries `data_source`, the label of the evaluation samples
 ("SparLab simulation", "proxy - not physics", "scan").
+
+Where this fits: "Evaluation" of a surrogate's dz predictions on given samples (by part, region
+    and interval level); it runs no simulation.
+Called from: springback_fine_ml.py:main (test samples),
+    combined_rim_ml.py:evaluate (base vs transfer).
+Calls into: ml.surrogate (predict_deviation, assess, seen_ids), ml.uncertainty, metrology.
+Start reading at: evaluate_surrogate, then EvaluationReport.summary.
 """
 
 from __future__ import annotations
@@ -116,6 +123,7 @@ def evaluate_surrogate(surrogate: DeviationSurrogate, samples: Sequence[Sample],
                                    and surrogate.calibrator.fitted) else None
     has_cal = cal is not None
     lvls = [lv for lv in levels if has_cal and cal.supports(lv)]
+    # per sample: error over the part nodes, interval coverage per level, envelope verdict
     rows, pooled = [], []
     for s in samples:
         try:

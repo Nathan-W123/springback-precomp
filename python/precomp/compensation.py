@@ -40,6 +40,13 @@ Every update here is conditioned the same way:
   clip (the drop-cutter surface does not change).
 
 All heights are in metres, angles in degrees where named `_deg`.
+
+Where this fits: "Compensation": the DA loop, run with the FE model for the FE-DA baselines
+    (FEAPredictor) and with the surrogate under ml/compensate.py.
+Called from: springback_fine_benchmark.py:run_chain, ml/compensate.py:surrogate_compensate,
+    ml/generate.py:compensated_commanded.
+Calls into: metrology (masks, metrics), fea.runner (simulate), toolpath (tool_reach_surface).
+Start reading at: displacement_adjustment, then FEAPredictor.
 """
 
 from __future__ import annotations
@@ -308,6 +315,7 @@ def displacement_adjustment(target: HeightMap, predictor: Predictor, *, iteratio
         raise ValueError("iterations must be >= 1")
     if not alpha > 0:
         raise ValueError("alpha must be > 0")
+    # Regions: hold (default the flange) stays at the target; adjust (default the part) moves
     hold = flange_mask(target) if hold_mask is None else np.asarray(hold_mask, bool)
     adjust = part_mask(target) if adjust_mask is None else np.asarray(adjust_mask, bool)
     adjust = adjust & ~hold
@@ -321,6 +329,7 @@ def displacement_adjustment(target: HeightMap, predictor: Predictor, *, iteratio
     converged = False
     proposed = c
     for k in range(iterations):
+        # Predict the formed surface of command c and measure its error on the adjusted region
         f = predictor(c)
         if not f.grid.matches(target.grid):
             f = f.resample(target.grid)
@@ -330,10 +339,12 @@ def displacement_adjustment(target: HeightMap, predictor: Predictor, *, iteratio
                                  "commanded_depth_m": c.depth,
                                  "commanded_max_wall_angle_deg":
                                      float(np.degrees(c.wall_angle()[adjust].max()))}
+        # Keep the best command so far (lowest RMS error): it is the one returned
         if best is None or m["rms"] < best[0]:
             best = (m["rms"], k, c, f)
         if callback is not None:
             callback(k, c, f, err)
+        # DA update c - alpha * error, then conditioning (hold, upper bound, wall angle, reach)
         z_new = _apply_update(c, target, err, adjust, alpha, direction, smoothing)
         proposed = _condition(c, z_new, hold, target, max_wall_angle_deg, upper_bound,
                               tool_radius)

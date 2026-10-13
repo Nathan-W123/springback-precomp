@@ -4,6 +4,12 @@ setup    FormingSetup - process, mesh, material and solver settings
 deck     build_deck - deck.json + toolpath.csv; deck_hash - the content hash
 runner   run_deck, simulate (content-addressed cache), simulate_many (pool)
 results  load_result, FormingResult - the validated result loader
+
+Where this fits: the public API of "Simulations" (setup -> deck -> runner -> results).
+Called from: springback_fine_ml.py:make_setup, combined_rim_ml.py:edge_setup (FormingSetup),
+    common.py:versions (sparlab_version).
+Calls into: fea.setup, fea.deck, fea.runner, fea.results.
+Start reading at: runner.simulate, then deck.build_deck.
 """
 
 from .deck import (

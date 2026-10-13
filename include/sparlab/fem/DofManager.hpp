@@ -14,6 +14,13 @@
 /// \f$ r = K_{pf} u_f + K_{pp} u_p - f_p \f$.
 /// This keeps \f$K_{ff}\f$ symmetric positive definite (no artificial large
 /// diagonal entries) and gives exact reaction forces.
+///
+/// Where this fits: Simulations stage - the global DOF numbering and the free / prescribed
+///   split of the model's constraints (forming steps build their own in fem/Forming.cpp).
+/// Called from: fem/BoundaryConditions.cpp:apply_constraints (prescribe),
+///   fem/Assembler.cpp:Assembler::assemble_stiffness, io/ResultWriter.cpp:ResultWriter::write_mesh
+/// Calls into: core/Types and core/Exceptions only
+/// Start reading at: DofManager::dof, DofManager::prescribe (fem/DofManager.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

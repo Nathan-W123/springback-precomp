@@ -115,6 +115,13 @@
 /// modified \f$\bar F\f$, \f$\bar F\bar S\bar F^T\f$, the same), the Cauchy
 /// stress \f$\sigma = \tau/\bar J\f$ with \f$\bar J = \exp\mathrm{tr}\,\bar
 /// E_{\log}\f$ (J itself without averaging), and the log strain itself.
+///
+/// Where this fits: Simulations stage - one element's force, tangent and plastic return.
+/// Called from: fem/NonlinearSystem.hpp:NonlinearSystem::evaluate (elastoplastic_element),
+///   fem/Forming.cpp:FormingAnalysis::run (elastoplastic_stress)
+/// Calls into: material/Plasticity (plastic_return), material/Hyperelastic,
+///   material/LogarithmicStrain, fem/IncompatibleModes
+/// Start reading at: elastoplastic_element (fem/Elastoplastic.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

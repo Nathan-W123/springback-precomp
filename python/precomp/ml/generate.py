@@ -27,6 +27,13 @@ Simulator. `SparlabSimulator` runs `precomp.fea.simulate_many` through the
 content-addressed run cache (so generation is resumable and never runs a deck
 twice) and records every failure with its reason. (The tests use a fast
 analytic stand-in with the same `Simulator` protocol, python/tests/ml_support.py.)
+
+Where this fits: "Design of the parts" and "Simulations": draws the design points and simulates
+    their commanded variants with sparlab_form into a Dataset.
+Called from: springback_fine_ml.py:design, springback_fine_ml.py:generate_data,
+    springback_fine_benchmark.py:test_points.
+Calls into: fea.runner (simulate_many), compensation (one DA step), geometry.parts, ml.dataset.
+Start reading at: design_points, then generate.
 """
 
 from __future__ import annotations
@@ -275,6 +282,7 @@ def design_points(space: DesignSpace, n_per_family: int, seed: int, *,
         cls = families()[fam]
         pbounds = space.bounds_of(fam)
         pkeys = sorted(pbounds)
+        # one Sobol dimension per part parameter and process parameter, plus the material
         d = len(pkeys) + len(proc_keys) + 1
         sampler = _sobol(d, np.random.SeedSequence([int(seed), stable_hash(fam)]))
         found: List[DesignPoint] = []
@@ -292,6 +300,7 @@ def design_points(space: DesignSpace, n_per_family: int, seed: int, *,
                 idx = draws
                 draws += 1
                 k = 0
+                # map the draw to a part, a setup and a grid; ValueError/RuntimeError rejects it
                 try:
                     params = {key: pbounds[key][0] + u[k + j] * (pbounds[key][1]
                                                                  - pbounds[key][0])
@@ -501,6 +510,7 @@ def generate(dataset: Dataset, points: Sequence[DesignPoint], simulator: Simulat
                     continue
                 info = {"kind": kind, **pinfo}
             jobs.append((point, kind, cmd, info))
+    # simulate phase 1, store each sample, keep the uncompensated formed shapes for phase 2
     results = simulator.run([sim_job(p.setup, c, p.target) for p, _, c, _ in jobs]) \
             if jobs else []
     uncomp: Dict[str, HeightMap] = {}
@@ -531,6 +541,7 @@ def generate(dataset: Dataset, points: Sequence[DesignPoint], simulator: Simulat
                     cmd = compensator(target, point.setup)
                     info = {"kind": "compensated", "from": "compensator"}
                 else:
+                    # the uncompensated formed shape: from phase 1, else from the data set
                     f0 = uncomp.get(point.point_id)
                     if f0 is None:
                         usid = sample_id(point, "uncompensated")

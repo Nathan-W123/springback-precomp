@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/io/Json.hpp
+
 #include "sparlab/io/Json.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

@@ -132,6 +132,12 @@
 ///
 /// **Units.** Strict SI: m, s (physical time; the tool trajectories are in
 /// their own pseudo-time), kg, N, J.
+///
+/// Where this fits: Simulations stage - the integrator of a form_explicit step; the decks of
+///   python/precomp/fea/deck.py use implicit form and release steps only.
+/// Called from: fem/Forming.cpp:FormingAnalysis::run, io/Config.cpp:parse_explicit_step
+/// Calls into: fem/ExplicitKernel (internal forces), fem/RigidTool, fem/Assembler (lumped mass)
+/// Start reading at: ExplicitDynamics::run (fem/ExplicitDynamics.cpp)
 #pragma once
 
 #include "sparlab/core/Timer.hpp"

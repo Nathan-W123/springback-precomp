@@ -24,6 +24,12 @@ metrology     robust point-to-plane ICP, signed normal and vertical
               deviation, error metrics and masks
 compensation  displacement adjustment over any predictor, predictor adapters
 robot         Cartesian compliance of the robot (the physics audit's bound)
+
+Where this fits: the package root; the workflow stages live in the modules above and precomp.ml.
+Called from: every `import precomp...`; __version__ is read by fea/deck.py:build_deck,
+    ml/registry.py:package_versions and common.py:versions.
+Calls into: _util (PrecompError).
+Start reading at: fea.runner.simulate, then compensation.displacement_adjustment.
 """
 
 from __future__ import annotations

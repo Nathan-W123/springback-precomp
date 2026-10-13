@@ -49,6 +49,13 @@ reaches, to a fixed point. Every other command is kept at z <= 0 (to within
 `COMMAND_TOLERANCE`), and `build_deck` refuses one above the bound.
 
 All lengths are metres.
+
+Where this fits: the supports of "Simulations" (backing plate; two-tool + edge pass, here "dsif"
+    + rim pass) and their masks and command bound for "Compensation".
+Called from: fea/deck.py:build_deck, combined_rim_ml.py:combined (command_upper_bound),
+    springback_fine_benchmark.py:run_chain (compensation_masks, command_upper_bound).
+Calls into: toolpath (dsif_support_points, rim_pass_path, swept_ball_top), fea.setup.
+Start reading at: plan_support, then command_upper_bound.
 """
 
 from __future__ import annotations

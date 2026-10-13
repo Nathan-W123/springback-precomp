@@ -41,6 +41,13 @@
 ///   ascending element order: NonlinearSystem's serial assembly sums them
 ///   in the same order, and the result does not depend on the thread count.
 /// Nothing is allocated in the element loop.
+///
+/// Where this fits: Simulations stage - the internal forces of each explicit time step: a
+///   dedicated Hex8 kernel, or the generic dispatch of fem/NonlinearSystem.hpp.
+/// Called from: fem/ExplicitDynamics.cpp:ExplicitDynamics::ExplicitDynamics,
+///   ExplicitDynamics::run, ExplicitDynamics::internal_force
+/// Calls into: fem/NonlinearSystem, material/Plasticity (plastic_return), fem/TotalLagrangian
+/// Start reading at: ExplicitInternalForce::evaluate, element_kernel (fem/ExplicitKernel.cpp)
 #pragma once
 
 #include "NonlinearSystem.hpp"

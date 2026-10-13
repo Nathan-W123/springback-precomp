@@ -12,6 +12,13 @@
 /// Named sets come from mesh files (Abaqus/CalculiX *NSET / *ELSET) and let a
 /// deck address a part of the mesh by name where a geometric box would not
 /// fit.
+///
+/// Where this fits: Simulations stage - the sheet's nodes, Hex8 connectivity and named sets,
+///   which the model, the tool contact and the result writers read.
+/// Called from: io/Config.cpp:build_mesh, fem/FemModel.cpp:FemModel::FemModel (validate),
+///   fem/RigidTool.cpp:ToolContact::ToolContact (boundary_faces)
+/// Calls into: elements/Hex8 (hex8_volume), core/Logging, core/Exceptions
+/// Start reading at: Mesh, Mesh::validate
 #pragma once
 
 #include "sparlab/core/Types.hpp"

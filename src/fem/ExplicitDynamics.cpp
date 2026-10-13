@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/ExplicitDynamics.hpp
+
 #include "sparlab/fem/ExplicitDynamics.hpp"
 
 #include "ExplicitKernel.hpp"
@@ -1114,6 +1116,7 @@ ExplicitResult ExplicitDynamics::run(const ExplicitDrive& drive, const ExplicitS
        << "; the state of step " << saved.step << " (t = " << saved.tau << " s) is kept";
     failure = os.str();
   };
+  // Time-step loop: central-difference update, forces, accelerations, energy checks.
   while (!done && failure.empty()) {
     // The step size: the current dt, the last step landing on the duration.
     Scalar h = dt;
@@ -1148,6 +1151,7 @@ ExplicitResult ExplicitDynamics::run(const ExplicitDrive& drive, const ExplicitS
         u(d) = values(i);
       }
     }
+    // Forces at the new state: internal (fem/ExplicitKernel), then tool contact.
     f_int_old.swap(f_int);
     f_ext_old.swap(f_ext);
     try {
@@ -1352,6 +1356,7 @@ ExplicitResult ExplicitDynamics::run(const ExplicitDrive& drive, const ExplicitS
                 w_int, " J, ", wall.elapsed_seconds(), " s elapsed");
     }
   }
+  // A stopped run hands on the state of its last checkpoint.
   if (!failure.empty()) {
     restore();
     res.completed = false;

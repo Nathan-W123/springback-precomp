@@ -12,6 +12,12 @@
 /// one stopped (its reason on stderr and in summary.json; the files of the
 /// steps before it are written), 2 on a configuration error and 4 on an I/O
 /// error (AppSupport.hpp, run_guarded).
+///
+/// Where this fits: Simulations stage - the solver precomp runs on each forming deck.
+/// Called from: python/precomp/fea/runner.py:run_deck (as a subprocess),
+///   python/precomp/fea/runner.py:sparlab_version (--version, part of the run-cache key)
+/// Calls into: io/Config, fem/Forming (FormingAnalysis), io/ResultWriter, io/FormingWriter
+/// Start reading at: main
 
 #include "AppSupport.hpp"
 
@@ -44,6 +50,7 @@ std::string version_string() {
 
 int main(int argc, char** argv) {
   return app::run_guarded([&]() -> int {
+    // Parse the command line; --version and --help return here.
     const std::vector<std::string> known = {"config",  "output", "threads", "verbosity",
                                             "strict-config", "no-vtk", "version", "help"};
     app::CommandLine cli(argc, argv, known);
@@ -74,6 +81,7 @@ int main(int argc, char** argv) {
 #endif
     }
 
+    // Load the deck (io/Config.cpp load_configuration); it must have a 'forming' block.
     const Configuration config =
         load_configuration(cli.require("config"), cli.has("strict-config"));
     if (!config.forming.enabled) {
@@ -83,6 +91,7 @@ int main(int argc, char** argv) {
     const bool vtk = config.forming.write_vtk && !cli.has("no-vtk");
     const std::string out_dir = cli.value("output", app::default_output_directory(config.name));
 
+    // Build the model: mesh, materials, constraints (io/Config.cpp build_model).
     Timer wall;
     FemModel model = build_model(config);
     model.mesh().validate();
@@ -112,13 +121,16 @@ int main(int argc, char** argv) {
       }
       write_tool_forces(writer, model, config.forming.options, so_far);
     });
+    // Run forming: steps -> increments -> Newton (fem/Forming.cpp FormingAnalysis::run).
     const FormingResult result = analysis.run();
+    // Write summary.json last (io/FormingWriter.cpp forming_summary_json).
     const Scalar runtime = wall.elapsed_seconds();
     files.push_back("tool_forces.csv");
     writer.write_json("summary.json",
                       forming_summary_json(config, model, config.forming.options, result,
                                            runtime, version_string(), files));
 
+    // Report each step on stdout; exit 3 when a step stopped.
     std::cout << "case: " << config.name << "\n";
     std::cout << "  mesh:    " << model.mesh().num_elements() << " elements, "
               << model.dofs().num_dofs() << " DOFs\n";

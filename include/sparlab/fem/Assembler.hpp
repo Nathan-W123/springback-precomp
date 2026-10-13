@@ -28,6 +28,13 @@
 /// set. An element with a zero scale factor, whose entries a triplet assembly
 /// would leave out of the pattern, falls back to the triplet path so the
 /// result stays the same.
+///
+/// Where this fits: Simulations stage - sums element matrices into global sparse matrices:
+///   the Newton tangent of the forming analysis and the lumped mass of the explicit one.
+/// Called from: fem/NonlinearSystem.hpp:NonlinearSystem::evaluate (assemble_elementwise),
+///   fem/ExplicitDynamics.cpp:ExplicitDynamics::run (assemble_mass), apps/sparlab_form.cpp:main
+/// Calls into: fem/FemModel (mesh, element, materials), fem/DofManager (element DOFs)
+/// Start reading at: Assembler::assemble_elementwise, Assembler::scatter (fem/Assembler.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

@@ -1,3 +1,8 @@
+// Where this fits: Simulations stage - command line, log level and exit codes of sparlab_form.
+// Called from: apps/sparlab_form.cpp:main
+// Calls into: core/Logging (apply_verbosity), core/Exceptions (run_guarded)
+// Start reading at: run_guarded, CommandLine::CommandLine
+
 #include "AppSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

@@ -1,3 +1,5 @@
+// Where this fits: see src/fem/ExplicitKernel.hpp
+
 #include "ExplicitKernel.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

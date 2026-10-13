@@ -82,6 +82,13 @@
 /// of one element through its thickness a fraction of its bending
 /// stiffness. The modes themselves relax the isochoric constraint of plastic
 /// flow: they absorb the linear part of every point's dilatation.
+///
+/// Where this fits: Simulations stage - the incompatible-mode Hex8: solves its mode
+///   parameters and condenses them out of the element's force and tangent.
+/// Called from: fem/Elastoplastic.cpp:elastoplastic_element, elastoplastic_stress,
+///   fem/TotalLagrangian.cpp:total_lagrangian_element
+/// Calls into: elements/Hex8Incompatible, material/Plasticity, material/Hyperelastic
+/// Start reading at: incompatible_elastoplastic_element, solve_and_condense (IncompatibleModes.cpp)
 #pragma once
 
 #include "sparlab/fem/Elastoplastic.hpp"

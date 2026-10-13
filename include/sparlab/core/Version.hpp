@@ -5,6 +5,12 @@
 /// `SPARLAB_BUILD_TYPE`; the compiler and Eigen strings are derived from
 /// standard predefined macros so the header also works in a bare
 /// `g++ -Iinclude` compile.
+///
+/// Where this fits: Simulations stage - the build provenance (version, build type, compiler,
+///   Eigen) recorded in each run's summary.json.
+/// Called from: io/ResultWriter.cpp:make_provenance
+/// Calls into: Eigen/Core only (its version macros)
+/// Start reading at: SPARLAB_VERSION_STRING, SPARLAB_COMPILER
 #pragma once
 
 #include <Eigen/Core>

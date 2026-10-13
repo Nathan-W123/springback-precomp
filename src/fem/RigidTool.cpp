@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/RigidTool.hpp
+
 #include "sparlab/fem/RigidTool.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
@@ -440,6 +442,7 @@ ToolContactEvaluation ToolContact::evaluate(const Vector& u, Scalar t, bool want
       Vector3 nrm;
       Matrix3 dn;
       Scalar d = 0.0;
+      // Normal contact: penalty force where the node is inside the tool (g < 0).
       const Scalar g = tool.gap(x, c, dim, nrm, dn, d);
       if (!(g < 0.0)) continue;
       const Scalar ka = s.kappa[idx] * s.area[idx];  // kappa A [N/m]
@@ -449,6 +452,7 @@ ToolContactEvaluation ToolContact::evaluate(const Vector& u, Scalar t, bool want
       Vector3 ft = Vector3::Zero();
       bool slipping = false;
       const Vector3 r = planar(x - c, dim);
+      // Coulomb friction: elastic trial force, limited to mu p_N when the node slips.
       if (mu > 0.0) {
         const Scalar kt = tool.tangential_ratio * ka;  // kappa_T A [N/m]
         // The committed history, or none: a node new to contact slips from

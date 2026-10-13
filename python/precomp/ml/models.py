@@ -18,6 +18,13 @@ fit and predict; None uses $PRECOMP_ML_THREADS, else the libraries' defaults.
 
 The models import torch lazily and raise ImportError with the install command
 when it is missing; they run on the CPU.
+
+Where this fits: "Training" (MLPEnsemble) and "Transfer to two-tool + edge pass" (TransferModel,
+    a linear correction on top of a frozen base model).
+Called from: springback_fine_ml.py:make_model, ml/surrogate.py:train_surrogate (fit),
+    ml/surrogate.py:transfer_surrogate (TransferModel).
+Calls into: torch (lazily, MLPEnsemble only), threadpoolctl (thread_limit).
+Start reading at: MLPEnsemble.fit, then TransferModel.fit.
 """
 
 from __future__ import annotations
@@ -265,6 +272,7 @@ class MLPEnsemble:
             raise ValueError("MLPEnsemble.fit needs at least two rows")
         self.feature_names = list(feature_names) if feature_names is not None else \
             [f"x{i}" for i in range(X.shape[1])]
+        # standardise the features and the scaled target once, shared by every member
         self.x_mean, self.x_std = _standardiser(X)
         yn = y / _target_scale(self, X)
         self.y_mean = float(yn.mean())
@@ -275,6 +283,7 @@ class MLPEnsemble:
         self.states, self.history = [], []
         with thread_limit(self.n_threads):
             for m in range(p["n_members"]):
+                # each member: its own seed, grouped validation split, optional bootstrap
                 seed = p["seed"] * 1009 + m
                 rng = np.random.default_rng(seed)
                 tr, va = _grouped_holdout(groups, p["val_fraction"], rng)
@@ -289,6 +298,7 @@ class MLPEnsemble:
                 Xv, Tv = torch.from_numpy(Xs[va]), torch.from_numpy(ts[va])
                 best, best_state, bad = math.inf, None, 0
                 epochs_run = 0
+                # epochs: squared error during the warm-up, then the Gaussian NLL
                 for epoch in range(p["epochs"]):
                     mse = epoch < p["mse_warmup"]
                     net.train()
@@ -302,6 +312,7 @@ class MLPEnsemble:
                     epochs_run = epoch + 1
                     if mse:
                         continue
+                    # early stopping on the validation NLL (training NLL if none); keep the best
                     net.eval()
                     with torch.no_grad():
                         vl = float(self._nll(net(Xv), Tv, False)) if len(Tv) else float(
@@ -495,6 +506,7 @@ class TransferModel:
                                f"{self.min_parts} are needed to validate a correction, so "
                                "the model is the base", "n_parts": self.n_real}
             return self
+        # leave one real part out: fit without it and score on it, for every part
         per = []
         for g in self.real_groups:
             out = groups == g
@@ -502,6 +514,7 @@ class TransferModel:
             c, _ = self._apply(fitted, mu[out], sd[out])
             per.append({"part": g, "base_rms_m": rms(mu[out], y[out]),
                         "corrected_rms_m": rms(c, y[out])})
+        # keep the correction only if it beats the base; if so, refit it on every real part
         b = float(np.mean([p["base_rms_m"] for p in per]))
         c = float(np.mean([p["corrected_rms_m"] for p in per]))
         self.accepted = c < b

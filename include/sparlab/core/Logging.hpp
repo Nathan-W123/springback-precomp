@@ -4,6 +4,13 @@
 /// Diagnostics go to stderr so that stdout can carry machine-readable output.
 /// The verbosity is a process-wide setting controlled by the `--verbosity`
 /// command-line flag or the `SPARLAB_LOG_LEVEL` environment variable.
+///
+/// Where this fits: Simulations stage - sparlab_form's diagnostics on stderr, which precomp's
+///   fea/runner.py:run_deck saves in sparlab_form.log.
+/// Called from: apps/AppSupport.cpp:apply_verbosity (set_level); log::info and log::warn
+///   across the library (e.g. fem/Forming.cpp, io/Config.cpp)
+/// Calls into: core/Exceptions (parse_level)
+/// Start reading at: log::info, log::set_level
 #pragma once
 
 #include <iostream>

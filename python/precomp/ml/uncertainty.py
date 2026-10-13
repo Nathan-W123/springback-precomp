@@ -34,6 +34,13 @@ each over the parts that have that region. The calibrator also keeps the
 scores of a constant-width interval mu +- q0 (q0 [m] from |y - mu| the same
 way): comparing widths at the same level shows whether the model's s carries
 information (`baseline_intervals`, and the width ratio in the evaluation).
+
+Where this fits: "Training": turns the ensemble's spread into prediction intervals calibrated on
+    held-out parts.
+Called from: ml/surrogate.py:calibrate (fit), ml/surrogate.py:DeviationSurrogate.predict_interval,
+    ml/evaluate.py:evaluate_surrogate (coverage).
+Calls into: ml.features (REGION_NAMES) and numpy only.
+Start reading at: ConformalCalibrator.fit, then ConformalCalibrator.quantile.
 """
 
 from __future__ import annotations
@@ -143,6 +150,7 @@ class ConformalCalibrator:
             med = float(np.median(std))
             base = med if med > 0 else float(np.median(np.abs(y - mu)))
             self.eps = self.eps_fraction * base if base > 0 else 1e-12
+        # per-part scores: normalised (all, and per region when mondrian), and raw |y - mu|
         a = np.abs(y - mu)
         s = a / (std + self.eps)
         keys: List[Tuple[str, np.ndarray]] = [("all", np.ones(s.size, bool))]

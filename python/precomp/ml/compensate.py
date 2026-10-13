@@ -27,6 +27,13 @@ the same constraints and the envelope, with a penalty on the model's std.
 
 A prediction is not a result: the workflow simulates every compensated shape
 with sparlab_form before reporting it (python/scripts/combined_rim_ml.py).
+
+Where this fits: "Compensation" on the surrogate: surrogate DA (the ML first shot) and
+    surrogate_optimize, the optimiser step of the headline method in combined_rim_ml.py.
+Called from: springback_fine_ml.py:ml_shot (surrogate_compensate),
+    combined_rim_ml.py:combined (surrogate_compensate, then surrogate_optimize).
+Calls into: compensation (displacement_adjustment), metrology, and the surrogate passed in.
+Start reading at: surrogate_compensate, then surrogate_optimize.
 """
 
 from __future__ import annotations
@@ -189,6 +196,7 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
     if not 0 <= stagnation < 1:
         raise ValueError("stagnation must lie in [0, 1)")
     setup = as_setup(setup)
+    # refuse a target outside the training envelope unless allow_out_of_envelope
     has_env = getattr(surrogate, "ood", None) is not None and hasattr(surrogate, "assess")
     ood_t = dict(surrogate.assess(target, setup)) if has_env else None
     if ood_t is not None and not ood_t["in_envelope"] and not allow_out_of_envelope:
@@ -209,7 +217,9 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
     stopped = "iterations"
     prev = None
     verdicts: Dict[int, Dict[str, Any]] = {}
+    # DA loop: one surrogate prediction per iteration; the best iterate is kept
     for k in range(iterations):
+        # assess each iterate first: one outside the envelope ends the loop, unless allowed
         a = ood_t if k == 0 else (dict(surrogate.assess(c, setup)) if has_env else None)
         if a is not None:
             verdicts[k] = a
@@ -220,6 +230,7 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
                                 "note": "iterate outside the training envelope: not evaluated"})
                 stopped = "left_envelope"
                 break
+        # one DA step: predict the formed surface at c and propose the next command
         da = displacement_adjustment(target, pred, iterations=1, alpha=alpha,
                                      direction=direction, smoothing=smoothing,
                                      max_wall_angle_deg=max_wall_angle_deg, initial=c,
@@ -235,6 +246,7 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
         history.append(h)
         if best is None or rms < best[0]:
             best = (rms, k, da.commanded, da.formed, pred.last_std)
+        # stop rules: tolerance, interval half-width (optional), stagnation
         if tolerance is not None and rms <= tolerance:
             stopped = "tolerance"
             break
@@ -250,6 +262,7 @@ def surrogate_compensate(target: HeightMap, setup: Any, surrogate: Any, *,
             break
         prev = rms
         c = da.proposed
+    # result: the best iterate, its predicted residual and, when calibrated, its interval
     assert best is not None
     _, kbest, comp, formed, std = best
     comp = comp.copy()
@@ -417,6 +430,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
             "the target is outside the model's training envelope (reasons: "
             f"{', '.join(ood_t['reasons'][:5]) or 'fraction of nodes out'}): the surrogate "
             "would extrapolate; pass allow_out_of_envelope=True to optimise anyway")
+    # smooth correction basis B over the adjusted region (correction_basis)
     hold = flange_mask(target) if hold_mask is None else np.asarray(hold_mask, bool)
     adjust = part_mask(target) if adjust_mask is None else np.asarray(adjust_mask, bool)
     region = adjust & ~hold
@@ -426,6 +440,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
     pm = part_mask(target)
     sel: Optional[np.ndarray] = None
 
+    # evaluate(p): the command c(p), its prediction, and the vector whose squared norm is J
     def evaluate(p: np.ndarray) -> Dict[str, Any]:
         nonlocal sel
         z_new = c0.z + np.tensordot(p, B, axes=1)
@@ -461,6 +476,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
     ood_best = a0
     reason = "max_iterations"
     last_batch_s = 0.0
+    # Levenberg-Marquardt iterations: Jacobian batch, damped steps, accept the best candidate
     for k in range(1, max_iterations + 1):
         t_batch = time.perf_counter()
         if out_of_time() or (max_time_s is not None and
@@ -499,6 +515,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
                             "evaluations": evals, "predicted": True,
                             "elapsed_s": time.perf_counter() - t_start})
             break
+        # damped steps: a full and a half step per damping, each limited to max_step
         A = Jm.T @ Jm
         g = Jm.T @ cur["vec"]
         scale = float(np.mean(np.diag(A))) or 1.0
@@ -515,6 +532,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
                 evals += 1
                 e["damping"] = mu if frac == 1.0 else f"{mu:g} (half step)"
                 cands.append(e)
+        # accept the lowest-J candidate that lowers J by more than rel_tol, inside the envelope
         cands.sort(key=lambda e: e["J"])
         accepted, verdict = None, None
         for e in cands:
@@ -536,6 +554,7 @@ def surrogate_optimize(target: HeightMap, setup: Any, surrogate: Any, *,
             reason = "no_improvement"
             break
         cur, ood_best = accepted, verdict
+    # result: the last accepted command, its predicted residual and, when calibrated, interval
     history[-1]["stop_reason"] = reason
     best_k = max(i for i, h in enumerate(history) if h.get("accepted"))
     comp = cur["cmd"].copy()

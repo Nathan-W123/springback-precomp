@@ -13,6 +13,12 @@
 /// vector per unit reference measure is \f$a = x_{,s} \times x_{,t}\f$, so
 /// \f$\int_\Gamma f\,n\,d\Gamma = \int f\,a\,ds\,dt\f$, and \f$|a|\f$ is the
 /// area element.
+///
+/// Where this fits: Simulations stage - integrals over Hex8 boundary faces that give each
+///   tool-contact node its tributary area.
+/// Called from: fem/RigidTool.cpp:ToolContact::ToolContact
+/// Calls into: mesh/Mesh (element_local_faces), elements/Quadrature
+/// Start reading at: face_shape_integrals, face_geometry
 #pragma once
 
 #include "sparlab/core/Types.hpp"

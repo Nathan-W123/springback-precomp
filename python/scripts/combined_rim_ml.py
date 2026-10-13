@@ -43,6 +43,13 @@ and rewrites combined_rim/README.md: keep the 8-part section when you run it.
 Resumable: every SparLab run goes through the content-addressed run cache
 (<work>/runs); each step writes a JSON in <work>/combined_rim/ and is skipped
 when it exists (a recorded failure is not retried).
+
+Where this fits: the headline method, "Transfer to two-tool + edge pass" and then "Compensation",
+    checked by one verifying sparlab_form run.
+Called from: the command line (benchmarks/springback_fine_ml/combined_rim/run.sh: `all`,
+    run_all8.sh: `one`).
+Calls into: springback_fine_ml, precomp.ml.surrogate, precomp.ml.compensate, precomp.fea.runner.
+Start reading at: cmd_all, then combined.
 """
 
 from __future__ import annotations
@@ -233,6 +240,7 @@ def data_run(ctx: Ctx, pid: str, role: str) -> Dict[str, Any]:
                            "started": time.strftime("%Y-%m-%d %H:%M:%S")}
     t0 = time.perf_counter()
     log(f"data {pid} ({role}): start")
+    # Simulate the uncompensated target with the rim-pass setup; keep it as a Sample
     try:
         res = simulate(ctx.setup, target, WORK / "runs", target=target)
         formed = res.formed_surface(-1, grid=target.grid)
@@ -291,6 +299,7 @@ def transfer_model(ctx: Ctx, sel: pd.DataFrame):
         if sorted(sur.training["transfer"]["real_sample_ids"]) == ids:
             return sur
     t0 = time.perf_counter()
+    # Fit the linear TransferModel correction on the frozen base MLP, then save the bundle
     sur = transfer_surrogate(ctx.mlp(), fit, correction="linear",
                              points_per_sample=ctx.cfg["surrogate"]["points_per_sample"],
                              seed=ctx.cfg["seed"])
@@ -329,19 +338,23 @@ def combined(ctx: Ctx, sel: pd.DataFrame, max_time: float) -> Dict[str, Any]:
 
     fpred = CW / f"{PART}-combined.json"
     fcmd = CW / f"{PART}-combined.npz"
+    # Reuse the saved command when this part was compensated before
     if fpred.exists() and fcmd.exists():
         info = json.loads(fpred.read_text())
         comp = HeightMap.load(fcmd)
     else:
+        # Step 2: transfer model - the base MLP plus a linear correction from the fit parts
         sur = transfer_model(ctx, sel)
         p = ctx.points[PART]
         target = p.target()
+        # Masks: adjust the deep region only; hold the rim-pass band and the flange
         hold, adjust, band, strip = masks(ctx, target)
         sc = ctx.cfg["surrogate"]
         da = ctx.cfg["da"]
         kw = dict(max_wall_angle_deg=da["max_wall_angle_deg"],
                   upper_bound=command_upper_bound(ctx.setup, target),
                   hold_mask=hold, adjust_mask=adjust, tool_radius=ctx.setup.tool_radius)
+        # Step 3a: surrogate DA (retried with the envelope override if the target is outside)
         override = False
         t0 = time.perf_counter()
         try:
@@ -361,6 +374,7 @@ def combined(ctx: Ctx, sel: pd.DataFrame, max_time: float) -> Dict[str, Any]:
         dres.compensated.save(CW / f"{PART}-combined-da.npz")
         log(f"combined DA: predicted RMS {dres.predicted_metrics()['rms'] / MM:.4f} mm "
             f"({dres.stopped}, best {dres.best_iteration}) [{t_da:.0f} s]")
+        # Step 3b: surrogate_optimize, started from the DA result
         t0 = time.perf_counter()
         ores = surrogate_optimize(target, ctx.setup, sur, start=dres, max_time_s=max_time,
                                   allow_out_of_envelope=override, **kw)
@@ -402,6 +416,7 @@ def combined(ctx: Ctx, sel: pd.DataFrame, max_time: float) -> Dict[str, Any]:
         common.jdump(fpred, info)
         log("combined prediction: " + json.dumps({k: info[k] for k in ("da", "optimizer")},
                                                  default=str))
+    # Step 3c: one verifying sparlab_form run of the command (verify)
     return verify(ctx, comp)
 
 
@@ -505,11 +520,13 @@ def evaluate(ctx: Ctx, sel: pd.DataFrame) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def cmd_all(args) -> None:
     t_start = time.time()
+    # Pick the rim-pass training parts per family (role fit or holdout; selection.csv)
     sel = select_parts()
     log("selection:\n" + sel.to_string(index=False))
     ctx = Ctx()
     fit = sel[sel.role == "fit"].sort_values("data_runtime_p3_s", ascending=False)
     hold = sel[sel.role == "holdout"].sort_values("data_runtime_p3_s", ascending=False)
+    # The job queue: fit-part data runs (step 1), the combined job (steps 2-3), held-out runs
     jobs: List[Dict[str, Any]] = (
         [{"name": f"data {r.point_id}", "kind": "data", "pid": r.point_id, "role": "fit"}
          for r in fit.itertuples()]
@@ -521,6 +538,7 @@ def cmd_all(args) -> None:
     running: set = set()
     cv = threading.Condition()
 
+    # The combined job starts only when every fit-part data run is done
     def runnable(j):
         return j["kind"] != "combined" or fit_names <= done
 
@@ -554,6 +572,7 @@ def cmd_all(args) -> None:
         t.start()
     for t in ths:
         t.join()
+    # Evaluation: base vs transfer model on the rim-pass data, then the one-part report
     evaluate(ctx, sel)
     meta = {"finished": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "this_invocation_s": time.time() - t_start}

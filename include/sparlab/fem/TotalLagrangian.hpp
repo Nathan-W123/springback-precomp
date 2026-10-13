@@ -30,6 +30,13 @@
 /// stress the thickness is taken as constant: the Saint Venant-Kirchhoff law
 /// with the plane-stress \f$D\f$ applied to the in-plane Green strain, exact
 /// for large rotations with small strains.
+///
+/// Where this fits: Simulations stage - one elastic element under finite kinematics (no
+///   plastic return), and the gradient helpers fem/Elastoplastic reuses.
+/// Called from: fem/NonlinearSystem.hpp:NonlinearSystem::evaluate (total_lagrangian_element),
+///   fem/Forming.cpp:FormingAnalysis::run, fem/Elastoplastic.cpp:kinematics_of
+/// Calls into: material/Hyperelastic, elements/Element (strain_operator), fem/IncompatibleModes
+/// Start reading at: total_lagrangian_element (fem/TotalLagrangian.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

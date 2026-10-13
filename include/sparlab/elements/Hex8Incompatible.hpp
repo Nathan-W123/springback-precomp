@@ -63,6 +63,13 @@
 /// `strain_operator` stays the compatible B of the nodes, as everywhere
 /// in the library (its normal rows are read as the shape-function
 /// gradients); the condensed strain is `condensed_strain_operator`.
+///
+/// Where this fits: Simulations stage - the incompatible-mode Hex8 (element_formulation
+///   "incompatible_modes"), the sheet element that bends without shear locking.
+/// Called from: elements/Element.cpp:make_element,
+///   fem/IncompatibleModes.cpp:set_up (hex8_incompatible_gradients)
+/// Calls into: elements/Hex8Kernels, elements/Hex8, elements/Quadrature
+/// Start reading at: Hex8IncompatibleElement::stiffness, hex8_incompatible_gradients
 #pragma once
 
 #include "sparlab/elements/Element.hpp"

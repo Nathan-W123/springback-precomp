@@ -23,6 +23,13 @@ is itself the 99 % quantile over the held-out training parts, at least 5 %),
 `fraction_points_out`, and `reasons`: the features most responsible - those
 outside their training range first, then the largest contributions to the
 Mahalanobis distance.
+
+Where this fits: the training envelope of "Training"; "Compensation" and "Evaluation" ask it
+    whether a commanded part is inside (through DeviationSurrogate.assess).
+Called from: ml/surrogate.py:fit_envelope (fit), ml/surrogate.py:DeviationSurrogate.assess
+    (assess_features), ml/surrogate.py:DeviationSurrogate.from_state (from_state).
+Calls into: sklearn.covariance (LedoitWolf), numpy, pandas.
+Start reading at: OODEnvelope.fit, then OODEnvelope.assess_features.
 """
 
 from __future__ import annotations

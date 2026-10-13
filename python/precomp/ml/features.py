@@ -30,6 +30,13 @@ Every feature is finite for any valid commanded surface with a part on it.
 Lengths are metres, angles radians, stresses pascals; curvatures are made
 dimensionless by their smoothing length (H sigma, K sigma^2) so the three scales
 are comparable.
+
+Where this fits: "Features and data": the per-node feature vectors the models are trained on and
+    queried with.
+Called from: ml/dataset.py:sample_table, ml/surrogate.py:DeviationSurrogate.feature_maps,
+    ml/surrogate.py:fit_envelope (global_features).
+Calls into: geometry.heightmap, fea.setup, fea.deck (make_toolpath), metrology (wall_mask).
+Start reading at: FeatureConfig.specs (the feature list), then feature_maps.
 """
 
 from __future__ import annotations
@@ -512,6 +519,7 @@ def feature_maps(commanded: HeightMap, setup: Union[FormingSetup, Mapping[str, A
     depth_frac = depth / dmax
     X, Y = g.mesh()
     cols: Dict[str, np.ndarray] = {"depth": depth, "depth_frac": depth_frac}
+    # local: wall angle and curvatures at each smoothing scale
     for k, s in enumerate(config.scales, 1):
         sigma = s * R
         gx, gy = commanded.gradient(sigma)
@@ -519,6 +527,7 @@ def feature_maps(commanded: HeightMap, setup: Union[FormingSetup, Mapping[str, A
         H, K = commanded.curvature(sigma)
         cols[f"mean_curv_s{k}"] = H * sigma
         cols[f"gauss_curv_s{k}"] = K * sigma * sigma
+    # local: signed rim distance, position about the part centroid, tool-path time
     d_in = ndimage.distance_transform_edt(part) * h
     d_out = ndimage.distance_transform_edt(~part) * h
     cols["rim_dist"] = np.where(part, d_in - 0.5 * h, -(d_out - 0.5 * h))
@@ -531,6 +540,7 @@ def feature_maps(commanded: HeightMap, setup: Union[FormingSetup, Mapping[str, A
     reg = np.sqrt(r * r + R * R)
     cols["polar_sin"], cols["polar_cos"] = dy / reg, dx / reg
     cols["time_frac"] = _time_map(commanded, setup, toolpath, depth_frac, config)
+    # local: ring descriptors, neighbour heights over annuli around each node
     radii = [ring_step * k / h for k in range(1, config.rings + 1)]
     fps = _ring_footprints(radii)
     for k, fp in enumerate(fps, 1):
@@ -541,6 +551,7 @@ def feature_maps(commanded: HeightMap, setup: Union[FormingSetup, Mapping[str, A
         cols[f"ring{k}_mean"] = _pad_convolve(z, kern) - z
         cols[f"ring{k}_min"] = lo - z
         cols[f"ring{k}_max"] = hi - z
+    # placement features, then the per-part scalars (global, process, material) on every node
     e = float(setup.free_half_width)
     cols["clamp_dist"] = e - np.maximum(np.abs(X), np.abs(Y))
     cols["blank_radius"] = np.hypot(X, Y) / e

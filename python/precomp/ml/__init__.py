@@ -23,6 +23,13 @@ compensate   surrogate displacement adjustment, surrogate_optimize
 
 Every metric states its data source: "SparLab simulation", "proxy - not
 physics" or "scan". torch is needed only for MLPEnsemble.
+
+Where this fits: the import point of the ML stages, "Design of the parts" to "Evaluation"; it
+    only re-exports names from the modules listed above.
+Called from: springback_fine_ml.py:train_or_load, combined_rim_ml.py:load_mlp,
+    springback_fine_benchmark.py:test_points (each `from precomp.ml import ...`).
+Calls into: the modules listed above (no logic of its own).
+Start reading at: surrogate.train_surrogate, then compensate.surrogate_compensate.
 """
 
 from .compensate import (SurrogateCompensation, SurrogatePredictor, correction_basis,

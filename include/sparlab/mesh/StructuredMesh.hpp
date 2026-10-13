@@ -9,6 +9,12 @@
 /// and each hexahedron lists its bottom face (z = z_k) counter-clockwise seen
 /// from +z followed by the top face in the same order, which is the VTK
 /// hexahedron convention.
+///
+/// Where this fits: Simulations stage - generates the structured Hex8 sheet mesh; every deck
+///   precomp writes (fea/deck.py deck_document) asks for this "structured_hex" mesh.
+/// Called from: io/Config.cpp:build_mesh (make_structured_hex_mesh)
+/// Calls into: mesh/Mesh
+/// Start reading at: make_structured_hex_mesh
 #pragma once
 
 #include "sparlab/mesh/Mesh.hpp"

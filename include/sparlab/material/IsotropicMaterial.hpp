@@ -43,6 +43,13 @@
 ///     \\ 0 & 0 & 0 & G & 0 & 0 \\ 0 & 0 & 0 & 0 & G & 0 \\ 0 & 0 & 0 & 0 & 0 & G
 ///   \end{bmatrix}
 /// \f]
+///
+/// Where this fits: Simulations stage - the sheet material of the deck's material block:
+///   elastic constants plus PlasticityParameters (von Mises or Hill48 yield, hardening).
+/// Called from: io/Config.cpp:parse_material, fem/FemModel.cpp:FemModel::FemModel,
+///   fem/RigidTool.cpp:ToolContact::ToolContact (youngs_modulus)
+/// Calls into: core/Exceptions (ConfigError)
+/// Start reading at: PlasticityParameters, IsotropicMaterial::set_plasticity
 #pragma once
 
 #include "sparlab/core/Types.hpp"

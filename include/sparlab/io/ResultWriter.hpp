@@ -9,6 +9,13 @@
 ///   <out>/mesh.json                 nodes, connectivity, prescribed DOFs
 /// \endcode
 /// Every file is plain text.
+///
+/// Where this fits: Simulations stage - owns the run's output directory and writes
+///   config.json, mesh.json and the JSON documents (summary.json) into it.
+/// Called from: apps/sparlab_form.cpp:main, io/FormingWriter.cpp:write_forming_step (file),
+///   io/FormingWriter.cpp:forming_summary_json (make_provenance)
+/// Calls into: io/Json, io/CsvWriter (ensure_directory, path_join), core/Version
+/// Start reading at: ResultWriter, make_provenance
 #pragma once
 
 #include "sparlab/io/Config.hpp"

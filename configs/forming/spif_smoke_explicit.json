@@ -7,8 +7,8 @@
 // which the run warns about) - and the springback released
 // implicitly onto the same 3-2-1 supports. The same 40 x 40 x 1 mm blank
 // (20 x 20 x 2 Hex8), 5 mm tool and two contours to 2 mm
-// (spif_smoke_toolpath.csv). python/scripts/compare_forming_runs.py compares a
-// run of it with one of spif_smoke.json.
+// (spif_smoke_toolpath.csv). docs/forming.md, section 7.3, compares a run of
+// it with one of spif_smoke.json.
 {
   "name": "spif_smoke_explicit",
   "description": "SPIF smoke case, explicit forming: 40 x 40 x 1 mm blank, 5 mm tool, 2 contours to 2 mm, retract, unclamp",

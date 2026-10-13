@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/core/Logging.hpp
+
 #include "sparlab/core/Logging.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

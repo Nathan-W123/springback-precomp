@@ -3,6 +3,12 @@
 Nothing here knows about forming; it exists so that every module reads and
 writes JSON the same way (UTF-8, sorted keys, finite numbers only) and raises
 the same kind of error.
+
+Where this fits: shared plumbing under every stage (errors, JSON, hashing); no forming logic.
+Called from: most modules, e.g. fea/deck.py:deck_hash (canonical_json, sha256_bytes),
+    fea/runner.py:run_deck (write_json), ml/registry.py:save_model (canonical_json).
+Calls into: json, hashlib and numpy only.
+Start reading at: PrecompError, then canonical_json.
 """
 
 from __future__ import annotations
