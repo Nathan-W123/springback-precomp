@@ -937,7 +937,7 @@ TEST_CASE("a release onto 3-2-1 supports is invariant under a rigid motion of th
 namespace {
 
 /// The exact moment of a rectangle t x h at curvature k, elastic-perfectly
-/// plastic in uniaxial stress (apps/verify_plasticity.cpp).
+/// plastic in uniaxial stress.
 Scalar bending_moment(Scalar k, Scalar youngs, Scalar sy, Scalar t, Scalar h) {
   const Scalar ky = 2.0 * sy / (youngs * h);
   const Scalar inertia = t * h * h * h / 12.0;

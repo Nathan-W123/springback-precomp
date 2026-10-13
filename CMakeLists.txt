@@ -9,7 +9,7 @@ project(SparLab
 # Options
 # ----------------------------------------------------------------------------
 option(SPARLAB_BUILD_TESTS     "Build the Catch2 test suite"            ON)
-option(SPARLAB_BUILD_APPS      "Build the command-line applications"    ON)
+option(SPARLAB_BUILD_APPS      "Build the sparlab_form executable"      ON)
 option(SPARLAB_ENABLE_WARNINGS "Enable a strict warning set"            ON)
 option(SPARLAB_WARNINGS_AS_ERRORS "Treat compiler warnings as errors"   OFF)
 option(SPARLAB_ENABLE_OPENMP   "Use OpenMP where the code supports it"  ON)
@@ -199,10 +199,8 @@ if(SPARLAB_BUILD_APPS)
   target_link_libraries(sparlab_app_support PUBLIC sparlab)
   target_include_directories(sparlab_app_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/apps)
 
-  foreach(app sparlab_solve sparlab_topopt sparlab_verify sparlab_bench sparlab_form)
-    add_executable(${app} apps/${app}.cpp)
-    target_link_libraries(${app} PRIVATE sparlab_app_support)
-  endforeach()
+  add_executable(sparlab_form apps/sparlab_form.cpp)
+  target_link_libraries(sparlab_form PRIVATE sparlab_app_support)
 
   # The git revision `sparlab_form --version` prints, regenerated at every
   # build (a result cache keys on it), "-dirty" with uncommitted changes.
@@ -214,9 +212,6 @@ if(SPARLAB_BUILD_APPS)
     COMMENT "SparLab: recording the git revision")
   add_dependencies(sparlab_form sparlab_git_sha)
   target_include_directories(sparlab_form PRIVATE ${CMAKE_BINARY_DIR}/generated)
-  target_sources(sparlab_verify PRIVATE apps/verify_loads.cpp apps/verify_nonlinear.cpp
-                                     apps/verify_plasticity.cpp apps/verify_logarithmic.cpp
-                                     apps/verify_dynamics.cpp apps/verify_elements.cpp)
 endif()
 
 # ----------------------------------------------------------------------------

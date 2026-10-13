@@ -5,14 +5,13 @@
 ///        supports (springback) - with the result files of
 ///        FormingWriter.hpp (docs/forming.md).
 ///
-/// Unlike sparlab_solve it runs no linear static solve first: it builds the
-/// model (which validates the mesh and the material), writes the deck and
-/// the mesh, runs the steps in order - writing each completed step's
-/// results and the tool forces so far as the step ends - and writes
-/// summary.json last. The exit status is 0
-/// when every step completed, 3 when one stopped (its reason on stderr and
-/// in summary.json; the files of the steps before it are written), and as
-/// for the other apps on a configuration (2) or I/O (4) error.
+/// It builds the model (which validates the mesh and the material), writes
+/// the deck and the mesh, runs the steps in order - writing each completed
+/// step's results and the tool forces so far as the step ends - and writes
+/// summary.json last. The exit status is 0 when every step completed, 3 when
+/// one stopped (its reason on stderr and in summary.json; the files of the
+/// steps before it are written), 2 on a configuration error and 4 on an I/O
+/// error (AppSupport.hpp, run_guarded).
 
 #include "AppSupport.hpp"
 

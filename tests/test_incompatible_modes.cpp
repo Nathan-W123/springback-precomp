@@ -6,8 +6,7 @@
 ///        history of the modes and the configuration path.
 ///
 /// Every check is exact (to round-off), a central-difference derivative
-/// check, or an invariant; the bending benchmarks against beam and plate
-/// theory are verification studies (apps/verify_elements.cpp).
+/// check, or an invariant.
 #include "TestSupport.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
