@@ -10,9 +10,9 @@ correction fitted on a few parts of a new process).
 `precomp.ml.surrogate.DeviationSurrogate` turns a model into what the
 compensation code consumes (``predict_deviation(commanded, setup)``).
 
-Determinism: every model takes a `seed`; bootstrap draws, initialisations,
-shuffles and dropout masks derive from it, so a fit on the same table with the
-same seed gives the same model (on the same library versions and hardware).
+Determinism: every model takes a `seed`; initialisations, validation splits
+and shuffles derive from it, so a fit on the same table with the same seed
+gives the same model (on the same library versions and hardware).
 Threads: `n_threads` caps OpenMP/BLAS (threadpoolctl) and torch threads during
 fit and predict; None uses $PRECOMP_ML_THREADS, else the libraries' defaults.
 
@@ -160,14 +160,6 @@ def _target_scale(model: Any, X: np.ndarray) -> np.ndarray:
     return s
 
 
-def _group_bootstrap_rows(groups: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """Row indices of a bootstrap resample of the groups (whole samples, drawn
-    with replacement; a group drawn twice contributes its rows twice)."""
-    uniq, inv = np.unique(groups, return_inverse=True)
-    counts = np.bincount(rng.integers(0, uniq.size, size=uniq.size), minlength=uniq.size)
-    return np.repeat(np.arange(len(groups)), counts[inv])
-
-
 def _grouped_holdout(groups: np.ndarray, fraction: float, rng: np.random.Generator
                      ) -> Tuple[np.ndarray, np.ndarray]:
     uniq = np.unique(groups)
@@ -225,7 +217,7 @@ class MLPEnsemble:
     def __init__(self, n_members: int = 5, *, hidden: Sequence[int] = (128, 128),
                  epochs: int = 40, batch_size: int = 1024, lr: float = 2e-3,
                  weight_decay: float = 1e-5, patience: int = 6, val_fraction: float = 0.2,
-                 mse_warmup: int = 3, bootstrap: bool = False,
+                 mse_warmup: int = 3,
                  target_scale: Optional[str] = DEFAULT_TARGET_SCALE, seed: int = 0,
                  n_threads: Optional[int] = None):
         if n_members < 1:
@@ -234,7 +226,7 @@ class MLPEnsemble:
                            epochs=int(epochs), batch_size=int(batch_size), lr=float(lr),
                            weight_decay=float(weight_decay), patience=int(patience),
                            val_fraction=float(val_fraction), mse_warmup=int(mse_warmup),
-                           bootstrap=bool(bootstrap), target_scale=target_scale,
+                           target_scale=target_scale,
                            seed=int(seed))
         self.n_threads = n_threads
         self.feature_names: List[str] = []
@@ -283,12 +275,10 @@ class MLPEnsemble:
         self.states, self.history = [], []
         with thread_limit(self.n_threads):
             for m in range(p["n_members"]):
-                # each member: its own seed, grouped validation split, optional bootstrap
+                # each member: its own seed and grouped validation split
                 seed = p["seed"] * 1009 + m
                 rng = np.random.default_rng(seed)
                 tr, va = _grouped_holdout(groups, p["val_fraction"], rng)
-                if p["bootstrap"]:
-                    tr = tr[_group_bootstrap_rows(groups[tr], rng)]
                 torch.manual_seed(seed)
                 net = self._net(X.shape[1])
                 opt = torch.optim.Adam(net.parameters(), lr=p["lr"],
@@ -376,7 +366,12 @@ class MLPEnsemble:
 
     @classmethod
     def from_state(cls, state: Mapping[str, Any]) -> "MLPEnsemble":
-        m = cls(**state["params"])
+        params = dict(state["params"])
+        # bundles saved before the bootstrap option was removed store it (False)
+        if params.pop("bootstrap", False):
+            raise PrecompError("this MLPEnsemble was trained with bootstrap=True, an option "
+                               "that has been removed; retrain it")
+        m = cls(**params)
         m.feature_names = list(state["feature_names"])
         m.x_mean, m.x_std = np.asarray(state["x_mean"]), np.asarray(state["x_std"])
         m.y_mean, m.y_scale = float(state["y_mean"]), float(state["y_scale"])
