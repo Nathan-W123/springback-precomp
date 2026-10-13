@@ -22,8 +22,8 @@ the reference configuration, the internal variables of every elastoplastic
 integration point, the friction history of every tool's contact nodes and
 the pseudo-time `t`. The elements, the kinematics (`finite`, total
 Lagrangian; or `small_strain`), the J2 plasticity with isotropic and
-kinematic hardening and the mean dilatation of Q4 and Hex8 are those of the
-non-linear static analysis (`NonlinearSystem`, `docs/formulation.md` 7c-7d):
+kinematic hardening and the mean dilatation of the Hex8 are those of the
+non-linear system (`NonlinearSystem`, `docs/formulation.md`):
 every Newton iteration returns the points from their committed state, and
 only a converged increment commits - a cut increment leaves no trace. No
 load case acts; the tools and the prescribed displacements drive the model.
@@ -205,9 +205,9 @@ the time each phase took.
 ## 2. Configuration
 
 The `forming` block of a deck (`sparlab_form` needs one). With it,
-`load_cases` may be omitted (the analysis applies none; a case that carries
-loads is ignored, with a warning), and so may `boundary_conditions` when
-every step lists its own constraints. Relative trajectory files resolve
+`boundary_conditions` may be omitted when every step lists its own
+constraints (there are no load cases: the tools and the prescribed
+displacements drive the model). Relative trajectory files resolve
 against the deck's directory; every key is read strictly (`--strict-config`
 refuses unknown ones).
 
@@ -245,7 +245,7 @@ refuses unknown ones).
 |-----|---------|---------|
 | `kinematics` | `"finite"` | `"finite"` (total Lagrangian in the Green-Lagrange strain: large rotation, small strain), `"finite_logarithmic"` (total Lagrangian in the logarithmic strain: large-strain plasticity, as in `nonlinear`, `docs/configuration.md`) or `"small_strain"` |
 | `material_model` | `"saint_venant_kirchhoff"` | elastic law with finite kinematics (`"neo_hookean"` for elastic models only) |
-| `mean_dilatation` | `"auto"` | B-bar of elastoplastic Q4 / Hex8 (as in `nonlinear`) |
+| `mean_dilatation` | `"auto"` | B-bar of the elastoplastic standard Hex8 |
 | `friction_tangent` | `"exact"` | `"exact"` (consistent, LU) or `"symmetric"` (a positive semi-definite friction stiffness: Cholesky, linear convergence where nodes slip) |
 | `solver` | `"auto"` | `"auto"`: SuiteSparse when built in; `"eigen"`: Eigen's factorisations |
 | `tools[].name` | `"tool<i>"` | unique; letters, digits, `_`, `-` and `.` only (a field of `tool_forces.csv`) |
@@ -338,7 +338,7 @@ build, with `-dirty` for uncommitted changes.
 | Step windows with a gap: a sphere active in both steps, its path moving in between (and a restart from the first step's state) | refused, naming the steps and the 2.4 mm jump; held over the gap, or taken away by a release in between: accepted; a tool that becomes active in contact is warned about |
 | Release of a stress-free block onto 3-2-1 supports | displacement exactly 0; supports moved by a translation: the body follows it to 1e-12, one iteration per increment |
 | Release of a plastically bent strip (finite kinematics, restarted from the formed state) with the 3-2-1 values moved by a translation, and by a 0.03 rad rotation with it | the result is the held one moved rigidly: largest deviation `6.3e-18` and `1.1e-17 m` (tested to `1e-14 m`); plastic history unchanged; 41 iterations and no cut, as held (without the rigid predictor 765 iterations and 2 cuts, and 175) |
-| Springback of an elastic-perfectly plastic beam (L = 8 h) bent by end displacements to `3 k_y` (plane stress Q4, small strain), released onto 3-2-1: curvature change of the central half vs the exact elastic unloading `M(3 k_y)/(EI) = 1.4444 k_y` | `1.4565`, `1.4482`, `1.4453 k_y` with 4, 8, 16 Q4 through the depth: errors `8.4e-3`, `2.6e-3`, `5.6e-4` (order 1.7 then 2.2); support reactions below `1e-6` of the reference force |
+| Springback of an elastic-perfectly plastic beam (L = 8 h) bent by end displacements to `3 k_y` (one standard Hex8 layer through its thickness, small strain), released onto 3-2-1: curvature change of the central half vs the exact elastic unloading `M(3 k_y)/(EI) = 1.4444 k_y` | `1.4729`, `1.4551`, `1.4483 k_y` with 4, 8, 16 Hex8 through the depth: errors `2.0e-2`, `7.4e-3`, `2.7e-3` (order 1.4 then 1.5; tested below `5e-3` on the finest); support reactions below `1e-6` of the reference force |
 | A sphere grazing the surface exactly at the end of the first increment, from the reference state (a round-off reference force) | converges without a cut, the first increment in at most 3 iterations |
 | SPIF smoke case (section 5) on a coarse 12 x 12 x 2 mesh with 12 chords a contour (86 increments, 785 iterations; about 17 s on one thread) | completes; the centre sinks 1.70 mm (tool tip at 2 mm), the release moves the part by up to 0.16 mm; tool force positive in z at every increment in contact. The 20 x 20 x 2 deck sinks 1.65 mm and springs back 0.18 mm. In both the `retract` step exercises nothing: the tool has no node in contact by the end of the second contour (on the 20 x 20 deck, at the last two increments of `form`), and the retract moves the part by about `1e-18 m` - a 5 mm tool on 2 to 3.3 mm elements touches the deformed surface at one or two nodes and can pass between them |
 | The `forming` block: every key, trajectory file, refusals; the result files and summary keys of the contract | every key read in strict mode; every refusal names its key; every file with its exact header and row count |
@@ -368,7 +368,7 @@ agree to `1e-17 m`.
 |------|------|------|------------|-------------------|-------------|-------|
 | Smoke (`configs/forming/spif_smoke.json`): 40 x 40 x 1 mm, 20 x 20 x 2 Hex8, 5 mm tool, 2 contours to 2 mm, retract, unclamp | 3 969 | 100 mm | 137 | 1 274 | **75 s** | 122 s |
 | Cone, first quarter contour: 60 x 60 x 1 mm, 60 x 60 x 2 Hex8, plunge and a quarter of the 1 mm contour, unclamp | 33 489 | 23.6 mm | 61 | 693 | **939 s** | 1 289 s |
-| Cone, full (`configs/forming/spif_cone_60.json`): ten contours with a 1 mm step-down to 10 mm, retract, unclamp | 33 489 | 622 mm | 1 470 (from the path) | ~18 700 (12.7 per increment) | **~7 h** (extrapolated) | ~9.6 h |
+| Cone, full (`spif_cone_60.json`, in the history at commit `7d571e6`): ten contours with a 1 mm step-down to 10 mm, retract, unclamp | 33 489 | 622 mm | 1 470 (from the path) | ~18 700 (12.7 per increment) | **~7 h** (extrapolated) | ~9.6 h |
 
 Where the time goes (seconds):
 
@@ -450,8 +450,8 @@ What the numbers say:
   `model.element_formulation: "incompatible_modes"` gives the Hex8 that
   bends with one element through the sheet, and
   `model.integration.thickness_points` up to seven Gauss points through each
-  layer (`docs/formulation.md`; the springback study of `docs/verification.md`,
-  section 27: one layer with 5 / 7 points within 3.5 % / 0.9 % of beam
+  layer (`docs/formulation.md`; the springback study, in the history at commit `7d571e6`:
+  one layer with 5 / 7 points within 3.5 % / 0.9 % of beam
   theory, the standard layer 18 %). The committed mode
   parameters are part of the restartable state. On the smoke deck
   (`spif_smoke.json`, 2 threads, load average 3.4 to 3.9 from other jobs):
@@ -479,8 +479,7 @@ What the numbers say:
 * **No remeshing, no trimming, no element deletion**; no thermal effects (the
   analysis applies no temperature); no tool spin (tools translate, so the
   friction direction is that of the translation only); no tool wear or
-  deformable tools; one cell type per mesh; linear elements only (Q4, Tri3,
-  Hex8, Tet4: a Tet10 face's corner weights vanish).
+  deformable tools; one cell type per mesh (Hex8).
 * **Release.** The imbalance a release ramps out is a dead load, fixed in
   space: supports that rotated the part far while it springs back would
   change the path of its unloading (and any reverse yielding along it). A
@@ -508,7 +507,7 @@ analysis, which gives the springback.
 
 * **Equations of motion** on the step's free DOFs,
   `M a + alpha M v + f_int(u) = f_c(u, v, t)`: `M` the lumped mass (the row
-  sums of the consistent element masses; HRZ for the Tet10), `alpha` the
+  sums of the consistent element masses), `alpha` the
   optional mass-proportional damping [1/s], `f_int` the internal forces of the
   non-linear static analysis (the same elements, kinematics, plasticity,
   mean dilatation and history), `f_c` the contact forces of the step's tools.
@@ -681,7 +680,7 @@ warn about: their threshold is the default) and `v = 1 m/s` is an
 equivalent speed of about 14 m/s. The equivalent speed governs the inertia;
 the contact penalty is a second, independent parameter (item 5). Guidance,
 from the smoke study (section 7.3) and the `explicit-dent` validation
-(docs/verification.md):
+(in the history at commit `7d571e6`):
 
 1. Pick the mass scaling target so that the unscaled stable step is not the
    bottleneck (selective scaling scales only the elements that limit it);
@@ -692,8 +691,8 @@ from the smoke study (section 7.3) and the `explicit-dent` validation
    not a criterion), `max_energy_error` below 0.05, `max_penetration_ratio`
    below 0.01, the tool force's moving average smooth.
 3. Check convergence: halve the equivalent speed once and compare the
-   springback (`compare_forming_runs.py` compares any two runs of the same
-   mesh); the difference should be small against the springback. Halving the
+   springback of the two runs on the same mesh (the comparison script,
+   `compare_forming_runs.py`, is in the history at commit `7d571e6`); the difference should be small against the springback. Halving the
    speed does not reveal the penalty's bias (item 5).
 4. Leave `damping` at 0 for forming: mass-proportional damping resists the
    rigid motion of the material that follows the tool and adds a force
@@ -715,8 +714,8 @@ from the smoke study (section 7.3) and the `explicit-dent` validation
 
 `configs/forming/spif_smoke_explicit.json` is `spif_smoke.json` with its
 `form` and `retract` steps explicit; it was run at four equivalent speeds and
-three to four contact penalties and compared by `python3
-python/scripts/compare_forming_runs.py <implicit_run> <explicit_run>` with
+three to four contact penalties and compared node by node (by
+`python/scripts/compare_forming_runs.py`, in the history at commit `7d571e6`) with
 the implicit analysis (`sparlab_form --threads 2`, load average 3 to 7 from
 other jobs, so the run times are indicative only). The implicit reference is
 itself discretised by its tool travel per increment: the deck's 1 mm and a
@@ -779,7 +778,7 @@ What it shows:
   6 um at 0.1 and 1 um at 0.5: small against the shape differences, which do
   not follow it. On the test dent, a stiffer contact, it is 17 um at 0.1 and
   biases the shape by 7 % of the depth at any speed (`explicit-dent`,
-  docs/verification.md); hence the default 0.5.
+  in the history at commit `7d571e6`); hence the default 0.5.
 * **The formed and final shapes** level off at about `0.02 mm` largest and
   `0.004` to `0.005 mm` RMS on the 2.2 mm deep part, at every speed and every
   penalty - their explicit depth is 0.015 to 0.03 mm deeper than the
@@ -812,7 +811,7 @@ and above 4 the other jobs take cores from the run - a spinning OpenMP
 barrier then waits for a descheduled thread, so the loaded runs are 2 to 3
 times slower than the unloaded rate), GCC 13 `-O3`.
 
-**Per time step** (`configs/forming/spif_cone_60_explicit.json`, the first
+**Per time step** (`spif_cone_60_explicit.json`, in the history at commit `7d571e6`, the first
 1 518 time steps: 7 200 Hex8, 33 489 DOFs, plastic, frictional contact;
 load average 2.7 to 2.9 before each run):
 
@@ -908,7 +907,7 @@ convergence check (halving the speed once) is the sufficient one.
   test dent and 1 um on the smoke case, against 0.4 and 0.3 um implicitly).
   The penetration does not fall with the tool speed, so it is a bias of its
   own beside the inertia: 7 % of the test dent's depth at 0.1, 0.9 % at 0.5
-  (`explicit-dent`, docs/verification.md). Watch `max_penetration_ratio`;
+  (`explicit-dent`, in the history at commit `7d571e6`). Watch `max_penetration_ratio`;
   `contact_stiffness` above 1 is refused (the step would shrink as
   `sqrt(4 - s_c)`). An implicit `form` step directly after an explicit step
   with a tool still in contact would see that penetration with the stiffer

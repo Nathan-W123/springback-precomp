@@ -1,6 +1,0 @@
-case,run,build_direction,compliance_J,unsupported_elements,solid_elements,unsupported_fraction,connected_groups,iterations,stop_reason
-mbb_beam_overhang_off,no filter,+y,186.44122415507292,132,5420,0.024354243542435424,1,216,objective_stall
-mbb_beam_overhang,overhang filter,+y,193.25493186013864,0,5403,0.0,1,211,objective_stall
-mbb_beam_overhang_down,overhang filter,-y,206.73094460703646,0,5408,0.0,1,219,objective_stall
-bracket_3d_overhang_off,no filter,+y,0.18086112335505483,78,1234,0.06320907617504187,1,170,objective_stall
-bracket_3d_overhang,overhang filter,+y,0.18892249066677605,0,1235,0.0,5,177,objective_stall

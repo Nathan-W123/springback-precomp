@@ -1,4 +1,0 @@
-case,run,compliance_J,simp_lambda_1,simp_mode_1_solid_energy_fraction,part_lambda_1,full_solid_lambda_1,iterations,stop_reason,linear_solves,runtime_s
-column_buckling_unconstrained,compliance only,112.18216047988936,,,2.8624155971131477,149.65179966046796,55,design_change,58,1.562874638
-column_buckling_nonrobust,"lambda >= 6, plain projection",159.20882219508871,6.000455454899774,0.8011387291993153,3.6454633176843965,149.65179966046796,298,design_change,63407,107.87117364
-column_buckling,"lambda >= 6, robust projection",186.63606095938633,6.001960081422537,0.6612022550429651,5.814707777693533,149.65179966046796,375,objective_stall,90702,156.742109262

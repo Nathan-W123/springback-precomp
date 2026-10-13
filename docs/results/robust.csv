@@ -1,4 +1,0 @@
-case,run,eroded_compliance_J,eroded_volume_fraction,intermediate_compliance_J,intermediate_volume_fraction,dilated_compliance_J,dilated_volume_fraction,solid_min_size_cells,void_min_size_cells
-mbb_beam_robust_off,"plain projection, erosion check",231.39847641688243,0.4570182652543767,189.6538472268036,0.4999999999903357,181.04527634031888,0.5418758815107219,3.0,5.0
-mbb_beam_robust,robust formulation,204.05063669060547,0.46353393385806646,195.48452603279964,0.49792755203372135,186.27329196447943,0.5306032526700883,4.0,6.0
-column_buckling,"robust formulation, buckling constraint",192.66805479412182,0.23252719752280834,186.63606095938633,0.24999930226165798,179.5614350658783,0.270089001390086,1.0,3.0

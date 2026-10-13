@@ -10,7 +10,7 @@ Verified (read):
 * This repository: `docs/forming.md` sections 5-7 (costs, the standard Hex8's
   bending stiffness, the explicit step, its kernel covering only the standard
   2 x 2 x 2 Hex8 and the generic dispatch at ~35 times the cost, the smoke
-  study's 3.5 % springback difference at 7.1 m/s); `docs/verification.md`
+  study's 3.5 % springback difference at 7.1 m/s); `docs/verification.md` (removed in the cleanup; at commit 7d571e6)
   section 27 (one IM layer with 5 / 7 points within 3.5 % / 0.9 % of beam
   theory on a bent strip) and "What is not covered" ("the springback of the
   SPIF cases is not mesh-converged").
