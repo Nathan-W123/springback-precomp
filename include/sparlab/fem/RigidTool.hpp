@@ -93,6 +93,13 @@
 ///
 /// **Units.** Strict SI: positions [m], times [s] (pseudo-time),
 /// forces [N], penalty stiffness [Pa/m].
+///
+/// Where this fits: Simulations stage - the moving rigid tools and their contact with the sheet.
+/// Called from: fem/Forming.cpp:FormingAnalysis::run (ToolContact),
+///   fem/ExplicitDynamics.cpp:PenaltyContact, io/Config.cpp:parse_configuration (tools)
+/// Calls into: fem/Selector (tool surface), fem/BoundaryConditions (faces_in_region),
+///   elements/FaceGeometry (tributary areas)
+/// Start reading at: ToolContact::evaluate, ToolContact::begin_increment (fem/RigidTool.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

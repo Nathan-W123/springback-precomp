@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/io/MeshReader.hpp
+
 #include "sparlab/io/MeshReader.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

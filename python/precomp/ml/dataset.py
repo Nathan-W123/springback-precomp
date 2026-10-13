@@ -23,6 +23,13 @@ perturbed and compensated commanded shapes of one target part) share a
 `part_id`, so a part never appears on both sides of a split: the workflow
 splits design points by their index (`python/scripts/common.split_of`), and
 `train_surrogate` and `evaluate_surrogate` refuse a part on both sides.
+
+Where this fits: "Features and data": stores each simulated sample and turns samples into the
+    feature tables (X, y, groups) that training reads.
+Called from: ml/generate.py:generate (Dataset.append), springback_fine_ml.py:main
+    (Dataset.create), ml/surrogate.py:train_surrogate (build_table).
+Calls into: ml.features (feature_maps), geometry.heightmap (HeightMap), toolpath (Toolpath).
+Start reading at: Sample, then build_table.
 """
 
 from __future__ import annotations

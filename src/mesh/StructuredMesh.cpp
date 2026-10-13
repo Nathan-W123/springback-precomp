@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/mesh/StructuredMesh.hpp
+
 #include "sparlab/mesh/StructuredMesh.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

@@ -4,6 +4,13 @@ region, a run's cost and physics checks, the design's train / calibration /
 test split, JSON output and the software versions of a run.
 
 Every number these helpers report comes from a SparLab simulation.
+
+Where this fits: helpers of the three scripts: the design split and, for "Evaluation", the
+    deviation by region and the run checks.
+Called from: springback_fine_benchmark.py:run_chain, springback_fine_ml.py:ml_shot,
+    combined_rim_ml.py:verify (each script imports it).
+Calls into: precomp.metrology, precomp._util, precomp.fea.runner (sparlab_version).
+Start reading at: deviation, then split_of.
 """
 
 from __future__ import annotations

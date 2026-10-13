@@ -25,6 +25,13 @@ Each run is a subprocess with OMP_NUM_THREADS set to the setup's `threads`
 completed, 3 when one stopped (`summary.json` says why), 2 for a
 configuration error and 4 for an I/O error (docs/forming.md, section 3);
 anything but 0 is a FormingError.
+
+Where this fits: the runner step of "Simulations": runs sparlab_form through the content-addressed
+    run cache, one deck (simulate) or many in parallel (simulate_many).
+Called from: compensation.py:FEAPredictor.__call__, ml/generate.py:SparlabSimulator.run,
+    combined_rim_ml.py:verify.
+Calls into: fea.deck (build_deck, deck_hash), fea.results (load_result), sparlab_form.
+Start reading at: simulate, then run_deck.
 """
 
 from __future__ import annotations
@@ -211,22 +218,26 @@ def simulate(setup: FormingSetup, commanded: HeightMap, work_dir: PathLike, *,
     work = Path(work_dir).resolve()
     staging = work / "staging" / uuid.uuid4().hex
     try:
+        # Build the deck in staging; its content hash (with the solver version) is the cache key
         build_deck(setup, commanded, staging, toolpath=toolpath, target=target)
         key = deck_hash(staging, version)
         final = cache_entry(work, key)
         prov = {"key": key, "sparlab_version": version, "executable": str(exe),
                 "cache_dir": str(final)}
+        # Cache hit: return the stored result without running
         if cache and (final / "COMPLETE").is_file():
             shutil.rmtree(staging, ignore_errors=True)
             run = read_json(final / "run.json") if (final / "run.json").is_file() else {}
             prov.update(cache_hit=True, runtime_s=run.get("runtime_s"))
             return load_result(final / OUTPUT_DIR, prov)
+        # A recorded failure is raised again unless retry_failed
         if cache and (final / "FAILED").is_file() and not retry_failed:
             shutil.rmtree(staging, ignore_errors=True)
             record = read_json(final / "FAILED")
             raise FormingError(f"this deck failed before ({record.get('reason', 'unknown')}); "
                                f"pass retry_failed=True to run it again. Entry: {final}",
                                record)
+        # Run sparlab_form in staging; a failure is recorded and published as well
         prov["cache_hit"] = False
         try:
             result = run_deck(staging, executable=exe, timeout=setup.timeout,
@@ -237,6 +248,7 @@ def simulate(setup: FormingSetup, commanded: HeightMap, work_dir: PathLike, *,
             write_json(staging / "FAILED", record)
             _publish(staging, final)
             raise
+        # Mark the run complete and move it into the cache in one atomic rename
         (staging / "COMPLETE").write_text(key + "\n", encoding="ascii")
         entry = _publish(staging, final)
         return load_result(entry / OUTPUT_DIR, result.provenance)

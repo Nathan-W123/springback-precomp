@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/FemModel.hpp
+
 #include "sparlab/fem/FemModel.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

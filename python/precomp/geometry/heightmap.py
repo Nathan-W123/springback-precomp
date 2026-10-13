@@ -12,6 +12,13 @@ same layout as SparLab's structured grids, so a C-order reshape of a
 row-major node list gives the same picture. Row 0 is the *lowest* y.
 
 Every length is in metres, every angle in radians unless its name says `_deg`.
+
+Where this fits: the surface type of every stage (targets, commands, formed shapes, scans);
+    HeightMap.from_points (scans) serves benchmarks/physics_audit, not the three scripts.
+Called from: geometry/parts.py:Part.heightmap, fea/results.py:FormingResult.formed_surface,
+    ml/dataset.py:Sample.load.
+Calls into: scipy (ndimage, interpolate, spatial), _util.
+Start reading at: Grid, then HeightMap.
 """
 
 from __future__ import annotations

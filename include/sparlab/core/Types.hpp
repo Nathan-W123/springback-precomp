@@ -10,6 +10,13 @@
 /// problems, 3 for solids), so nothing here fixes it at compile time. The
 /// quantities that follow from it - degrees of freedom per node, Voigt
 /// components - are obtained from the helpers below.
+///
+/// Where this fits: Simulations stage - the Scalar, Index and Eigen aliases the whole
+///   sparlab_form library uses.
+/// Called from: included by nearly every header (e.g. mesh/Mesh.hpp, io/Config.hpp,
+///   fem/Forming.hpp)
+/// Calls into: Eigen only
+/// Start reading at: Scalar, Index, then Vector6 / Matrix6 (the 3-D Voigt types)
 #pragma once
 
 #include <Eigen/Core>

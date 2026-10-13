@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/io/VtkWriter.hpp
+
 #include "sparlab/io/VtkWriter.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

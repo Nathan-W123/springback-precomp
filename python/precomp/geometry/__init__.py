@@ -3,6 +3,13 @@
 See `heightmap` for the surface convention (flat blank at z = 0, formed part
 z <= 0, arrays indexed [y, x] with x fastest) and `parts` for the parametric
 target families.
+
+Where this fits: re-exports the geometry of "Design of the parts" (Grid, HeightMap, the part
+    families).
+Called from: the Python tests only (python/tests); package code imports geometry.heightmap
+    and geometry.parts directly.
+Calls into: geometry.heightmap, geometry.parts.
+Start reading at: heightmap.HeightMap, then parts.Part.
 """
 
 from .heightmap import Grid, HeightMap, zeros

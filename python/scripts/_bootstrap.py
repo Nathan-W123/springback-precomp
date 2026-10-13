@@ -2,6 +2,11 @@
 
 The package is deliberately not installed: `python3 python/scripts/<name>.py`
 should work in a fresh clone with nothing but the scientific stack present.
+
+Where this fits: no workflow stage; it puts python/ on sys.path so the scripts can import precomp.
+Called from: `import _bootstrap` in common.py, springback_fine_ml.py and combined_rim_ml.py.
+Calls into: os, sys (it only edits sys.path).
+Start reading at: the module-level code (there are no functions).
 """
 
 from __future__ import annotations

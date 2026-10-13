@@ -27,6 +27,13 @@ medial axis (e.g. a rounded-rectangle corner radius at least the horizontal
 run of the wall plus the bottom fillet's tangent length), which is what keeps
 the surface C1 there; a sharp-cornered pyramid is therefore not in the family.
 The flange - everything outside the opening - stays at z = 0.
+
+Where this fits: "Design of the parts": the target families (truncated cone, pyramid, dome,
+    elliptic cone) whose parameters ml/generate.py draws.
+Called from: ml/generate.py:design_points (families, Part.heightmap),
+    ml/generate.py:DesignPoint.target (Part.heightmap).
+Calls into: geometry.heightmap (Grid, HeightMap).
+Start reading at: Part, then one family such as TruncatedCone.
 """
 
 from __future__ import annotations

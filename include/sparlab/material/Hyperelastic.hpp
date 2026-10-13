@@ -47,6 +47,13 @@
 /// \f$\{11, 22, 33, 12, 23, 31\}\f$ in 3-D) with engineering shear strain,
 /// so the tangent's entries are \f$\mathbb{C}_{ijkl}\f$ for the index pairs of
 /// the row and the column.
+///
+/// Where this fits: Simulations stage - the elastic laws of the total Lagrangian kernel, for
+///   elements that skip the plastic return (fem/NonlinearSystem.hpp routed_through_return).
+/// Called from: fem/TotalLagrangian.cpp:total_lagrangian_element,
+///   fem/IncompatibleModes.cpp:respond, fem/Elastoplastic.cpp:kinematics_of (green_lagrange_voigt)
+/// Calls into: material/IsotropicMaterial, core/Exceptions
+/// Start reading at: evaluate_hyperelastic, green_lagrange_voigt
 #pragma once
 
 #include "sparlab/core/Types.hpp"

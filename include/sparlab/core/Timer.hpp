@@ -1,5 +1,12 @@
 /// \file Timer.hpp
 /// \brief Monotonic wall-clock stopwatch and the per-phase timings of a run.
+///
+/// Where this fits: Simulations stage - the wall clock of a run and the per-phase timings
+///   that summary.json reports under "timing".
+/// Called from: apps/sparlab_form.cpp:main (Timer), fem/Forming.cpp (ScopedTimer per phase),
+///   io/FormingWriter.cpp:forming_summary_json (TimingLedger totals)
+/// Calls into: std::chrono only
+/// Start reading at: TimingLedger, ScopedTimer
 #pragma once
 
 #include <chrono>

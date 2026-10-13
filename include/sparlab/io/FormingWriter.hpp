@@ -31,6 +31,12 @@
 /// files. sparlab_form writes
 /// config.json and mesh.json before the first step, each step's files and
 /// tool_forces.csv as the step ends, and summary.json last.
+///
+/// Where this fits: Simulations stage - writes the result files of a forming run, which
+///   precomp's fea/results.py reads back.
+/// Called from: apps/sparlab_form.cpp:main
+/// Calls into: io/ResultWriter, io/CsvWriter, io/VtkWriter, io/Json
+/// Start reading at: write_forming_step, forming_summary_json
 #pragma once
 
 #include "sparlab/fem/FemModel.hpp"

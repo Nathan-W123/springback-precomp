@@ -19,6 +19,13 @@ its axis is such a direction: a scan of a truncated cone cannot fix it.
 Deviation. `signed_deviation` measures, at every target grid node, the
 distance along the target normal to the formed surface: positive when the
 formed surface lies on the tool side (+normal) of the target.
+
+Where this fits: "Evaluation" (deviation, error metrics, part and flange masks); align (scan
+    registration) serves benchmarks/physics_audit (validation), not the three scripts.
+Called from: common.py:deviation, compensation.py:displacement_adjustment,
+    ml/compensate.py:surrogate_compensate.
+Calls into: geometry.heightmap (HeightMap), scipy.spatial (cKDTree).
+Start reading at: vertical_deviation, then metrics.
 """
 
 from __future__ import annotations

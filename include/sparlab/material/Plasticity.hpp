@@ -160,6 +160,13 @@
 /// stress (\f$\dot\alpha \parallel S^{-1}P\xi\f$ is not parallel to \f$\xi\f$).
 /// The von Mises law without backstresses keeps the radial return above,
 /// bit for bit.
+///
+/// Where this fits: Simulations stage - the stress update at one integration point (J2 radial
+///   return, or the general return for Hill48 and Chaboche) that the element kernels call.
+/// Called from: fem/Elastoplastic.cpp:elastoplastic_element, fem/IncompatibleModes.cpp:respond,
+///   fem/ExplicitKernel.cpp:element_kernel
+/// Calls into: material/IsotropicMaterial (PlasticityParameters), core/Exceptions
+/// Start reading at: plastic_return, then return_3d and return_general_3d (material/Plasticity.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

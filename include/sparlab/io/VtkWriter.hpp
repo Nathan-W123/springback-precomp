@@ -7,6 +7,12 @@
 /// type 12). The forming writer (FormingWriter.hpp) names its fields:
 /// point data `displacement` and `displacement_magnitude`, cell data
 /// `eq_plastic_strain` and `von_mises`.
+///
+/// Where this fits: Simulations stage - the per-step .vtk files for viewing a run in
+///   ParaView; no precomp code reads them.
+/// Called from: io/FormingWriter.cpp:write_vtk
+/// Calls into: mesh/Mesh, core/Exceptions (IoError)
+/// Start reading at: VtkWriter::write
 #pragma once
 
 #include "sparlab/core/Types.hpp"

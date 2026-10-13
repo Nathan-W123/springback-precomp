@@ -112,6 +112,13 @@
 /// elastic strains (Elastoplastic.hpp) - plastic strains of order one in
 /// forming are beyond its accuracy for the stress, not for equilibrium; the
 /// mesh is never refined, trimmed or remapped.
+///
+/// Where this fits: Simulations stage - the analysis sparlab_form runs on a forming deck:
+///   form steps drive the tools over the sheet, release steps let it spring back.
+/// Called from: apps/sparlab_form.cpp:main, io/Config.cpp:parse_configuration (parse_step_type),
+///   io/FormingWriter.cpp:forming_summary_json (forming_suitesparse_available)
+/// Calls into: fem/NonlinearSystem, fem/RigidTool, fem/ExplicitDynamics, fem/Elastoplastic
+/// Start reading at: FormingAnalysis::run(const AnalysisState&) (fem/Forming.cpp)
 #pragma once
 
 #include "sparlab/core/Timer.hpp"

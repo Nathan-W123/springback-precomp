@@ -18,6 +18,13 @@ A single constant C is a first-order model: the compliance of a serial robot
 changes with its pose. `CartesianCompliance.from_joint_stiffness` computes C
 for one pose; a pose-dependent map needs one C per path point (pass an
 (n, 3, 3) array to `deflection`).
+
+Where this fits: validation only, outside the README workflow: the physics audit uses it to bound
+    the effect of robot compliance; none of the three scripts uses it.
+Called from: benchmarks/physics_audit/process/proclens.py:build_variant and, in the same
+    folder, robot_deflection.py (module level) and robot_stiffness.py:main.
+Calls into: toolpath (Toolpath), pandas.
+Start reading at: forces_on_path, then CartesianCompliance.
 """
 
 from __future__ import annotations

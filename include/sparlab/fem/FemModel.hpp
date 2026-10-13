@@ -13,6 +13,13 @@
 /// The element is that of `integration.formulation` (Element.hpp), and a
 /// through-thickness rule (`integration.thickness_points`) is accepted for a
 /// Hex8 mesh only.
+///
+/// Where this fits: Simulations stage - the model built from the deck (mesh, materials,
+///   element, DOFs, boundary conditions) that every analysis of sparlab_form reads.
+/// Called from: io/Config.cpp:build_model (builds and finalises it), apps/sparlab_form.cpp:main
+/// Calls into: mesh/Mesh, elements/Element (make_element), material/IsotropicMaterial,
+///   fem/BoundaryConditions (apply_constraints)
+/// Start reading at: FemModel::FemModel, FemModel::finalize (fem/FemModel.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

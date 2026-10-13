@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/elements/Hex8.hpp
+
 #include "sparlab/elements/Hex8.hpp"
 
 #include "Hex8Kernels.hpp"

@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/elements/Quadrature.hpp
+
 #include "sparlab/elements/Quadrature.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

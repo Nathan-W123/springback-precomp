@@ -6,6 +6,13 @@
 ///
 /// The code is that of the standard Hex8 kernels, moved here unchanged:
 /// the element's results stay bit-for-bit what they were.
+///
+/// Where this fits: Simulations stage - the Hex8 mapping and strain-matrix kernels shared
+///   by the two Hex8 elements.
+/// Called from: elements/Hex8.cpp:Hex8Element::stiffness, Hex8Element::strain_operator,
+///   elements/Hex8Incompatible.cpp:Hex8IncompatibleElement::stiffness
+/// Calls into: elements/Hex8 (shape gradients), elements/Quadrature
+/// Start reading at: hex8_mapping, hex8_strain_matrix
 #pragma once
 
 #include "sparlab/core/Exceptions.hpp"

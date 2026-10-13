@@ -52,6 +52,13 @@ where the clamp left them, so the released part keeps its place on the
 fixture. sparlab_form warns that the clamp of "unload" holds reactions (it
 is not statically determinate): that is the springback the fixture
 prevents, which "release" lets go.
+
+Where this fits: the deck step of "Simulations" (setup -> toolpath -> deck -> runner -> results):
+    writes deck.json and toolpath.csv and defines the run's content hash.
+Called from: fea/runner.py:simulate (build_deck, deck_hash), ml/generate.py:generate and
+    ml/features.py:_time_map (make_toolpath).
+Calls into: toolpath (spiral_toolpath), fea.support (plan_support, check_command), fea.setup.
+Start reading at: build_deck, then forming_block.
 """
 
 from __future__ import annotations
@@ -253,16 +260,20 @@ def build_deck(setup: FormingSetup, commanded: HeightMap, out_dir: PathLike,
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
+    # Refuse a command the tools cannot realise, then make and check the tool path
     check_command(setup, commanded, target)
     path = toolpath if toolpath is not None else make_toolpath(setup, commanded)
     if abs(path.tool_radius - setup.tool_radius) > 1e-12:
         raise PrecompError("the tool path was made for a different tool radius")
     check_toolpath(setup, path)
+    # The support strategy's extra tools, steps and trajectory files
     plan = plan_support(setup, commanded, forming_surface(commanded), path, target)
+    # The files sparlab_form reads, which the content hash covers
     write_json(out / DECK_FILE, deck_document(setup, form_end(path), plan))
     path.to_sparlab_csv(out / TOOLPATH_FILE)
     for name, text in plan.files.items():
         (out / name).write_text(text, encoding="ascii")
+    # Provenance only: not read by the solver, not part of the content hash
     commanded.save(out / COMMANDED_FILE)
     prov = {
         "precomp_version": __version__,

@@ -29,6 +29,12 @@ loops where the drop-cutter surface has exactly that height (bisection), so
 the spiral is gouge-free as well and its height never increases.
 Loops come from `contourpy`, are closed, oriented consistently, start near
 the previous level's start and are resampled by arc length.
+
+Where this fits: "Simulations", between the target height map and the forming deck: the spiral
+    path, the two-tool support path and the edge pass (rim_pass_path).
+Called from: fea/deck.py:make_toolpath, fea/support.py:dsif_trajectory, fea/support.py:rim_pass.
+Calls into: geometry.heightmap (HeightMap, Grid), scipy.ndimage (drop cutter), contourpy.
+Start reading at: spiral_toolpath, then Toolpath.
 """
 
 from __future__ import annotations
@@ -411,10 +417,12 @@ def spiral_toolpath(target: HeightMap, tool_radius: float, step_down: float,
     R = require_positive("tool_radius", tool_radius)
     step_down = require_positive("step_down", step_down)
     spacing = require_positive("spacing", spacing)
+    # Drop-cutter surface of the target and the tool-centre height of each level
     cz = tool_center_surface(target, R)
     levels = _centre_levels(cz, R, step_down)
     min_loop = _min_loop(target, spacing, min_loop_length)
     levels, raised = _resolvable_deepest(cz, levels, R, min_loop, single=True)
+    # One closed loop per level: the contour of the drop-cutter surface at that height
     per_level = _ordered_loops(cz, levels, spacing, direction, False, start_angle_deg,
                                min_loop)
     for k, (_, loops) in enumerate(per_level, start=1):
@@ -423,6 +431,7 @@ def spiral_toolpath(target: HeightMap, tool_radius: float, step_down: float,
                              f"{len(loops)} (a part with several pockets on one level).")
     levels = [h for h, _ in per_level]
     loops = [l[0] for _, l in per_level]
+    # Revolution k descends from loop k - 1 to loop k (loop 0: loop 1 at the sheet plane)
     heights = [R] + list(levels)
     loops = [loops[0]] + loops
     pts = []
@@ -437,6 +446,7 @@ def spiral_toolpath(target: HeightMap, tool_radius: float, step_down: float,
         xy = _blend_to_height(cz, A, B, z)
         pts.append(np.column_stack([xy, z]))
         lvl.append(np.full(n, k))
+    # Optional last revolution at the deepest level closes the path
     if final_loop:
         la, lb = loops[-2], loops[-1]
         n = max(3, int(math.ceil(max(_loop_length(la), _loop_length(lb)) / spacing)))
@@ -446,6 +456,7 @@ def spiral_toolpath(target: HeightMap, tool_radius: float, step_down: float,
         xy = _blend_to_height(cz, np.vstack([A, A[:1]]), np.vstack([B, B[:1]]), z)
         pts.append(np.column_stack([xy, z]))
         lvl.append(np.full(n + 1, len(loops) - 1))
+    # Approach and retract points in the air (level AIR) above the start and the end
     body = np.vstack(pts)
     safe_z = R + clearance
     start = np.array([[body[0, 0], body[0, 1], safe_z]])

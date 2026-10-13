@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/material/IsotropicMaterial.hpp
+
 #include "sparlab/material/IsotropicMaterial.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

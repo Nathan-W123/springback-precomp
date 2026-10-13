@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/io/FormingWriter.hpp
+
 #include "sparlab/io/FormingWriter.hpp"
 
 #include "sparlab/io/CsvWriter.hpp"

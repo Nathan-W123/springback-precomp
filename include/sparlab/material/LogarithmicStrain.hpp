@@ -68,6 +68,12 @@
 /// of Seth-Hill's family of generalized strain tensors*, Commun. Numer.
 /// Meth. Engng 17 (2001); Bhatia, *Matrix Analysis* (1997), ch. V (the
 /// Daleckii-Krein formulas).
+///
+/// Where this fits: Simulations stage - the logarithmic strain of the "finite_logarithmic"
+///   kinematics, the default of precomp's FormingSetup (fea/setup.py).
+/// Called from: fem/Elastoplastic.cpp:kinematics_of, fem/IncompatibleModes.cpp:kinematics_at
+/// Calls into: Eigen (SelfAdjointEigenSolver), core/Exceptions
+/// Start reading at: logarithmic_strain, logarithmic_stress
 #pragma once
 
 #include "sparlab/core/Types.hpp"

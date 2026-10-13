@@ -27,6 +27,12 @@
 /// Every numeric field is in SI units. Unknown keys are reported (not ignored),
 /// because a misspelled key that silently takes its default is a direct route
 /// to a wrong published number.
+///
+/// Where this fits: Simulations stage - reads the deck.json that precomp's fea/deck.py
+///   writes and builds the FemModel and FormingOptions that sparlab_form runs.
+/// Called from: apps/sparlab_form.cpp:main (load_configuration, build_model)
+/// Calls into: io/Json (ConfigNode), io/MeshReader, mesh/StructuredMesh, fem/FemModel
+/// Start reading at: parse_configuration, build_model
 #pragma once
 
 #include "sparlab/core/Types.hpp"

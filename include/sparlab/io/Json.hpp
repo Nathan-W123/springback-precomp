@@ -16,6 +16,13 @@
 /// in a set shared by all nodes of one document, so `unused_keys` can list keys
 /// present in the deck that nothing ever read - which is how a misspelled key
 /// gets caught instead of silently taking its default.
+///
+/// Where this fits: Simulations stage - the JSON parser and writer under the deck reader
+///   (io/Config) and the result writers.
+/// Called from: io/Config.cpp:load_configuration (parse_file), io/Config.cpp:parse_configuration
+///   (ConfigNode), io/ResultWriter.cpp:ResultWriter::write_json (dump)
+/// Calls into: core/Exceptions (ConfigError, IoError)
+/// Start reading at: ConfigNode, json::Value
 #pragma once
 
 #include "sparlab/core/Types.hpp"

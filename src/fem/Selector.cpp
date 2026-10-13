@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/Selector.hpp
+
 #include "sparlab/fem/Selector.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

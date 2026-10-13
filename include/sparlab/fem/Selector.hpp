@@ -14,6 +14,13 @@
 /// A `SelectorGroup` is the union of its members, optionally complemented.
 /// Tolerances are relative to the mesh diagonal so that degenerate boxes
 /// (`xmin == xmax`) reliably capture a line (2-D) or plane (3-D) of nodes.
+///
+/// Where this fits: Simulations stage - turns the deck's regions (boxes, circles, mesh sets)
+///   into node and element lists for constraints, tool surfaces and material regions.
+/// Called from: fem/BoundaryConditions.cpp:apply_constraints, fem/Forming.cpp:build_partition,
+///   io/Config.cpp:build_model (select_elements)
+/// Calls into: mesh/Mesh (node coordinates, node and element sets)
+/// Start reading at: SelectorGroup::select_nodes, Selector::contains (fem/Selector.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

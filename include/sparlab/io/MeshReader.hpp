@@ -27,6 +27,12 @@
 /// Boundary conditions, loads and materials in an .inp file are not imported
 /// - the SparLab deck defines those - and the report lists the ignored
 /// keywords so nothing is dropped silently.
+///
+/// Where this fits: Simulations stage - reads a .inp mesh for a deck whose mesh type is "file";
+///   the decks precomp writes (fea/deck.py) use "structured_hex" instead.
+/// Called from: io/Config.cpp:parse_configuration (read_mesh_file)
+/// Calls into: mesh/Mesh, elements/Hex8 (hex8_volume), core/Logging
+/// Start reading at: read_abaqus_inp, then build_mesh (io/MeshReader.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

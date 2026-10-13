@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/material/Hyperelastic.hpp
+
 #include "sparlab/material/Hyperelastic.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

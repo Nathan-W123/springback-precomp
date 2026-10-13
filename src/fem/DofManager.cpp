@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/fem/DofManager.hpp
+
 #include "sparlab/fem/DofManager.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

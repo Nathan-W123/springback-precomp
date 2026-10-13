@@ -5,6 +5,13 @@
 /// Sign convention: displacements are positive along the global +x / +y / +z
 /// axes. Vectors are three-component throughout; on a 2-D model `fix_z` is
 /// an error.
+///
+/// Where this fits: Simulations stage - the deck's displacement constraints applied to the
+///   model's DOFs, and the boundary faces a tool's surface selects.
+/// Called from: fem/FemModel.cpp:FemModel::finalize (apply_constraints),
+///   fem/RigidTool.cpp:ToolContact::ToolContact (faces_in_region)
+/// Calls into: fem/Selector (regions), fem/DofManager (prescribe)
+/// Start reading at: apply_constraints (fem/BoundaryConditions.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"

@@ -8,6 +8,13 @@
 /// matrices and the strain operator are dynamic Eigen matrices sized by
 /// `dim()` and `num_voigt()`. The library's element is the Hex8, in its
 /// standard and its incompatible-mode formulation (`make_element`).
+///
+/// Where this fits: Simulations stage - the element interface; make_element picks the
+///   standard or incompatible-mode Hex8 from the deck's model.element_formulation.
+/// Called from: fem/FemModel.cpp:FemModel::FemModel (make_element),
+///   fem/Elastoplastic.cpp:kinematics_of, fem/TotalLagrangian.cpp:total_lagrangian_element
+/// Calls into: elements/Hex8, elements/Hex8Incompatible, mesh/Mesh (ElementType)
+/// Start reading at: Element, make_element
 #pragma once
 
 #include "sparlab/core/Types.hpp"

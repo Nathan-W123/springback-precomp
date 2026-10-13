@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/io/ResultWriter.hpp
+
 #include "sparlab/io/ResultWriter.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

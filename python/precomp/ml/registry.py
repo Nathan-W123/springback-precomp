@@ -24,6 +24,13 @@ not match its recorded hash, and a state whose model class, kind, domain or
 data source differ from the manifest's. The manifest is written last, after
 it has been checked to be valid JSON, so an interrupted save leaves no
 loadable bundle. model.joblib is a pickle: load bundles you trust only.
+
+Where this fits: the end of "Training": a trained surrogate is saved as a bundle, and the
+    scripts load it instead of retraining when its training samples match.
+Called from: springback_fine_ml.py:train_or_load (load_model, save_model),
+    combined_rim_ml.py:transfer_model (load_model, save_model).
+Calls into: ml.surrogate (DeviationSurrogate state), ml.features (schema checks), joblib, torch.
+Start reading at: save_model, then load_model.
 """
 
 from __future__ import annotations
@@ -271,6 +278,7 @@ def load_model(directory: PathLike) -> DeviationSurrogate:
         raise PrecompError(f"{d} is not a model directory")
     doc = read_manifest(d)
     cfg = check_schema(doc, str(d))
+    # verify every file against its SHA-256 in the manifest before unpickling anything
     files = doc.get("files")
     if not isinstance(files, Mapping) or STATE_FILE not in files:
         raise PrecompError(f"{d / MANIFEST_FILE} does not record the SHA-256 of {STATE_FILE}; "

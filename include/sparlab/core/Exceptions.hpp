@@ -4,6 +4,13 @@
 /// SparLab never silently swallows a numerical failure. Every failure mode has
 /// a dedicated exception type carrying a message that states *what* failed,
 /// *which* quantity was out of range, and *what the user should change*.
+///
+/// Where this fits: Simulations stage - the error types of sparlab_form; run_guarded maps
+///   each to the exit status that precomp's fea/runner.py reports.
+/// Called from: thrown across the library (e.g. io/Config.cpp, fem/Forming.cpp);
+///   caught in apps/AppSupport.cpp:run_guarded
+/// Calls into: the standard library only (std::runtime_error)
+/// Start reading at: SparLabError, then the catch list of run_guarded
 #pragma once
 
 #include <stdexcept>

@@ -28,6 +28,13 @@ for every completed step of the summary), and a violation raises
 PrecompError naming the file. Nothing is recomputed from physics: the
 formed surface is the deformed top surface of the mesh, interpolated
 linearly on its own triangulation.
+
+Where this fits: the results step of "Simulations": loads a run's output directory and gives the
+    formed surface of any step as a HeightMap.
+Called from: fea/runner.py:simulate (load_result), compensation.py:FEAPredictor.__call__ and
+    ml/generate.py:SparlabSimulator.run (formed_surface).
+Calls into: geometry.raycast (raycast_top), geometry.heightmap, pandas.
+Start reading at: load_result, then FormingResult.formed_surface.
 """
 
 from __future__ import annotations

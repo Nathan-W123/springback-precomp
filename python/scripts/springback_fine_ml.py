@@ -49,6 +49,13 @@ made `--workers` at a time, one part's two runs in a row per worker.
 Outputs in --out/stage_n<N>/: headline.csv, summary.csv, dz_per_part.csv,
 ml_compensation_<model>.csv, design.csv, simulations.csv, failures.csv,
 run.json, tables.md; --out/data_status.csv (every data part's runs).
+
+Where this fits: "Design of the parts" through "Evaluation" for the backing plate: the data,
+    the MLP surrogate and the ML first shot.
+Called from: the command line (benchmarks/springback_fine_ml/run.sh), combined_rim_ml.py:load_mlp
+    (train_or_load), combined_rim_ml.py:Ctx.__init__ (design).
+Calls into: precomp.ml.generate, precomp.ml.surrogate, precomp.ml.compensate, precomp.fea.support.
+Start reading at: main, then ml_shot.
 """
 
 from __future__ import annotations
@@ -190,10 +197,12 @@ def generate_data(cfg, points, ds, work: Path, workers: int, out: Path) -> List[
         target = point.target()
         row: Dict[str, Any] = {"point_id": point.point_id,
                                "split": common.split_of(point.point_id, cfg_split(cfg))}
+        # The uncompensated run: the target itself as the command
         oc0 = sim.run([sim_job(point.setup, target, target)])[0]
         row.update(unc_ok=oc0.ok, unc_hash=oc0.provenance.get("deck_hash"),
                    unc_runtime_s=oc0.provenance.get("runtime_s"),
                    unc_cache_hit=oc0.provenance.get("cache_hit"))
+        # The compensated run: one FE-DA step from the uncompensated result
         if oc0.ok and "compensated" in kinds:
             try:
                 cmd = compensated_commanded(target, oc0.formed, **opts(point))
@@ -206,6 +215,7 @@ def generate_data(cfg, points, ds, work: Path, workers: int, out: Path) -> List[
                            .get("max_raise_m", 0.0) / MM)
             except Exception as exc:  # recorded by generate below as well
                 row["comp_error"] = f"{type(exc).__name__}: {exc}".splitlines()[0][:300]
+        # Write the part's samples (both runs are cache hits now) and its data_status.csv row
         with lock:
             rep = generate(ds, [point], sim, created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ",
                                                                       time.gmtime()),
@@ -267,6 +277,7 @@ def train_or_load(name, train, cal, cfg, bundle: Path, threads: int):
             log(f"{name}: loaded {bundle}")
             return sur, None
     t0 = time.perf_counter()
+    # Train: feature table, MLP ensemble, training envelope, then conformal calibration
     sur = train_surrogate(make_model(name, cfg), train, calibration=cal or None,
                           features=FeatureConfig(),
                           points_per_sample=cfg["surrogate"]["points_per_sample"],
@@ -355,6 +366,7 @@ def ml_shot(name, sur, cfg, test_points, work: Path, stage: str, exe: str,
     root = work / "ml" / stage / name
     test_setup = make_setup(cfg, cfg["preset_test"], exe)
     rows, jobs = [], []
+    # Surrogate DA of each test target, or its saved result from an earlier run
     for p in test_points:
         f, meta = root / f"{p.point_id}.npz", root / f"{p.point_id}.json"
         target = p.target()
@@ -400,9 +412,11 @@ def ml_shot(name, sur, cfg, test_points, work: Path, stage: str, exe: str,
             common.jdump(meta, info)
         rows.append(info)
         jobs.append((p, comp))
+    # One verifying sparlab_form run per test part, at the test setup (preset_test)
     t0 = time.perf_counter()
     sim = SparlabSimulator(work / "runs", max_workers=workers, executor="process")
     outs = sim.run([sim_job(test_setup, c, p.target()) for p, c in jobs])
+    # Add each verifying run's deviation by region (common.deviation) to its record
     for info, (p, c), oc in zip(rows, jobs, outs):
         info["commanded_depth_mm"] = c.depth / MM
         info["commanded_reach_raise_mm"] = c.metadata.get("tool_reach", {}).get(
@@ -716,15 +730,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         t_start = time.time()
         stage = f"stage_n{n}"
         load0 = os.getloadavg()
+        # Step 1: design - the stage's parts and their train / calibration / test split
         points = design(cfg, old_cfg, n, exe)
         spl = cfg_split(cfg)
         test_points = [p for p in points if common.split_of(p.point_id, spl) == "test"]
         log(f"{stage}: {len(points)} design points, {len(test_points)} test")
+        # Step 2: simulations - the data runs of the train and calibration parts
         t0 = time.time()
         generate_data(cfg, points, ds, work, args.workers, out)
         timings = {"data_s": time.time() - t0}
         if args.data_only:
             continue
+        # Step 3: data - the stage's samples by split, and the test parts' baseline runs
         samples = {s.sample_id: s for s in ds}
         by_split: Dict[str, List[Any]] = {"train": [], "calibration": []}
         pids = {p.point_id for p in points}
@@ -734,6 +751,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         base = baseline_rows(cfg, out)
         tests = test_samples(cfg, test_points, base, work)
         ml_rows, dz_frames, dz_summary, train_times = {}, [], {}, {}
+        # Step 4: training - load or train the surrogate, then its dz error on the test samples
         for name in MODELS:
             t0 = time.time()
             sur, dt = train_or_load(name, by_split["train"], by_split["calibration"], cfg,
@@ -748,9 +766,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 s = dz_summary[name]["test"]
                 log(f"{name}: dz error on {s['n_samples']} test samples: "
                     f"{1e3 * s['err_rms_mean_m']:.3f} mm (dz {1e3 * s['dz_rms_mean_m']:.3f} mm)")
+            # Step 5: compensation - the ML first shot of each test part and its verifying run
             ml_rows[name] = ml_shot(name, sur, cfg, test_points, work, stage, exe,
                                     args.workers)
             timings[f"{name}_s"] = time.time() - t0
+        # Step 6: evaluation - the stage's tables (headline.csv, summary.csv, tables.md)
         meta = {"created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "data_source": LABEL, "stage": stage, "n_per_family": n,
                 "command": "python3 python/scripts/springback_fine_ml.py "

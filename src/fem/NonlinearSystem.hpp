@@ -3,6 +3,13 @@
 ///        committed history of the elastoplastic points - shared by the
 ///        forming analysis (Forming.cpp) and the explicit integrator
 ///        (ExplicitKernel.cpp). Internal to the library.
+///
+/// Where this fits: Simulations stage - internal forces, tangent and plastic history of the
+///   whole model: what each Newton iteration of a forming step evaluates.
+/// Called from: fem/Forming.cpp:FormingAnalysis::run (evaluate, commit),
+///   fem/ExplicitKernel.cpp:ExplicitInternalForce::evaluate (the generic dispatch)
+/// Calls into: fem/Elastoplastic, fem/TotalLagrangian, fem/Assembler (assemble_elementwise)
+/// Start reading at: NonlinearSystem::evaluate, NonlinearSystem::commit
 #pragma once
 
 #include "sparlab/core/Exceptions.hpp"
@@ -215,6 +222,7 @@ class NonlinearSystem {
     std::vector<int> yielding(plastic_ ? static_cast<std::size_t>(ne) : 0, 0);
     std::vector<Vector> modes(internal_.size());
     std::string failure;
+    // Element loop (OpenMP when built in): the return path or the total Lagrangian path.
 #ifdef SPARLAB_HAVE_OPENMP
 #pragma omp parallel for schedule(static)
 #endif
@@ -260,6 +268,7 @@ class NonlinearSystem {
     }
     if (!failure.empty()) throw SolverError(failure);
 
+    // Gather: element forces into global vectors, element tangents through the Assembler.
     Evaluation out;
     out.internal = Vector::Zero(n);
     out.load_rate = dead_;

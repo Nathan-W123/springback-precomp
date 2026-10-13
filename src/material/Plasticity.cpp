@@ -1,3 +1,5 @@
+// Where this fits: see include/sparlab/material/Plasticity.hpp
+
 #include "sparlab/material/Plasticity.hpp"
 
 #include "sparlab/core/Exceptions.hpp"

@@ -24,6 +24,13 @@ the linear + Voce form to a Swift curve ``sigma = K (eps0 + a)^n`` (Hollomon
 is Swift with eps0 = (sigma_y / K)^(1/n)) by least squares over a stated
 strain range and records the law, the range and the fit error in
 `hardening_source`. Units: Pa, kg/m^3, dimensionless strains and r-values.
+
+Where this fits: material data for "Simulations"; a FormingSetup holds a Material and the deck
+    carries its to_sparlab block.
+Called from: fea/setup.py:FormingSetup.__post_init__, fea/deck.py:deck_document,
+    ml/generate.py:design_points.
+Calls into: scipy.optimize (power-law fits), _util.
+Start reading at: Material, then Material.to_sparlab.
 """
 
 from __future__ import annotations

@@ -13,6 +13,13 @@ sheet outside an opening around the part) or "dsif" (a second, support tool
 under the sheet, double-sided incremental forming). `support_settings` holds
 that strategy's parameters (`SUPPORT_SETTINGS`); keys left out take the
 defaults of `resolved_support`.
+
+Where this fits: the setup step of "Simulations" (setup -> toolpath -> deck -> runner -> results):
+    everything about a run except the commanded shape.
+Called from: springback_fine_ml.py:make_setup, springback_fine_benchmark.py:make_setup,
+    combined_rim_ml.py:edge_setup (each through FormingSetup.preset).
+Calls into: materials (Material, get_material), _util.
+Start reading at: FormingSetup, then PRESETS.
 """
 
 from __future__ import annotations

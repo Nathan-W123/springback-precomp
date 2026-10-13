@@ -4,6 +4,11 @@
 highest hit: the tool-side surface of a part, whatever the triangulation.
 `precomp.fea.results` uses it to read a formed sheet's top surface off the
 deformed mesh.
+
+Where this fits: a helper of the results step of "Simulations" (the formed top surface).
+Called from: fea/results.py:_interpolate_structured.
+Calls into: numpy only.
+Start reading at: raycast_top.
 """
 
 from __future__ import annotations
