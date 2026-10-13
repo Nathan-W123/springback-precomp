@@ -101,7 +101,7 @@ def safe_name(name: str) -> str:
     """Mirror the file-name sanitisation of the C++ ResultWriter.
 
     Alphanumerics, '-' and '_' are kept, everything else becomes '_'; an empty
-    name becomes 'unnamed' (the same rule as `sparlab_viz.loaders._safe`).
+    name becomes 'unnamed'.
     """
     return "".join(c if (c.isalnum() or c in "-_") else "_" for c in name) or "unnamed"
 

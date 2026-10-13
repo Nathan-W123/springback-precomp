@@ -1,4 +1,4 @@
-"""Make `sparlab_viz` importable when a script is run straight from the repo.
+"""Make `precomp` importable when a script is run straight from the repo.
 
 The package is deliberately not installed: `python3 python/scripts/<name>.py`
 should work in a fresh clone with nothing but the scientific stack present.
