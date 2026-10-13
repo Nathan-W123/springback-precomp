@@ -50,7 +50,7 @@ _REGION["any_of"] = [_REGION]
 SCHEMA = {
     "name": None, "description": None, "units": None,
     "mesh": {k: None for k in ("type", "nx", "ny", "nz", "lx", "ly", "lz", "x0", "y0", "z0",
-                               "order", "path", "format", "scale", "merge_duplicate_nodes",
+                               "path", "format", "scale", "merge_duplicate_nodes",
                                "duplicate_tolerance")},
     "material": {
         "name": None, "youngs_modulus": None, "poisson_ratio": None, "density": None,
@@ -67,8 +67,6 @@ SCHEMA = {
     "material_regions": None,
     "model": {"thickness": None, "stress_state": None, "integration": None},
     "boundary_conditions": [{"name": None, "fix": None, "value": None, "region": _REGION}],
-    "load_cases": None, "solver": None, "modal": None, "buckling": None, "nonlinear": None,
-    "transient": None, "frequency_response": None, "topology": None, "output": None,
     "forming": {
         "kinematics": None, "material_model": None, "mean_dilatation": None,
         "friction_tangent": None, "solver": None,
