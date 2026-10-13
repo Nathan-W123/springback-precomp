@@ -1,9 +1,0 @@
-point_id,first_shot_mm,engine_round_mm,final_mm,simulations,decision,data_source
-dome-s2026-0000,0.07086686213949762,,0.07086686213949762,1.0,within tolerance after the ML first shot,SparLab simulation
-dome-s2026-0001,0.1454225666140528,,0.1454225666140528,1.0,within tolerance after the ML first shot,SparLab simulation
-elliptic_cone-s2026-0000,0.2016816034165012,0.25639622618946273,0.2016816034165012,2.0,engine round rejected (not better: keep the first shot),SparLab simulation
-elliptic_cone-s2026-0001,0.2047704988339742,0.25130803162553894,0.2047704988339742,2.0,engine round rejected (not better: keep the first shot),SparLab simulation
-pyramid-s2026-0000,0.1027086992581118,,0.1027086992581118,1.0,within tolerance after the ML first shot,SparLab simulation
-pyramid-s2026-0001,,,,,not run,SparLab simulation
-truncated_cone-s2026-0000,,,,,not run,SparLab simulation
-truncated_cone-s2026-0001,,,,,not run,SparLab simulation
