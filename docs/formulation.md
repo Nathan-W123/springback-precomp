@@ -35,7 +35,7 @@ extend the problem to large deformation and plasticity.
 With Voigt ordering `{sigma_xx, sigma_yy, sigma_zz, sigma_xy, sigma_yz, sigma_zx}`
 and the three engineering shear strains, the isotropic law in terms of the
 Lame constants `lambda = E nu / ((1+nu)(1-2nu))` and `G = E / (2(1+nu))` is
-(`material/IsotropicMaterial.cpp`)
+(`material/Material.cpp`)
 
 ```
         | lambda+2G   lambda     lambda    0  0  0 |

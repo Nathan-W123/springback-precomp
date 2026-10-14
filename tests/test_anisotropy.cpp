@@ -58,8 +58,8 @@ struct Law {
   KinematicIntegration integration = KinematicIntegration::Exponential;
 };
 
-IsotropicMaterial make(const Law& law) {
-  IsotropicMaterial m(200.0e9, 0.3, 7800.0, "sheet");
+Material make(const Law& law) {
+  Material m(200.0e9, 0.3, 7800.0, "sheet");
   PlasticityParameters p;
   p.yield_stress = law.yield;
   p.hardening_modulus = law.h;
@@ -102,7 +102,7 @@ Law hill_law(Scalar rd_degrees, Scalar r0 = 1.9, Scalar r45 = 1.5, Scalar r90 = 
 /// The return at a strain whose components `free` Newton finds so that
 /// a sigma = 0 (one row of `a` per free component); the other components
 /// are as given.
-PlasticResponse drive(const IsotropicMaterial& m, StressState state, Vector6 strain,
+PlasticResponse drive(const Material& m, StressState state, Vector6 strain,
                       const std::vector<int>& free, const Matrix& a,
                       const PlasticState& committed, Scalar delta_t = 0.0) {
   const int n = static_cast<int>(free.size());
@@ -124,7 +124,7 @@ PlasticResponse drive(const IsotropicMaterial& m, StressState state, Vector6 str
 /// Uniaxial stress sigma_11 at the axial strain e11: in 3-D the other five
 /// strain components found so that their stresses vanish; in plane stress
 /// eps_22 and gamma_12 (sigma_33 = 0 by the return).
-PlasticResponse uniaxial(const IsotropicMaterial& m, StressState state, Scalar e11,
+PlasticResponse uniaxial(const Material& m, StressState state, Scalar e11,
                          const PlasticState& committed, Scalar delta_t = 0.0) {
   const std::vector<int> free = state == StressState::PlaneStress ? std::vector<int>{1, 3}
                                                                   : std::vector<int>{1, 2, 3, 4, 5};
@@ -141,7 +141,7 @@ PlasticResponse uniaxial(const IsotropicMaterial& m, StressState state, Scalar e
 }
 
 /// Equibiaxial plane stress sigma_11 = sigma_22 at eps_11 = e11.
-PlasticResponse equibiaxial(const IsotropicMaterial& m, Scalar e11) {
+PlasticResponse equibiaxial(const Material& m, Scalar e11) {
   Matrix a = Matrix::Zero(2, 6);
   a(0, 1) = 1.0;
   a(0, 0) = -1.0;
@@ -177,7 +177,7 @@ Vector6 random_strain(Scalar amplitude, unsigned seed) {
 
 /// The consistent tangent against central differences of the stress, over
 /// the strain components the idealisation takes.
-Scalar tangent_error(const IsotropicMaterial& m, StressState state, const Vector6& strain,
+Scalar tangent_error(const Material& m, StressState state, const Vector6& strain,
                      const PlasticState& committed, Scalar delta_t = 0.0) {
   const PlasticResponse r = plastic_return(m, state, strain, committed, delta_t);
   const Scalar h = 1.0e-8;
@@ -209,7 +209,7 @@ Scalar equivalent_stress(const PlasticityParameters& parameters, const Vector6& 
 
 /// |f| of a returned state, sigma_bar(dev sigma - sum alpha_i) - sigma_y
 /// (the deviator taken first, so that the pressure's round-off stays out).
-Scalar yield_function(const IsotropicMaterial& m, const PlasticResponse& r) {
+Scalar yield_function(const Material& m, const PlasticResponse& r) {
   Vector6 xi = r.stress - r.state.back_stress;
   xi.head(3).array() -= (r.stress(0) + r.stress(1) + r.stress(2)) / 3.0;
   return std::abs(equivalent_stress(m.plasticity(), xi) -
@@ -256,7 +256,7 @@ Scalar chaboche_stress(const PlasticityParameters& p, Scalar plastic) {
 TEST_CASE("Hill48 coefficients, frame and yield matrix follow the calibration",
           "[plasticity][anisotropy][material]") {
   // From r-values.
-  const IsotropicMaterial m = make(hill_law(0.0));
+  const Material m = make(hill_law(0.0));
   const Hill48Parameters& h = m.plasticity().hill;
   REQUIRE(h.F == Approx(1.9 / (2.3 * 2.9)).epsilon(1e-15));
   REQUIRE(h.G == Approx(1.0 / 2.9).epsilon(1e-15));
@@ -270,7 +270,7 @@ TEST_CASE("Hill48 coefficients, frame and yield matrix follow the calibration",
   REQUIRE(hill_r(h, kPi / 4.0) == Approx(1.5).epsilon(1e-14));
 
   // r = 1 is von Mises.
-  const IsotropicMaterial iso = make(hill_law(0.0, 1.0, 1.0, 1.0));
+  const Material iso = make(hill_law(0.0, 1.0, 1.0, 1.0));
   const Hill48Parameters& hv = iso.plasticity().hill;
   for (const Scalar c : {hv.F, hv.G, hv.H}) REQUIRE(c == Approx(0.5).epsilon(1e-15));
   for (const Scalar c : {hv.L, hv.M, hv.N}) REQUIRE(c == Approx(1.5).epsilon(1e-15));
@@ -286,7 +286,7 @@ TEST_CASE("Hill48 coefficients, frame and yield matrix follow the calibration",
   Law tilted = hill_law(0.0);
   tilted.rd = Vector3(1.0, 0.3, -0.2);
   tilted.nd = Vector3(0.2, -0.4, 1.0);
-  const IsotropicMaterial mt = make(tilted);
+  const Material mt = make(tilted);
   const Matrix6& pt = mt.plasticity().yield_matrix;
   Vector6 hydro = Vector6::Zero();
   hydro.head(3).setOnes();
@@ -307,7 +307,7 @@ TEST_CASE("Hill48 coefficients, frame and yield matrix follow the calibration",
 
   // The stress-ratio calibration of the same sheet, and the coefficients
   // given directly, reproduce the criterion.
-  IsotropicMaterial other(200.0e9, 0.3, 7800.0, "sheet");
+  Material other(200.0e9, 0.3, 7800.0, "sheet");
   PlasticityParameters p = m.plasticity();
   p.hill.calibration = HillCalibration::StressRatios;
   p.hill.sigma45 = 1.0 / std::sqrt(hill_phi(h, kPi / 4.0));
@@ -328,7 +328,7 @@ TEST_CASE("Hill48 coefficients, frame and yield matrix follow the calibration",
 
   // Refusals.
   const auto refuses = [](PlasticityParameters bad) {
-    IsotropicMaterial x(200.0e9, 0.3, 7800.0, "bad");
+    Material x(200.0e9, 0.3, 7800.0, "bad");
     REQUIRE_THROWS_AS(x.set_plasticity(bad), ConfigError);
   };
   p = m.plasticity();
@@ -378,7 +378,7 @@ TEST_CASE("Hill48 coefficients, frame and yield matrix follow the calibration",
   c.kinematic_hardening_modulus = 1.0e9;  // Prager makes a fifth
   refuses(c);
   c.kinematic_hardening_modulus = 0.0;
-  IsotropicMaterial ok(200.0e9, 0.3, 7800.0, "chaboche");
+  Material ok(200.0e9, 0.3, 7800.0, "chaboche");
   REQUIRE_NOTHROW(ok.set_plasticity(c));
   REQUIRE(ok.plasticity().general());
   REQUIRE_FALSE(ok.plasticity().symmetric_tangent());
@@ -399,7 +399,7 @@ TEST_CASE("Hill48: uniaxial stress along any direction yields at sigma_theta wit
   for (const StressState state : {StressState::ThreeDimensional, StressState::PlaneStress}) {
     for (const Scalar theta : {0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0}) {
       // Rolled at -theta from x: loaded along x at theta from RD.
-      const IsotropicMaterial m = make(hill_law(-theta));
+      const Material m = make(hill_law(-theta));
       const Scalar t = theta * kPi / 180.0;
       const Scalar sigma_theta = 250.0e6 / std::sqrt(hill_phi(h, t));
       const PlasticResponse r = uniaxial(m, state, 0.01, PlasticState());
@@ -427,7 +427,7 @@ TEST_CASE("Hill48: uniaxial stress along any direction yields at sigma_theta wit
   // Equibiaxial: sigma_b = sigma_y (F + G)^(-1/2) = sigma_y sqrt(r90 (1 +
   // r0) / (r0 + r90)), and the plastic strain ratio eps_22 / eps_11 = F / G
   // = r0 / r90.
-  const IsotropicMaterial m = make(hill_law(0.0));
+  const Material m = make(hill_law(0.0));
   const PlasticResponse b = equibiaxial(m, 0.01);
   REQUIRE(b.yielding);
   REQUIRE(b.stress(0) == Approx(250.0e6 * std::sqrt(2.3 * 2.9 / 4.2)).epsilon(1e-12));
@@ -448,7 +448,7 @@ TEST_CASE("Hill48 with linear isotropic hardening follows the exact uniaxial cur
     for (const Scalar theta : {0.0, 22.5, 45.0, 67.5, 90.0}) {
       Law law = hill_law(-theta);
       law.h = hmod;
-      const IsotropicMaterial m = make(law);
+      const Material m = make(law);
       const Scalar k = 1.0 / std::sqrt(hill_phi(h, theta * kPi / 180.0));
       const Scalar target = 0.012;
       const Scalar exact = e * (k * 250.0e6 + k * k * hmod * target) / (e + k * k * hmod);
@@ -485,7 +485,7 @@ TEST_CASE("the Hill48 return is frame-indifferent: a rotated sheet under the rot
   base.q = 80.0e6;
   base.delta = 15.0;
   base.back = {{20.0e9, 200.0}, {3.0e9, 0.0}};
-  const IsotropicMaterial m0 = make(base);
+  const Material m0 = make(base);
   const Scalar phi = 0.7;
   Matrix3 in_plane_turn;
   in_plane_turn << std::cos(phi), -std::sin(phi), 0.0, std::sin(phi), std::cos(phi), 0.0, 0.0,
@@ -496,7 +496,7 @@ TEST_CASE("the Hill48 return is frame-indifferent: a rotated sheet under the rot
     Law turned = base;
     turned.rd = q * base.rd;
     turned.nd = q * base.nd;
-    const IsotropicMaterial m1 = make(turned);
+    const Material m1 = make(turned);
     PlasticState s0;
     PlasticState s1;
     int yielded = 0;
@@ -537,10 +537,10 @@ TEST_CASE("the general return in the von Mises limit is the radial return",
   Law chaboche = radial;
   chaboche.hk = 0.0;
   chaboche.back = {{4.0e9, 0.0}};
-  IsotropicMaterial reference = make(radial);
+  Material reference = make(radial);
   reference.set_thermal(1.2e-5, 20.0, 50.0);
   for (const Law& law : {hill, chaboche}) {
-    IsotropicMaterial general = make(law);
+    Material general = make(law);
     general.set_thermal(1.2e-5, 20.0, 50.0);
     REQUIRE(general.plasticity().general());
     REQUIRE_FALSE(reference.plasticity().general());
@@ -588,7 +588,7 @@ TEST_CASE("Chaboche backstresses with Voce hardening follow the exact monotonic 
   law.q = 90.0e6;
   law.delta = 12.0;
   law.back = {{60.0e9, 600.0}, {8.0e9, 60.0}, {1.0e9, 0.0}};
-  const IsotropicMaterial m = make(law);
+  const Material m = make(law);
   const PlasticityParameters& p = m.plasticity();
   const Scalar e = m.youngs_modulus();
   const auto exact = [&](Scalar strain) {
@@ -629,7 +629,7 @@ TEST_CASE("Chaboche backstresses with Voce hardening follow the exact monotonic 
   }
   // Backward Euler: the error at a fixed strain halves as the steps double.
   law.integration = KinematicIntegration::BackwardEuler;
-  const IsotropicMaterial be = make(law);
+  const Material be = make(law);
   const Scalar target = 0.02;
   const Scalar sigma = exact(target);
   std::vector<Scalar> errors;
@@ -660,7 +660,7 @@ TEST_CASE("Chaboche: a reversed uniaxial branch follows the Armstrong-Frederick 
   law.q = 60.0e6;
   law.delta = 25.0;
   law.back = {{40.0e9, 400.0}, {5.0e9, 40.0}};
-  const IsotropicMaterial m = make(law);
+  const Material m = make(law);
   const PlasticityParameters& p = m.plasticity();
   const Scalar e = m.youngs_modulus();
   struct Branch {
@@ -743,7 +743,7 @@ TEST_CASE("Chaboche: symmetric strain cycles follow the half-cycle recursion and
   const Scalar gamma = 150.0;
   Law law;
   law.back = {{c, gamma}};
-  const IsotropicMaterial m = make(law);
+  const Material m = make(law);
   const Scalar sy = 250.0e6;
   const Scalar e = m.youngs_modulus();
   // Strain-controlled cycles of +-0.8 %, each half-cycle in one step.
@@ -825,7 +825,7 @@ TEST_CASE("the general consistent tangent is the derivative of the return, non-s
                                    {"the same, exponential, in the sheet plane", both_plane, false},
                                    {"Hill48 + two linear backstresses", prager, true}};
   for (const Case& c : cases) {
-    IsotropicMaterial m = make(c.law);
+    Material m = make(c.law);
     m.set_thermal(1.2e-5, 20.0, 50.0);
     REQUIRE(m.plasticity().symmetric_tangent() == c.symmetric);
     for (const StressState state :
@@ -886,7 +886,7 @@ TEST_CASE("plane stress with Hill48 and Chaboche returns sigma_33 = 0 and the 3-
   Law law = hill_law(30.0);
   law.back = {{30.0e9, 300.0}};
   law.h = 1.0e9;
-  const IsotropicMaterial m = make(law);
+  const Material m = make(law);
   Vector6 strain = Vector6::Zero();
   strain(0) = 6.0e-3;
   strain(1) = -1.0e-3;
@@ -911,7 +911,7 @@ TEST_CASE("the general return's loading flag gives the continuum tangent at zero
   Law law = hill_law(20.0);
   law.h = 2.0e9;
   law.back = {{30.0e9, 300.0}, {2.0e9, 0.0}};
-  const IsotropicMaterial m = make(law);
+  const Material m = make(law);
   Vector6 strain = Vector6::Zero();
   strain(0) = 5.0e-3;
   strain(1) = 1.0e-3;
@@ -968,7 +968,7 @@ TEST_CASE("the general return leaves its state on the yield surface to round-off
         law.r45 = 1.5 + dist(gen);
         law.r90 = 1.5 + dist(gen);
         law.h = 0.5e9 * (1.0 + dist(gen));
-        const IsotropicMaterial m = make(law);
+        const Material m = make(law);
         Vector6 strain = Vector6::Zero();
         PlasticState point;
         for (int k = 0; k < 6; ++k) {
@@ -1005,7 +1005,7 @@ TEST_CASE("a plane model refuses a Hill48 frame whose axes miss z at the return"
   Law law = hill_law(0.0);
   law.rd = Vector3(1.0, 0.0, 0.5);
   law.nd = Vector3(0.0, 0.3, 1.0);
-  const IsotropicMaterial tilted = make(law);
+  const Material tilted = make(law);
   REQUIRE_FALSE(tilted.plasticity().plane_compatible());
   Vector6 strain = Vector6::Zero();
   strain(0) = 6.0e-3;
@@ -1020,7 +1020,7 @@ TEST_CASE("a plane model refuses a Hill48 frame whose axes miss z at the return"
   Law section = hill_law(0.0);
   section.rd = Vector3(0.0, 0.0, 1.0);
   section.nd = Vector3(0.0, 1.0, 0.0);
-  const IsotropicMaterial aligned = make(section);
+  const Material aligned = make(section);
   REQUIRE(aligned.plasticity().plane_compatible());
   REQUIRE(plastic_return(aligned, StressState::PlaneStrain, strain, PlasticState()).yielding);
 }
@@ -1184,7 +1184,7 @@ TEST_CASE("Hill48 with recovering backstresses converges at first order to an in
       ref.elastic(3 + i, 3 + i) = mu;
     }
   }
-  IsotropicMaterial m(200.0e9, 0.3, 7800.0, "sheet");
+  Material m(200.0e9, 0.3, 7800.0, "sheet");
   PlasticityParameters p;
   p.yield_stress = ref.sy0;
   p.hardening_modulus = ref.h;
@@ -1253,7 +1253,7 @@ TEST_CASE("Hill48 with recovering backstresses converges at first order to an in
 namespace {
 
 /// A distorted Hex8 element.
-FemModel one_element(ElementType type, StressState state, const IsotropicMaterial& m) {
+FemModel one_element(ElementType type, StressState state, const Material& m) {
   StructuredMeshSpec spec;
   spec.nx = spec.ny = spec.nz = 2;
   spec.lx = 1.0;
@@ -1304,7 +1304,7 @@ TEST_CASE("the element tangent of Hill48 with recovering backstresses is the non
   law.back = {{40.0e9, 400.0}, {3.0e9, 0.0}};
   law.q = 50.0e6;
   law.delta = 40.0;
-  const IsotropicMaterial m = make(law);
+  const Material m = make(law);
   struct Case {
     ElementType type;
     StressState state;
@@ -1370,7 +1370,7 @@ TEST_CASE("finite-kinematics Hill48 plasticity is objective: the material frame 
   law.nd = Vector3(0.0, -0.3, 1.0);
   law.back = {{30.0e9, 300.0}};
   law.h = 1.0e9;
-  const IsotropicMaterial m = make(law);
+  const Material m = make(law);
   for (const ElementType type : {ElementType::Hex8}) {
     FemModel model = one_element(type, StressState::ThreeDimensional, m);
     const Matrix x0 = model.mesh().element_coordinates(0);

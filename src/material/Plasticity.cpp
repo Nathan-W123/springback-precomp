@@ -63,7 +63,7 @@ Matrix6 elastic_tangent(Scalar k, Scalar g) {
 }
 
 /// The 3-D return at a fully given strain.
-PlasticResponse return_3d(const IsotropicMaterial& m, const Vector6& strain,
+PlasticResponse return_3d(const Material& m, const Vector6& strain,
                           const PlasticState& committed, Scalar delta_t) {
   const PlasticityParameters& p = m.plasticity();
   const Scalar g = m.shear_modulus();
@@ -247,7 +247,7 @@ struct GeneralPoint {
 
 class GeneralReturn {
  public:
-  GeneralReturn(const IsotropicMaterial& m, const PlasticState& committed, const Vector6& s_trial)
+  GeneralReturn(const Material& m, const PlasticState& committed, const Vector6& s_trial)
       : p_(m.plasticity()), g_(m.shear_modulus()), committed_(committed), s_trial_(s_trial),
         count_(p_.kinematic_terms()) {
     for (int i = 0; i < count_; ++i) terms_[static_cast<std::size_t>(i)] = p_.kinematic_term(i);
@@ -336,7 +336,7 @@ Scalar kinematic_energy(const GeneralReturn& r, const PlasticState& state) {
 
 /// The 3-D closest-point return of Hill48 and/or Chaboche at a fully given
 /// strain.
-PlasticResponse return_general_3d(const IsotropicMaterial& m, const Vector6& strain,
+PlasticResponse return_general_3d(const Material& m, const Vector6& strain,
                                   const PlasticState& committed, Scalar delta_t,
                                   bool want_tangent) {
   const PlasticityParameters& p = m.plasticity();
@@ -480,7 +480,7 @@ PlasticResponse return_general_3d(const IsotropicMaterial& m, const Vector6& str
 /// for an elastic step (the elasticity is isotropic); a plastic one
 /// converges quadratically with the consistent C_33,33 > 0.
 template <class Return3d>
-PlasticResponse plane_stress(const IsotropicMaterial& material, const Return3d& return_3d_at,
+PlasticResponse plane_stress(const Material& material, const Return3d& return_3d_at,
                              const Vector6& strain, const PlasticState& committed,
                              Scalar delta_t, Scalar tolerance) {
   const Scalar g = material.shear_modulus();
@@ -518,7 +518,7 @@ PlasticResponse plane_stress(const IsotropicMaterial& material, const Return3d& 
 
 }  // namespace
 
-PlasticResponse plastic_return(const IsotropicMaterial& material, StressState state,
+PlasticResponse plastic_return(const Material& material, StressState state,
                                const Vector6& strain, const PlasticState& committed,
                                Scalar delta_t, bool want_tangent) {
   if (!material.plasticity().general()) {

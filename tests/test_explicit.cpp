@@ -158,7 +158,7 @@ Mesh distorted(const Mesh& mesh, Scalar amount) {
 }
 
 /// A finalised model with one load case that applies nothing (or `load`).
-FemModel finalised(Mesh mesh, const IsotropicMaterial& m,
+FemModel finalised(Mesh mesh, const Material& m,
                    const std::vector<DisplacementConstraint>& bcs, const LoadCaseSpec* load = nullptr) {
   FemModel model(std::move(mesh), m, 1.0, StressState::ThreeDimensional, IntegrationOptions());
   model.constraints() = bcs;
@@ -173,8 +173,8 @@ FemModel finalised(Mesh mesh, const IsotropicMaterial& m,
   return model;
 }
 
-IsotropicMaterial j2_material(Scalar kinematic = 0.0, Scalar saturation = 0.0) {
-  IsotropicMaterial m(70.0e9, 0.33, 2700.0, "aluminium");
+Material j2_material(Scalar kinematic = 0.0, Scalar saturation = 0.0) {
+  Material m(70.0e9, 0.33, 2700.0, "aluminium");
   PlasticityParameters p;
   p.yield_stress = 150.0e6;
   p.hardening_modulus = 500.0e6;
@@ -572,7 +572,7 @@ TEST_CASE("a stopped run reports the mass of the state it keeps, not the mass ad
 // ---------------------------------------------------------------------------
 TEST_CASE("the dedicated Hex8 kernel gives the internal forces of the element dispatch",
           "[explicit]") {
-  IsotropicMaterial hill = j2_material();
+  Material hill = j2_material();
   {
     PlasticityParameters p = hill.plasticity();
     p.criterion = YieldCriterion::Hill48;
@@ -581,7 +581,7 @@ TEST_CASE("the dedicated Hex8 kernel gives the internal forces of the element di
     p.hill.r90 = 2.3;
     hill.set_plasticity(p);
   }
-  IsotropicMaterial chaboche = j2_material();
+  Material chaboche = j2_material();
   {
     PlasticityParameters p = chaboche.plasticity();
     p.num_backstresses = 2;
@@ -589,11 +589,11 @@ TEST_CASE("the dedicated Hex8 kernel gives the internal forces of the element di
     p.backstresses[1] = {2.0e9, 10.0};
     chaboche.set_plasticity(p);
   }
-  struct Material {
+  struct NamedMaterial {
     std::string name;
-    IsotropicMaterial m;
+    Material m;
   };
-  const std::vector<Material> materials = {{"elastic", default_material(0.33)},
+  const std::vector<NamedMaterial> materials = {{"elastic", default_material(0.33)},
                                            {"J2 isotropic", j2_material()},
                                            {"J2 Prager + Voce", j2_material(2.0e9, 50.0e6)},
                                            {"Hill48", hill},
@@ -601,7 +601,7 @@ TEST_CASE("the dedicated Hex8 kernel gives the internal forces of the element di
   const Mesh uniform = hex_block(3, 2, 2, 0.003, 0.002, 0.001);
   const Mesh irregular = distorted(uniform, 0.12);
   Scalar worst = 0.0;
-  for (const Material& mat : materials) {
+  for (const NamedMaterial& mat : materials) {
     for (const Kinematics kin :
          {Kinematics::SmallStrain, Kinematics::Finite, Kinematics::FiniteLogarithmic}) {
       // Finite kinematics take elastoplastic materials only.
@@ -833,7 +833,7 @@ TEST_CASE("the dedicated kernel's elastic energy is the stored energy less the h
   // the elastic energy the rest of the stored energy, for every kinematics
   // the kernel takes. The generic dispatch does not separate it (NaN).
   const Scalar length = 0.01;
-  const IsotropicMaterial material = j2_material();
+  const Material material = j2_material();
   const FemModel model =
       finalised(hex_block(8, 1, 1, length, 0.001, 0.001), material,
                 {clamp(box(-kInf, 1.0e-9), {0}), clamp(box(-kInf, 1.0e-9, -kInf, 1e-9), {1}),

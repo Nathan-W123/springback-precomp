@@ -13,7 +13,7 @@
 
 namespace sparlab {
 
-FemModel::FemModel(Mesh mesh, IsotropicMaterial material, Scalar thickness,
+FemModel::FemModel(Mesh mesh, Material material, Scalar thickness,
                    StressState stress_state, IntegrationOptions integration)
     : mesh_(std::move(mesh)),
       materials_{std::move(material)},
@@ -120,7 +120,7 @@ void FemModel::check_sheet_integration() const {
   }
 }
 
-void FemModel::assign_material(const IsotropicMaterial& material,
+void FemModel::assign_material(const Material& material,
                                const std::vector<Index>& elements) {
   if (finalized_) {
     throw ModelError("materials must be assigned before FemModel::finalize()");

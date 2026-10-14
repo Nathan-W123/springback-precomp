@@ -47,7 +47,7 @@ IntegrationOptions incompatible_options(int thickness_points = 0) {
 }
 
 Matrix6 solid_d(Scalar young = 200.0e9, Scalar nu = 0.3) {
-  return IsotropicMaterial(young, nu, 7850.0, "steel").three_dimensional_matrix();
+  return Material(young, nu, 7850.0, "steel").three_dimensional_matrix();
 }
 
 /// A rotation of 0.7 rad about the axis (1, 2, 3) / |(1, 2, 3)|.
@@ -370,7 +370,7 @@ TEST_CASE("rules of two, three and four points give the same condensed stiffness
 namespace {
 
 /// A single distorted incompatible-mode Hex8 of `m`.
-FemModel single_hex(const IsotropicMaterial& m, int thickness_points = 0) {
+FemModel single_hex(const Material& m, int thickness_points = 0) {
   Mesh mesh(distorted_hex_coords(), {0, 1, 2, 3, 4, 5, 6, 7}, ElementType::Hex8);
   return FemModel(std::move(mesh), m, 1.0, StressState::ThreeDimensional,
                   incompatible_options(thickness_points));
@@ -389,8 +389,8 @@ Vector deformation(const Matrix& x, Scalar scale) {
   return ue;
 }
 
-IsotropicMaterial j2_steel() {
-  IsotropicMaterial m(200.0e9, 0.3, 7850.0, "j2");
+Material j2_steel() {
+  Material m(200.0e9, 0.3, 7850.0, "j2");
   PlasticityParameters p;
   p.yield_stress = 250.0e6;
   p.hardening_modulus = 2.0e9;
@@ -399,8 +399,8 @@ IsotropicMaterial j2_steel() {
   return m;
 }
 
-IsotropicMaterial hill_sheet() {
-  IsotropicMaterial m(200.0e9, 0.3, 7850.0, "hill");
+Material hill_sheet() {
+  Material m(200.0e9, 0.3, 7850.0, "hill");
   PlasticityParameters p;
   p.yield_stress = 250.0e6;
   p.hardening_modulus = 1.5e9;
@@ -413,8 +413,8 @@ IsotropicMaterial hill_sheet() {
   return m;
 }
 
-IsotropicMaterial chaboche_steel() {
-  IsotropicMaterial m(200.0e9, 0.3, 7850.0, "chaboche");
+Material chaboche_steel() {
+  Material m(200.0e9, 0.3, 7850.0, "chaboche");
   PlasticityParameters p;
   p.yield_stress = 250.0e6;
   p.saturation_stress = 100.0e6;
@@ -433,12 +433,12 @@ TEST_CASE("the condensed elastoplastic tangent of the incompatible-mode Hex8 is 
           "[incompatible][nonlinear][plasticity]") {
   struct Case {
     const char* name;
-    IsotropicMaterial material;
+    Material material;
     Kinematics kinematics;
     Scalar scale;        // of the deformation pattern
     int thickness_points;
   };
-  const IsotropicMaterial elastic(200.0e9, 0.3, 7850.0, "elastic");
+  const Material elastic(200.0e9, 0.3, 7850.0, "elastic");
   const std::vector<Case> cases = {
       {"small strain, elastic", elastic, Kinematics::SmallStrain, 1.0e-3, 0},
       {"small strain, J2", j2_steel(), Kinematics::SmallStrain, 4.0e-3, 0},
@@ -514,7 +514,7 @@ TEST_CASE("the local iteration of the incompatible modes converges through a loa
   // a plain Newton iteration on the piecewise-smooth r_alpha can cycle, and
   // the full step of the logarithmic kinematics inverts points; the line
   // search on the directional residual takes it through.
-  for (const IsotropicMaterial& material : {j2_steel(), chaboche_steel()}) {
+  for (const Material& material : {j2_steel(), chaboche_steel()}) {
     for (Kinematics k : {Kinematics::SmallStrain, Kinematics::FiniteLogarithmic}) {
       INFO(material.name() << ", " << to_string(k));
       const FemModel model = single_hex(material, 5);
@@ -560,11 +560,11 @@ TEST_CASE("the local iteration of the incompatible modes converges from reversal
   // 7 thickness points, reversals of 3, 6, 10 and 15 times) ran out of
   // iterations or inverted every trial; now 1 does (Chaboche with the
   // 2 x 2 x 2 rule at 10 times, a non-associative law without a potential).
-  IsotropicMaterial perfect(200.0e9, 0.3, 7850.0, "perfectly plastic");
+  Material perfect(200.0e9, 0.3, 7850.0, "perfectly plastic");
   PlasticityParameters p;
   p.yield_stress = 250.0e6;
   perfect.set_plasticity(p);
-  for (const IsotropicMaterial& material : {perfect, j2_steel(), chaboche_steel(), hill_sheet()}) {
+  for (const Material& material : {perfect, j2_steel(), chaboche_steel(), hill_sheet()}) {
     for (int thickness_points : {5, 7}) {
       for (Scalar factor : {-6.0, -10.0, -15.0}) {
         INFO(material.name() << ", " << thickness_points << " thickness points, reversal "
@@ -595,7 +595,7 @@ TEST_CASE("the local iteration of the incompatible modes converges from reversal
 
 TEST_CASE("the thermal load rate of the incompatible-mode Hex8 is the derivative of its force",
           "[incompatible][nonlinear][thermal]") {
-  IsotropicMaterial m = j2_steel();
+  Material m = j2_steel();
   m.set_thermal(1.2e-5, 20.0, 50.0);
   const FemModel model = single_hex(m);
   const Matrix x = model.mesh().element_coordinates(0);
@@ -624,8 +624,8 @@ TEST_CASE("a homogeneous deformation leaves the incompatible modes at zero under
           "[incompatible][nonlinear][patch]") {
   Matrix3 f;
   f << 1.04, 0.03, -0.02, 0.01, 0.97, 0.05, -0.03, 0.02, 1.02;
-  const std::vector<std::pair<const char*, IsotropicMaterial>> materials = {
-      {"elastic", IsotropicMaterial(200.0e9, 0.3, 7850.0, "elastic")},
+  const std::vector<std::pair<const char*, Material>> materials = {
+      {"elastic", Material(200.0e9, 0.3, 7850.0, "elastic")},
       {"J2", j2_steel()},
       {"Hill48", hill_sheet()}};
   for (const auto& [name, material] : materials) {
@@ -659,7 +659,7 @@ TEST_CASE("a homogeneous deformation leaves the incompatible modes at zero under
 TEST_CASE("the non-linear incompatible-mode Hex8 is objective and its tangent at rest is the "
           "linear one",
           "[incompatible][nonlinear]") {
-  const IsotropicMaterial material = j2_steel();
+  const Material material = j2_steel();
   const FemModel model = single_hex(material);
   const Matrix x = model.mesh().element_coordinates(0);
   const std::vector<PlasticState> virgin(8);
@@ -697,7 +697,7 @@ TEST_CASE("the non-linear incompatible-mode Hex8 is objective and its tangent at
     }
   }
   // At rest every kinematics has the linear condensed stiffness.
-  const IsotropicMaterial elastic(200.0e9, 0.3, 7850.0, "elastic");
+  const Material elastic(200.0e9, 0.3, 7850.0, "elastic");
   const FemModel em = single_hex(elastic);
   const Matrix k = em.element().stiffness(x, elastic.three_dimensional_matrix(), 1.0,
                                           em.integration());
@@ -718,7 +718,7 @@ namespace {
 
 /// A clamped strip along x, one element through its thickness (z), under a
 /// tip load `load` [N] along -z.
-FemModel strip(const IsotropicMaterial& m, Index nx, int thickness_points,
+FemModel strip(const Material& m, Index nx, int thickness_points,
                ElementFormulation formulation = ElementFormulation::IncompatibleModes,
                Scalar perturbation = 0.0) {
   StructuredMeshSpec spec;
@@ -748,8 +748,8 @@ FemModel strip(const IsotropicMaterial& m, Index nx, int thickness_points,
   return model;
 }
 
-IsotropicMaterial aluminium() {
-  IsotropicMaterial m(70.0e9, 0.33, 2700.0, "aluminium");
+Material aluminium() {
+  Material m(70.0e9, 0.33, 2700.0, "aluminium");
   PlasticityParameters p;
   p.yield_stress = 150.0e6;
   p.hardening_modulus = 500.0e6;
@@ -936,7 +936,7 @@ TEST_CASE("a rule of one point along a natural axis is refused for the incompati
     o.stiffness_points = stiffness_points;
     o.thickness_points = thickness_points;
     return FemModel(Mesh(unit_box_coords(), {0, 1, 2, 3, 4, 5, 6, 7}, ElementType::Hex8),
-                    IsotropicMaterial(200.0e9, 0.3, 7850.0, "steel"), 1.0,
+                    Material(200.0e9, 0.3, 7850.0, "steel"), 1.0,
                     StressState::ThreeDimensional, o);
   };
   REQUIRE_THROWS_AS(build(ElementFormulation::IncompatibleModes, 1, 0), ConfigError);
@@ -988,7 +988,7 @@ TEST_CASE("under plastic compression the incompatible-mode Hex8 develops its hou
   // deviatoric stiffness against the geometric term of the stress, so the
   // onset depends on the hardening.
   const auto run = [](Scalar hardening, ElementFormulation f, Scalar stop) {
-    IsotropicMaterial m(70.0e9, 0.3, 2700.0, "aluminium");
+    Material m(70.0e9, 0.3, 2700.0, "aluminium");
     PlasticityParameters p;
     p.yield_stress = 100.0e6;
     p.hardening_modulus = hardening;

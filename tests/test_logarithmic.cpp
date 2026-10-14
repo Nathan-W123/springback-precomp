@@ -70,8 +70,8 @@ Matrix6 derivative(const std::function<Vector6(const Vector6&)>& f, const Vector
 }
 
 /// A material of the tests: steel with the given plasticity (none: elastic).
-IsotropicMaterial steel(const PlasticityParameters* p = nullptr) {
-  IsotropicMaterial m(200.0e9, 0.3, 7800.0, "steel");
+Material steel(const PlasticityParameters* p = nullptr) {
+  Material m(200.0e9, 0.3, 7800.0, "steel");
   if (p != nullptr) m.set_plasticity(*p);
   return m;
 }
@@ -208,7 +208,7 @@ TEST_CASE("the logarithmic strain and its first and second derivatives are exact
 namespace {
 
 /// One distorted element of a 2 x 2 x 2 Hex8 mesh.
-FemModel one_element(ElementType type, StressState state, const IsotropicMaterial& m) {
+FemModel one_element(ElementType type, StressState state, const Material& m) {
   StructuredMeshSpec spec;
   spec.nx = spec.ny = spec.nz = 2;
   spec.lx = 1.0;
@@ -277,7 +277,7 @@ TEST_CASE("the logarithmic element tangent is the derivative of its internal for
   const std::vector<Case> cases = {{ElementType::Hex8, StressState::ThreeDimensional}};
   Scalar worst = 0.0;
   for (const Law& law : laws) {
-    const IsotropicMaterial m = steel(law.plastic ? &law.p : nullptr);
+    const Material m = steel(law.plastic ? &law.p : nullptr);
     for (const Case& c : cases) {
       FemModel model = one_element(c.type, c.state, m);
       const int dim = model.dim();
@@ -332,7 +332,7 @@ TEST_CASE("the logarithmic thermal load rate is the derivative of the internal f
           "respect to the temperature scale",
           "[logarithmic][element]") {
   PlasticityParameters p = j2(1.0e9, 60.0e6, 30.0);
-  IsotropicMaterial m = steel(&p);
+  Material m = steel(&p);
   m.set_thermal(1.2e-5, 20.0, 50.0);
   for (const StressState state : {StressState::ThreeDimensional}) {
     FemModel model = one_element(ElementType::Hex8, state, m);
@@ -369,7 +369,7 @@ TEST_CASE("logarithmic kinematics is objective: a superposed rotation leaves T, 
   PlasticityParameters p = hill48(Vector3(1.0, 0.5, 0.2), Vector3(0.0, -0.3, 1.0), 1.0e9);
   p.num_backstresses = 1;
   p.backstresses[0] = {30.0e9, 300.0};
-  const IsotropicMaterial m = steel(&p);
+  const Material m = steel(&p);
   const Matrix3 rot =
       Eigen::AngleAxisd(0.9, Vector3(0.2, 1.0, -0.4).normalized()).toRotationMatrix();
   for (const ElementType type : {ElementType::Hex8}) {
@@ -432,7 +432,7 @@ TEST_CASE("an inverted point is refused with logarithmic kinematics: det F <= 0 
   // compression to det F = 0.05 evaluate, the turn with the energy of the
   // unturned state.
   const PlasticityParameters p = j2(1.0e9);
-  const IsotropicMaterial m = steel(&p);
+  const Material m = steel(&p);
   struct Case {
     ElementType type;
     StressState state;
@@ -493,7 +493,7 @@ TEST_CASE("at strains of 1e-6 the logarithmic and the Green-Lagrange element agr
       for (const Scalar amplitude : {1.0e-6, 1.0e-7}) {
         PlasticityParameters low = j2(1.0e9);
         low.yield_stress = 1.5e5 * amplitude / 1.0e-6;
-        const IsotropicMaterial m = steel(plastic ? &low : nullptr);
+        const Material m = steel(plastic ? &low : nullptr);
         FemModel model = one_element(type, state, m);
         const int dim = model.dim();
         Matrix3 f = Matrix3::Identity();

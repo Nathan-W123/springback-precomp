@@ -24,7 +24,7 @@
 /// a small displacement \f$F \to I\f$ and \f$B_{NL} \to B\f$; a rigid
 /// rotation gives \f$E = 0\f$.
 ///
-/// Voigt ordering follows IsotropicMaterial (\f$\{11, 22, 12\}\f$ in 2-D,
+/// Voigt ordering follows Material (\f$\{11, 22, 12\}\f$ in 2-D,
 /// \f$\{11, 22, 33, 12, 23, 31\}\f$ in 3-D) with engineering shear strain.
 ///
 /// Where this fits: Simulations stage - the Green-Lagrange kinematics the elastoplastic

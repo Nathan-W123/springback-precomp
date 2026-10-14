@@ -162,7 +162,7 @@ TEST_CASE("Hex8 stiffness of a box is exact with the 2 x 2 x 2 rule",
   REQUIRE((k4 - k2).cwiseAbs().maxCoeff() / scale == Approx(0.0).margin(1.0e-13));
 
   // Scales linearly with the modulus.
-  const Matrix6 d3 = IsotropicMaterial(3.0 * 70.0e9, 0.3, 1.0).three_dimensional_matrix();
+  const Matrix6 d3 = Material(3.0 * 70.0e9, 0.3, 1.0).three_dimensional_matrix();
   const Matrix k_scaled = element.stiffness(coords, d3, 1.0, two);
   REQUIRE((k_scaled - 3.0 * k2).cwiseAbs().maxCoeff() / k_scaled.cwiseAbs().maxCoeff() ==
           Approx(0.0).margin(1.0e-14));
@@ -307,7 +307,7 @@ TEST_CASE("three-dimensional constitutive matrix matches the Lame form",
           "[solid][material]") {
   const Scalar e = 70.0e9;
   const Scalar nu = 0.33;
-  const IsotropicMaterial m(e, nu, 2700.0);
+  const Material m(e, nu, 2700.0);
   const Matrix6 d = m.three_dimensional_matrix();
   const Scalar lambda = e * nu / ((1.0 + nu) * (1.0 - 2.0 * nu));
   const Scalar g = e / (2.0 * (1.0 + nu));

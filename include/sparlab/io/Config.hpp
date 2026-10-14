@@ -85,7 +85,7 @@ struct FormingConfig {
 struct MaterialRegion {
   std::string name;
   SelectorGroup region;
-  IsotropicMaterial material;
+  Material material;
 };
 
 /// A complete, validated run specification.
@@ -123,11 +123,11 @@ class Configuration {
   /// e.g. "structured_hex 40 x 40 x 2" or "file 'mesh.inp' (Hex8, 9216 elements)".
   std::string describe_mesh() const;
 
-  const IsotropicMaterial& material() const;
-  void set_material(IsotropicMaterial material);
+  const Material& material() const;
+  void set_material(Material material);
 
  private:
-  std::optional<IsotropicMaterial> material_;
+  std::optional<Material> material_;
 };
 
 /// Parse a configuration from an already-parsed document.

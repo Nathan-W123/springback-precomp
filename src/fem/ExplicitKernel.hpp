@@ -173,7 +173,7 @@ class ExplicitInternalForce {
   std::vector<Scalar> weights_;
   std::vector<Scalar> dilatation_;
   std::vector<int> material_;      ///< per element: index into materials_
-  std::vector<const IsotropicMaterial*> materials_;
+  std::vector<const Material*> materials_;
   std::vector<Predictor> predictor_;
   std::vector<char> plastic_;        ///< per element
   std::vector<char> averaged_;       ///< per element

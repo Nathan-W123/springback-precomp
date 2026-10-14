@@ -148,7 +148,7 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
 /// (logarithmic kinematics), and the temperature change the return sees at
 /// load factor lambda with its derivative.
 void refuse_inverted_point(const Matrix& f, int dim);
-void elastoplastic_temperature_change(const IsotropicMaterial& mat, Kinematics kinematics,
+void elastoplastic_temperature_change(const Material& mat, Kinematics kinematics,
                                       Scalar dt0, Scalar lambda, Scalar& change, Scalar& rate);
 
 }  // namespace detail

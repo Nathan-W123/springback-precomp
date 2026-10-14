@@ -1,6 +1,6 @@
-// Where this fits: see include/sparlab/material/IsotropicMaterial.hpp
+// Where this fits: see include/sparlab/material/Material.hpp
 
-#include "sparlab/material/IsotropicMaterial.hpp"
+#include "sparlab/material/Material.hpp"
 
 #include "sparlab/core/Exceptions.hpp"
 
@@ -13,7 +13,7 @@
 
 namespace sparlab {
 
-IsotropicMaterial::IsotropicMaterial(Scalar youngs_modulus, Scalar poisson_ratio,
+Material::Material(Scalar youngs_modulus, Scalar poisson_ratio,
                                      Scalar density, std::string name)
     : e_(youngs_modulus), nu_(poisson_ratio), rho_(density), name_(std::move(name)) {
   if (!(e_ > 0.0)) {
@@ -36,7 +36,7 @@ IsotropicMaterial::IsotropicMaterial(Scalar youngs_modulus, Scalar poisson_ratio
   }
 }
 
-Matrix3 IsotropicMaterial::plane_stress_matrix() const {
+Matrix3 Material::plane_stress_matrix() const {
   Matrix3 d = Matrix3::Zero();
   const Scalar f = e_ / (1.0 - nu_ * nu_);
   d(0, 0) = f;
@@ -47,7 +47,7 @@ Matrix3 IsotropicMaterial::plane_stress_matrix() const {
   return d;
 }
 
-Matrix3 IsotropicMaterial::plane_strain_matrix() const {
+Matrix3 Material::plane_strain_matrix() const {
   Matrix3 d = Matrix3::Zero();
   const Scalar f = e_ / ((1.0 + nu_) * (1.0 - 2.0 * nu_));
   d(0, 0) = f * (1.0 - nu_);
@@ -58,7 +58,7 @@ Matrix3 IsotropicMaterial::plane_strain_matrix() const {
   return d;
 }
 
-Matrix6 IsotropicMaterial::three_dimensional_matrix() const {
+Matrix6 Material::three_dimensional_matrix() const {
   Matrix6 d = Matrix6::Zero();
   const Scalar lambda = lame_lambda();
   const Scalar g = shear_modulus();
@@ -70,7 +70,7 @@ Matrix6 IsotropicMaterial::three_dimensional_matrix() const {
   return d;
 }
 
-void IsotropicMaterial::set_thermal(Scalar expansion, Scalar reference_temperature,
+void Material::set_thermal(Scalar expansion, Scalar reference_temperature,
                                     Scalar conductivity) {
   if (!std::isfinite(expansion) || !std::isfinite(reference_temperature) ||
       !std::isfinite(conductivity)) {
@@ -235,7 +235,7 @@ void derive_hill(Hill48Parameters& h, Matrix6& yield_matrix, const std::string& 
 
 }  // namespace
 
-void IsotropicMaterial::set_plasticity(const PlasticityParameters& parameters) {
+void Material::set_plasticity(const PlasticityParameters& parameters) {
   PlasticityParameters p = parameters;
   const Scalar values[] = {p.yield_stress, p.hardening_modulus, p.kinematic_hardening_modulus,
                            p.saturation_stress, p.saturation_rate};
@@ -287,7 +287,7 @@ void IsotropicMaterial::set_plasticity(const PlasticityParameters& parameters) {
   plasticity_ = p;
 }
 
-Matrix IsotropicMaterial::constitutive(StressState state) const {
+Matrix Material::constitutive(StressState state) const {
   switch (state) {
     case StressState::PlaneStress: return plane_stress_matrix();
     case StressState::PlaneStrain: return plane_strain_matrix();

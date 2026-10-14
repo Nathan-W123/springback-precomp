@@ -153,7 +153,7 @@ Workspace& set_up(Setting& set, const FemModel& model, Index e, const Vector& ue
   set.e = e;
   set.kinematics = kinematics;
   const Mesh& mesh = model.mesh();
-  const IsotropicMaterial& mat = model.material_of(e);
+  const Material& mat = model.material_of(e);
   set.symmetric = mat.plasticity().symmetric_tangent();
   for (int a = 0; a < kNodes; ++a) {
     for (int k = 0; k < 3; ++k) set.u(k, a) = ue(3 * a + k);
@@ -247,7 +247,7 @@ void kinematics_at(const Setting& set, Workspace& points, const VectorI& alpha) 
 /// of Plasticity.hpp (J2, Hill48, Chaboche; elastic too) from the point's
 /// committed state.
 void respond(const Setting& set, Workspace& points, const std::vector<PlasticState>& committed) {
-  const IsotropicMaterial& mat = set.model->material_of(set.e);
+  const Material& mat = set.model->material_of(set.e);
   const Scalar expansion = mat.thermal_expansion();
   for (std::size_t q = 0; q < points.size(); ++q) {
     PointWork& p = points[q];
@@ -654,7 +654,7 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
   VectorI alpha = VectorI::Zero();
   if (internal != nullptr && internal->size() == kA) alpha = *internal;
   kinematics_at(set, points, alpha);
-  const IsotropicMaterial& mat = model.material_of(e);
+  const Material& mat = model.material_of(e);
   const bool finite = kinematics == Kinematics::Finite;
   const bool logarithmic = kinematics == Kinematics::FiniteLogarithmic;
   ElastoplasticStress out;

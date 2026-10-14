@@ -161,7 +161,7 @@ struct ElementJob {
   const Scalar* weights = nullptr;     ///< w det J [q]
   const Scalar* dilatation = nullptr;  ///< A, B, V
   const Predictor* predictor = nullptr;
-  const IsotropicMaterial* material = nullptr;
+  const Material* material = nullptr;
   PointBlock* block = nullptr;         ///< the points' history (compact)
   PlasticState* full = nullptr;        ///< the points' history (general), 8 of them
   StressState state = StressState::ThreeDimensional;
@@ -559,7 +559,7 @@ void ExplicitInternalForce::build_dedicated() {
   compact_ = true;
   Index slots = 0;
   for (Index e = 0; e < ne_; ++e) {
-    const IsotropicMaterial* mat = &model_.material_of(e);
+    const Material* mat = &model_.material_of(e);
     auto it = std::find(materials_.begin(), materials_.end(), mat);
     if (it == materials_.end()) {
       materials_.push_back(mat);

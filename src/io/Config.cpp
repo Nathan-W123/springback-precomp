@@ -256,8 +256,8 @@ Hill48Parameters parse_anisotropy(const ConfigNode& node) {
 /// A material section: elastic constants, density, the thermal properties
 /// and the plasticity. `dim` is the mesh dimension (a plane model needs z
 /// along an axis of the Hill48 frame).
-IsotropicMaterial parse_material(const ConfigNode& mat, const std::string& default_name, int dim) {
-  IsotropicMaterial material(mat.positive_number("youngs_modulus"),
+Material parse_material(const ConfigNode& mat, const std::string& default_name, int dim) {
+  Material material(mat.positive_number("youngs_modulus"),
                              mat.require("poisson_ratio").number(),
                              mat.number_or("density", 0.0),
                              mat.string_or("name", default_name));
@@ -327,14 +327,14 @@ IsotropicMaterial parse_material(const ConfigNode& mat, const std::string& defau
 
 }  // namespace
 
-const IsotropicMaterial& Configuration::material() const {
+const Material& Configuration::material() const {
   if (!material_.has_value()) {
     throw ConfigError("the configuration has no material section");
   }
   return *material_;
 }
 
-void Configuration::set_material(IsotropicMaterial material) {
+void Configuration::set_material(Material material) {
   material_ = std::move(material);
 }
 

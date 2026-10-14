@@ -534,7 +534,7 @@ ExplicitDynamics::ExplicitDynamics(const FemModel& model, const Assembler& assem
       options_(options) {
   if (!model.finalized()) throw ModelError("the model must be finalised before a solve");
   options_.validate();
-  for (const IsotropicMaterial& m : model.materials()) {
+  for (const Material& m : model.materials()) {
     if (!(m.density() > 0.0)) {
       throw ConfigError("explicit dynamics needs a positive density of every material; "
                         "material '" + m.name() + "' has none - set its 'density' [kg/m^3]");
@@ -605,7 +605,7 @@ Vector ExplicitDynamics::element_time_steps(const Vector& u, const Vector* scale
         const Scalar top = eig.eigenvalues().maxCoeff();
         out(e) = top > 0.0 ? 2.0 * std::sqrt(s / top) : std::numeric_limits<Scalar>::infinity();
       } else {
-        const IsotropicMaterial& m = model_.material_of(e);
+        const Material& m = model_.material_of(e);
         const Scalar modulus =
             model_.stress_state() == StressState::PlaneStress
                 ? m.youngs_modulus() / (1.0 - m.poisson_ratio() * m.poisson_ratio())

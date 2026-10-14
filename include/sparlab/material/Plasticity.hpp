@@ -19,7 +19,7 @@
 /// \f$n = \xi/\|\xi\|\f$, the accumulated plastic strain
 /// \f$\dot{\bar\alpha} = \sqrt{2/3}\,\dot\gamma\f$ and the back stress
 /// \f$\dot\beta = \tfrac{2}{3}H_{kin}\,\dot\gamma\,n\f$
-/// (IsotropicMaterial.hpp has \f$\sigma_y\f$).
+/// (Material.hpp has \f$\sigma_y\f$).
 ///
 /// **Integration.** From the state of the last converged step, the elastic
 /// trial stress \f$s^{tr} = 2G\,\mathrm{dev}(\varepsilon - \varepsilon^p_n)\f$
@@ -60,7 +60,7 @@
 ///   \bar\sigma(\xi) = \sqrt{\xi^T P\,\xi} ,\qquad
 ///   \xi = \sigma - \textstyle\sum_i \alpha_i ,
 /// \f]
-/// P the yield matrix of IsotropicMaterial.hpp (tensorial Voigt components,
+/// P the yield matrix of Material.hpp (tensorial Voigt components,
 /// global axes; its normal rows sum to zero, so f ignores the pressure). The
 /// flow is associative, \f$\dot\varepsilon^p = \dot\lambda\,m\f$ with
 /// \f$m = \partial\bar\sigma/\partial\sigma = P\xi/\bar\sigma\f$ -
@@ -165,12 +165,12 @@
 ///   return, or the general return for Hill48 and Chaboche) that the element kernels call.
 /// Called from: fem/Elastoplastic.cpp:elastoplastic_element, fem/IncompatibleModes.cpp:respond,
 ///   fem/ExplicitKernel.cpp:element_kernel
-/// Calls into: material/IsotropicMaterial (PlasticityParameters), core/Exceptions
+/// Calls into: material/Material (PlasticityParameters), core/Exceptions
 /// Start reading at: plastic_return, then return_3d and return_general_3d (material/Plasticity.cpp)
 #pragma once
 
 #include "sparlab/core/Types.hpp"
-#include "sparlab/material/IsotropicMaterial.hpp"
+#include "sparlab/material/Material.hpp"
 
 #include <array>
 
@@ -225,7 +225,7 @@ struct PlasticResponse {
 /// \throws SolverError when the plane-stress iteration or the return fails
 ///         to converge; ConfigError for a plane state with a Hill48 frame
 ///         whose axes miss z (PlasticityParameters::plane_compatible()).
-PlasticResponse plastic_return(const IsotropicMaterial& material, StressState state,
+PlasticResponse plastic_return(const Material& material, StressState state,
                                const Vector6& strain, const PlasticState& committed,
                                Scalar delta_t = 0.0, bool want_tangent = true);
 

@@ -262,7 +262,7 @@ SparseMatrix Assembler::assemble_mass(MassType type, const Vector* scale) const 
   const Mesh& mesh = model_.mesh();
   const Index ne = mesh.num_elements();
   check_scale(scale, ne, "mass");
-  for (const IsotropicMaterial& material : model_.materials()) {
+  for (const Material& material : model_.materials()) {
     if (material.density() <= 0.0) {
       throw ModelError("mass assembly requires a positive density of every material; "
                        "material '" + material.name() +

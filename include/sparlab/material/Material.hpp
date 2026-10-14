@@ -1,5 +1,7 @@
-/// \file IsotropicMaterial.hpp
-/// \brief Linear-elastic isotropic material and its constitutive matrices.
+/// \file Material.hpp
+/// \brief The sheet material: isotropic linear elasticity and its constitutive
+///        matrices, plus the plasticity parameters (von Mises or Hill48 yield,
+///        isotropic and kinematic hardening) that Plasticity.hpp integrates.
 ///
 /// Voigt ordering used throughout SparLab is
 /// \f$ \{\sigma_{xx}, \sigma_{yy}, \sigma_{xy}\} \f$ in 2-D and
@@ -43,7 +45,7 @@
 /// Called from: io/Config.cpp:parse_material, fem/FemModel.cpp:FemModel::FemModel,
 ///   fem/RigidTool.cpp:ToolContact::ToolContact (youngs_modulus)
 /// Calls into: core/Exceptions (ConfigError)
-/// Start reading at: PlasticityParameters, IsotropicMaterial::set_plasticity
+/// Start reading at: PlasticityParameters, Material::set_plasticity
 #pragma once
 
 #include "sparlab/core/Types.hpp"
@@ -197,8 +199,10 @@ struct PlasticityParameters {
   Scalar isotropic_energy(Scalar alpha) const;
 };
 
-/// Isotropic linear-elastic material described by \f$(E, \nu, \rho)\f$.
-class IsotropicMaterial {
+/// The material of the deck's `material` block: isotropic linear elasticity
+/// described by \f$(E, \nu, \rho)\f$, its PlasticityParameters (elastic
+/// unless set_plasticity is called) and its thermal properties.
+class Material {
  public:
   /// \param youngs_modulus E [Pa], must be > 0.
   /// \param poisson_ratio nu [-], must lie in (-1, 0.5) for plane strain and
@@ -207,7 +211,7 @@ class IsotropicMaterial {
   ///        well posed.
   /// \param density rho [kg/m^3], must be >= 0 (an explicit step needs it > 0).
   /// \param name optional label carried into result files.
-  IsotropicMaterial(Scalar youngs_modulus, Scalar poisson_ratio, Scalar density,
+  Material(Scalar youngs_modulus, Scalar poisson_ratio, Scalar density,
                     std::string name = "material");
 
   Scalar youngs_modulus() const { return e_; }

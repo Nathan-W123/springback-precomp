@@ -1,7 +1,7 @@
 /// \file test_material.cpp
 /// \brief Constitutive matrices and material input validation.
 #include "sparlab/core/Exceptions.hpp"
-#include "sparlab/material/IsotropicMaterial.hpp"
+#include "sparlab/material/Material.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -14,7 +14,7 @@ using Catch::Approx;
 TEST_CASE("plane-stress constitutive matrix matches the closed form", "[material]") {
   const Scalar e = 70.0e9;
   const Scalar nu = 0.33;
-  const IsotropicMaterial m(e, nu, 2700.0);
+  const Material m(e, nu, 2700.0);
   const Matrix3 d = m.plane_stress_matrix();
 
   const Scalar f = e / (1.0 - nu * nu);
@@ -38,7 +38,7 @@ TEST_CASE("plane-stress constitutive matrix matches the closed form", "[material
 TEST_CASE("plane-strain constitutive matrix matches the closed form", "[material]") {
   const Scalar e = 200.0e9;
   const Scalar nu = 0.29;
-  const IsotropicMaterial m(e, nu, 7850.0);
+  const Material m(e, nu, 7850.0);
   const Matrix3 d = m.plane_strain_matrix();
 
   const Scalar f = e / ((1.0 + nu) * (1.0 - 2.0 * nu));
@@ -55,7 +55,7 @@ TEST_CASE("plane-strain constitutive matrix matches the closed form", "[material
 }
 
 TEST_CASE("constitutive() dispatches on the stress state", "[material]") {
-  const IsotropicMaterial m(1.0e9, 0.25, 1000.0);
+  const Material m(1.0e9, 0.25, 1000.0);
   REQUIRE((m.constitutive(StressState::PlaneStress) - m.plane_stress_matrix())
               .cwiseAbs()
               .maxCoeff() == Approx(0.0));
@@ -66,10 +66,10 @@ TEST_CASE("constitutive() dispatches on the stress state", "[material]") {
 
 TEST_CASE("invalid material parameters are rejected with actionable errors",
           "[material][diagnostics]") {
-  REQUIRE_THROWS_AS(IsotropicMaterial(0.0, 0.3, 1.0), ConfigError);
-  REQUIRE_THROWS_AS(IsotropicMaterial(-1.0, 0.3, 1.0), ConfigError);
-  REQUIRE_THROWS_AS(IsotropicMaterial(1.0, 0.5, 1.0), ConfigError);
-  REQUIRE_THROWS_AS(IsotropicMaterial(1.0, 0.6, 1.0), ConfigError);
-  REQUIRE_THROWS_AS(IsotropicMaterial(1.0, -1.5, 1.0), ConfigError);
-  REQUIRE_THROWS_AS(IsotropicMaterial(1.0, 0.3, -1.0), ConfigError);
+  REQUIRE_THROWS_AS(Material(0.0, 0.3, 1.0), ConfigError);
+  REQUIRE_THROWS_AS(Material(-1.0, 0.3, 1.0), ConfigError);
+  REQUIRE_THROWS_AS(Material(1.0, 0.5, 1.0), ConfigError);
+  REQUIRE_THROWS_AS(Material(1.0, 0.6, 1.0), ConfigError);
+  REQUIRE_THROWS_AS(Material(1.0, -1.5, 1.0), ConfigError);
+  REQUIRE_THROWS_AS(Material(1.0, 0.3, -1.0), ConfigError);
 }

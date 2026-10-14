@@ -102,7 +102,7 @@ Kinematic kinematics_of(const FemModel& model, Index e, const Vector& ue, Kinema
   const int n = mesh.nodes_per_elem();
   const Scalar t = dim == 2 ? model.thickness() : 1.0;
   const Matrix x0 = mesh.element_coordinates(e);
-  const IsotropicMaterial& mat = model.material_of(e);
+  const Material& mat = model.material_of(e);
   const bool thermal = temperature != nullptr && temperature->size() > 0 &&
                        mat.thermal_expansion() != 0.0;
   Vector te;
@@ -185,7 +185,7 @@ Kinematic kinematics_of(const FemModel& model, Index e, const Vector& ue, Kinema
 /// strain of the free thermal stretch, dT (1 + alpha dT / 2); with
 /// logarithmic kinematics the one whose thermal strain is its log strain,
 /// ln(1 + alpha dT) / alpha.
-void thermal_change(const IsotropicMaterial& mat, Kinematics kinematics, Scalar dt0,
+void thermal_change(const Material& mat, Kinematics kinematics, Scalar dt0,
                     Scalar lambda, Scalar& change, Scalar& rate) {
   const Scalar dt = lambda * dt0;
   const Scalar alpha = mat.thermal_expansion();
@@ -242,7 +242,7 @@ Kinematics parse_kinematics(const std::string& text) {
 void require_elastoplastic_materials(const FemModel& model, Kinematics kinematics) {
   if (kinematics == Kinematics::SmallStrain) return;
   for (Index e = 0; e < model.mesh().num_elements(); ++e) {
-    const IsotropicMaterial& mat = model.material_of(e);
+    const Material& mat = model.material_of(e);
     if (mat.plasticity().enabled()) continue;
     throw ConfigError("material '" + mat.name() + "' has no plasticity block, and the \"" +
                       to_string(kinematics) + "\" kinematics takes elastoplastic materials "
@@ -283,7 +283,7 @@ ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
   }
-  const IsotropicMaterial& mat = model.material_of(e);
+  const Material& mat = model.material_of(e);
   const StressState state = model.stress_state();
   const int dim = model.dim();
   const int n = model.mesh().nodes_per_elem();
@@ -414,7 +414,7 @@ ElastoplasticStress elastoplastic_stress(const FemModel& model, Index e, const V
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
   }
-  const IsotropicMaterial& mat = model.material_of(e);
+  const Material& mat = model.material_of(e);
   const StressState state = model.stress_state();
   const int dim = model.dim();
   const bool finite = kinematics == Kinematics::Finite;
@@ -493,7 +493,7 @@ namespace detail {
 
 void refuse_inverted_point(const Matrix& f, int dim) { refuse_inverted(f, dim); }
 
-void elastoplastic_temperature_change(const IsotropicMaterial& mat, Kinematics kinematics,
+void elastoplastic_temperature_change(const Material& mat, Kinematics kinematics,
                                       Scalar dt0, Scalar lambda, Scalar& change, Scalar& rate) {
   thermal_change(mat, kinematics, dt0, lambda, change, rate);
 }

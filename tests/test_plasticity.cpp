@@ -30,9 +30,9 @@ using Catch::Approx;
 
 namespace {
 
-IsotropicMaterial plastic_steel(Scalar h = 0.0, Scalar hk = 0.0, Scalar q = 0.0,
+Material plastic_steel(Scalar h = 0.0, Scalar hk = 0.0, Scalar q = 0.0,
                                 Scalar delta = 0.0) {
-  IsotropicMaterial m(200.0e9, 0.3, 7800.0, "steel");
+  Material m(200.0e9, 0.3, 7800.0, "steel");
   PlasticityParameters p;
   p.yield_stress = 250.0e6;
   p.hardening_modulus = h;
@@ -45,7 +45,7 @@ IsotropicMaterial plastic_steel(Scalar h = 0.0, Scalar hk = 0.0, Scalar q = 0.0,
 
 /// Uniaxial stress sigma_11 at the axial strain e11: the lateral strains
 /// found by Newton on the return so that sigma_22 = sigma_33 = 0.
-PlasticResponse uniaxial(const IsotropicMaterial& m, Scalar e11, const PlasticState& committed,
+PlasticResponse uniaxial(const Material& m, Scalar e11, const PlasticState& committed,
                          Scalar delta_t = 0.0) {
   const Scalar th = m.thermal_expansion() * delta_t;
   Vector6 strain = Vector6::Zero();
@@ -74,7 +74,7 @@ PlasticResponse uniaxial(const IsotropicMaterial& m, Scalar e11, const PlasticSt
 
 /// The uniaxial stress of a Voce material at total strain e (monotonic):
 /// sigma = sigma_y(e - sigma / E), by bisection.
-Scalar voce_uniaxial(const IsotropicMaterial& m, Scalar e) {
+Scalar voce_uniaxial(const Material& m, Scalar e) {
   const PlasticityParameters& p = m.plasticity();
   Scalar lo = p.yield_stress;
   Scalar hi = m.youngs_modulus() * e;
@@ -95,7 +95,7 @@ Vector6 random_strain(Scalar amplitude, unsigned seed) {
 
 /// The consistent tangent against central differences of the stress, over
 /// the strain components the idealisation takes.
-Scalar tangent_error(const IsotropicMaterial& m, StressState state, const Vector6& strain,
+Scalar tangent_error(const Material& m, StressState state, const Vector6& strain,
                      const PlasticState& committed, Scalar delta_t = 0.0) {
   const PlasticResponse r = plastic_return(m, state, strain, committed, delta_t);
   // (The plane-stress iteration leaves sigma_33 below 1e-12 of the stress,
@@ -122,7 +122,7 @@ Scalar tangent_error(const IsotropicMaterial& m, StressState state, const Vector
 
 TEST_CASE("plasticity parameters are validated and the hardening laws are consistent",
           "[plasticity][material]") {
-  IsotropicMaterial m(200.0e9, 0.3, 7800.0, "steel");
+  Material m(200.0e9, 0.3, 7800.0, "steel");
   PlasticityParameters p;
   p.yield_stress = -1.0;
   REQUIRE_THROWS_AS(m.set_plasticity(p), ConfigError);
@@ -164,7 +164,7 @@ TEST_CASE("uniaxial stress with linear hardening is exact for any step",
     Scalar hk;
   };
   for (const Case c : {Case{0.0, 0.0}, Case{2.0e9, 0.0}, Case{0.0, 5.0e9}, Case{1.0e9, 3.0e9}}) {
-    const IsotropicMaterial m = plastic_steel(c.h, c.hk);
+    const Material m = plastic_steel(c.h, c.hk);
     const Scalar e = m.youngs_modulus();
     const Scalar hh = c.h + c.hk;
     const Scalar target = 0.01;  // eight times the yield strain
@@ -203,7 +203,7 @@ TEST_CASE("a reversed uniaxial path shows isotropic and kinematic hardening exac
   const Scalar e1 = 0.01;
   for (const bool kinematic : {false, true}) {
     const Scalar hmod = 10.0e9;
-    const IsotropicMaterial m = kinematic ? plastic_steel(0.0, hmod) : plastic_steel(hmod, 0.0);
+    const Material m = kinematic ? plastic_steel(0.0, hmod) : plastic_steel(hmod, 0.0);
     const Scalar e = m.youngs_modulus();
     const Scalar s1 = e * (sy + hmod * e1) / (e + hmod);
     const Scalar ep1 = e1 - s1 / e;
@@ -236,7 +236,7 @@ TEST_CASE("a reversed uniaxial path shows isotropic and kinematic hardening exac
 }
 
 TEST_CASE("Voce saturation is followed exactly on a uniaxial path", "[plasticity][material]") {
-  const IsotropicMaterial m = plastic_steel(1.0e9, 0.0, 150.0e6, 30.0);
+  const Material m = plastic_steel(1.0e9, 0.0, 150.0e6, 30.0);
   for (const Scalar target : {0.002, 0.02, 0.2}) {
     const Scalar exact = voce_uniaxial(m, target);
     REQUIRE(uniaxial(m, target, PlasticState()).stress(0) == Approx(exact).epsilon(1e-11));
@@ -267,7 +267,7 @@ TEST_CASE("the Voce return converges at trial stresses far outside the yield sur
   Scalar worst = 0.0;
   int returns = 0;
   for (const Law& law : laws) {
-    const IsotropicMaterial m = plastic_steel(law.h, law.hk, law.q, law.delta);
+    const Material m = plastic_steel(law.h, law.hk, law.q, law.delta);
     const PlasticityParameters& p = m.plasticity();
     // | |dev(sigma) - beta| - sqrt(2/3) sigma_y(alpha) | relative to sigma_y.
     const auto off_surface = [&](const PlasticResponse& r) {
@@ -326,7 +326,7 @@ TEST_CASE("the consistent tangent is the derivative of the return", "[plasticity
   // Every hardening mechanism at once, from a committed state with plastic
   // strain, back stress and accumulated strain, on a non-proportional
   // increment that yields again.
-  const IsotropicMaterial m = plastic_steel(1.5e9, 4.0e9, 100.0e6, 20.0);
+  const Material m = plastic_steel(1.5e9, 4.0e9, 100.0e6, 20.0);
   for (const StressState state :
        {StressState::ThreeDimensional, StressState::PlaneStrain, StressState::PlaneStress}) {
     Vector6 first = random_strain(4.0e-3, 3u);
@@ -353,7 +353,7 @@ TEST_CASE("the consistent tangent is the derivative of the return", "[plasticity
 
 TEST_CASE("plane stress returns with sigma_33 = 0 and the 3-D state at its eps_33",
           "[plasticity][material]") {
-  const IsotropicMaterial m = plastic_steel(2.0e9, 1.0e9);
+  const Material m = plastic_steel(2.0e9, 1.0e9);
   Vector6 strain = Vector6::Zero();
   strain(0) = 6.0e-3;
   strain(1) = -1.0e-3;
@@ -390,7 +390,7 @@ TEST_CASE("the loading flag gives the continuum tangent at zero increment",
   // consistent tangent as the increment vanishes.
   const Scalar h = 2.0e9;
   const Scalar hk = 1.0e9;
-  const IsotropicMaterial m = plastic_steel(h, hk);
+  const Material m = plastic_steel(h, hk);
   Vector6 strain = Vector6::Zero();
   strain(0) = 5.0e-3;
   strain(3) = 2.0e-3;
@@ -428,7 +428,7 @@ TEST_CASE("the loading flag gives the continuum tangent at zero increment",
 }
 
 TEST_CASE("a temperature change enters as a free strain", "[plasticity][material]") {
-  IsotropicMaterial m = plastic_steel();
+  Material m = plastic_steel();
   m.set_thermal(1.2e-5, 20.0, 50.0);
   // Free expansion is stress-free however large.
   Vector6 free = Vector6::Zero();
@@ -459,7 +459,7 @@ TEST_CASE("a temperature change enters as a free strain", "[plasticity][material
 namespace {
 
 /// A distorted Hex8 model (the cells of `type`) with a plastic material.
-FemModel one_element(ElementType type, StressState state, const IsotropicMaterial& m) {
+FemModel one_element(ElementType type, StressState state, const Material& m) {
   StructuredMeshSpec spec;
   spec.nx = spec.ny = spec.nz = 2;
   spec.lx = 1.0;
@@ -490,7 +490,7 @@ Vector element_displacement(const FemModel& model, Index e, Scalar amplitude, un
 
 TEST_CASE("the elastoplastic element tangent is the derivative of its internal force",
           "[plasticity][element]") {
-  const IsotropicMaterial m = plastic_steel(1.0e9, 2.0e9, 50.0e6, 40.0);
+  const Material m = plastic_steel(1.0e9, 2.0e9, 50.0e6, 40.0);
   struct Case {
     ElementType type;
     StressState state;
@@ -534,7 +534,7 @@ TEST_CASE("the elastoplastic element tangent is the derivative of its internal f
 
 TEST_CASE("the element's thermal load rate is the derivative of its internal force",
           "[plasticity][element]") {
-  IsotropicMaterial m = plastic_steel(2.0e9);
+  Material m = plastic_steel(2.0e9);
   m.set_thermal(1.2e-5, 20.0, 50.0);
   for (const ElementType type : {ElementType::Hex8}) {
     for (const StressState state : {StressState::ThreeDimensional}) {
@@ -575,7 +575,7 @@ TEST_CASE("the element's thermal load rate is the derivative of its internal for
 TEST_CASE("an elastic element is the linear element, and mean dilatation leaves a constant "
           "dilatation alone",
           "[plasticity][element]") {
-  const IsotropicMaterial elastic(200.0e9, 0.3, 7800.0, "elastic");
+  const Material elastic(200.0e9, 0.3, 7800.0, "elastic");
   for (const ElementType type : {ElementType::Hex8}) {
     const StressState state = StressState::ThreeDimensional;
     FemModel model = one_element(type, state, elastic);
@@ -616,7 +616,7 @@ TEST_CASE("the finite-kinematics elastoplastic tangent is the derivative of its 
   // Green-Lagrange strain and second Piola-Kirchhoff stress, with the
   // geometric stiffness and (averaged) the Green-strain mean dilatation's
   // extra term, at a large displacement with a rigid turn.
-  const IsotropicMaterial m = plastic_steel(1.0e9, 2.0e9, 50.0e6, 40.0);
+  const Material m = plastic_steel(1.0e9, 2.0e9, 50.0e6, 40.0);
   struct Case {
     ElementType type;
     StressState state;
@@ -670,7 +670,7 @@ TEST_CASE("the finite-kinematics elastoplastic tangent is the derivative of its 
 
 TEST_CASE("finite-kinematics plasticity is objective and tends to the linear stiffness",
           "[plasticity][element]") {
-  const IsotropicMaterial m = plastic_steel(2.0e9, 1.0e9);
+  const Material m = plastic_steel(2.0e9, 1.0e9);
   for (const ElementType type : {ElementType::Hex8}) {
     const StressState state = StressState::ThreeDimensional;
     FemModel model = one_element(type, state, m);

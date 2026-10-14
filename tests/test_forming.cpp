@@ -99,7 +99,7 @@ StepConstraint constraint(const SelectorGroup& region, std::vector<int> componen
 }
 
 /// A finalised model with one load case that applies nothing.
-FemModel finalised(Mesh mesh, const IsotropicMaterial& m, Scalar thickness = 1.0,
+FemModel finalised(Mesh mesh, const Material& m, Scalar thickness = 1.0,
                    StressState state = StressState::ThreeDimensional,
                    const std::vector<DisplacementConstraint>& bcs = {}) {
   FemModel model(std::move(mesh), m, thickness, state, IntegrationOptions());
@@ -234,7 +234,7 @@ Scalar tangent_error(const ToolContact& contact, const FemModel& model, const Ve
 
 TEST_CASE("the penalty contact tangent is the exact derivative of its forces, with friction",
           "[forming]") {
-  const IsotropicMaterial m = default_material();
+  const Material m = default_material();
   // A block 10 mm x 10 mm x 2 mm, its top at z = 0, with its nodes moved
   // off the grid so no symmetry helps.
   std::mt19937 rng(7u);
@@ -329,7 +329,7 @@ TEST_CASE("the penalty contact tangent is the exact derivative of its forces, wi
 }
 
 TEST_CASE("tool contact refuses what it cannot model", "[forming]") {
-  const IsotropicMaterial m = default_material();
+  const Material m = default_material();
   FemModel model = finalised(hex_block(2, 2, 1, 0.01, 0.01, 0.002), m);
   RigidTool tool;
   tool.radius = 0.005;
@@ -381,7 +381,7 @@ TEST_CASE("a flat punch compresses an elastic block by the exact force, penalty 
   // F = E A (delta - F / (A kappa)) / H exactly, F = E A delta / H / (1 +
   // E / (kappa H)) - which tends to the rigid-contact force as the penalty
   // grows.
-  const IsotropicMaterial m = default_material();
+  const Material m = default_material();
   const Scalar e = m.youngs_modulus();
   const Scalar a_side = 0.004;
   const Scalar height = 0.01;
@@ -511,7 +511,7 @@ TEST_CASE("a tool dragged along a block with friction slides at mu times its nor
   // its resultants differ from F_x = mu F_z by its contact normals' tilt
   // (ploughing), 7e-4 on this mesh. (Elastic in effect: finite kinematics
   // take an elastoplastic material.)
-  const IsotropicMaterial m = never_yielding_material();
+  const Material m = never_yielding_material();
   const Scalar mu = 0.2;
   const Scalar pi = std::acos(-1.0);
   for (const RigidTool::Shape shape : {RigidTool::Shape::Sphere, RigidTool::Shape::Plane}) {
@@ -784,8 +784,8 @@ std::vector<StepConstraint> three_two_one(Index a, Index b, Index c, const Vecto
   return out;
 }
 
-IsotropicMaterial aluminium_plastic() {
-  IsotropicMaterial m(70.0e9, 0.33, 2700.0, "aluminium");
+Material aluminium_plastic() {
+  Material m(70.0e9, 0.33, 2700.0, "aluminium");
   PlasticityParameters p;
   p.yield_stress = 150.0e6;
   p.hardening_modulus = 500.0e6;
@@ -970,7 +970,7 @@ TEST_CASE("an elastoplastic beam bent past yield springs back by the exact elast
   const Scalar k1 = 3.0 * ky;
   const Scalar inertia = t * h * h * h / 12.0;
   const Scalar springback = bending_moment(k1, youngs, sy, t, h) / (youngs * inertia);
-  IsotropicMaterial material(youngs, 0.3, 7800.0, "steel");
+  Material material(youngs, 0.3, 7800.0, "steel");
   PlasticityParameters params;
   params.yield_stress = sy;
   material.set_plasticity(params);
@@ -1086,7 +1086,7 @@ TEST_CASE("single-point incremental forming of a clamped blank completes and spr
   // elements) and path (12 chords a contour) keep it at about 17 s on one
   // thread; configs/forming/spif_smoke.json is the same case on a 20 x 20 x 2
   // mesh (docs/forming.md, sections 4 and 5).
-  IsotropicMaterial m(70.0e9, 0.33, 2700.0, "aa1050");
+  Material m(70.0e9, 0.33, 2700.0, "aa1050");
   PlasticityParameters p;
   p.yield_stress = 100.0e6;
   p.hardening_modulus = 300.0e6;

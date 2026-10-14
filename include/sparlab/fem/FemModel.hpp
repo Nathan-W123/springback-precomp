@@ -17,7 +17,7 @@
 /// Where this fits: Simulations stage - the model built from the deck (mesh, materials,
 ///   element, DOFs, boundary conditions) that every analysis of sparlab_form reads.
 /// Called from: io/Config.cpp:build_model (builds and finalises it), apps/sparlab_form.cpp:main
-/// Calls into: mesh/Mesh, elements/Element (make_element), material/IsotropicMaterial,
+/// Calls into: mesh/Mesh, elements/Element (make_element), material/Material,
 ///   fem/BoundaryConditions (apply_constraints)
 /// Start reading at: FemModel::FemModel, FemModel::finalize (fem/FemModel.cpp)
 #pragma once
@@ -26,7 +26,7 @@
 #include "sparlab/elements/Element.hpp"
 #include "sparlab/fem/BoundaryConditions.hpp"
 #include "sparlab/fem/DofManager.hpp"
-#include "sparlab/material/IsotropicMaterial.hpp"
+#include "sparlab/material/Material.hpp"
 #include "sparlab/mesh/Mesh.hpp"
 
 #include <memory>
@@ -43,7 +43,7 @@ enum class MassType {
 /// A finite element model: mesh, element, materials, constraints and DOFs.
 class FemModel {
  public:
-  FemModel(Mesh mesh, IsotropicMaterial material, Scalar thickness,
+  FemModel(Mesh mesh, Material material, Scalar thickness,
            StressState stress_state, IntegrationOptions integration);
 
   const Mesh& mesh() const { return mesh_; }
@@ -54,7 +54,7 @@ class FemModel {
   int dofs_per_node() const { return element_->dofs_per_node(); }
   /// The primary material (the deck's `material`); every element uses it
   /// unless `assign_material` gave it another.
-  const IsotropicMaterial& material() const { return materials_.front(); }
+  const Material& material() const { return materials_.front(); }
   /// Out-of-plane thickness [m] of a 2-D model; 1 for a 3-D model.
   Scalar thickness() const { return thickness_; }
   StressState stress_state() const { return stress_state_; }
@@ -70,16 +70,16 @@ class FemModel {
   /// Give the listed elements `material`, appended to the model's materials.
   /// A later assignment overrides an earlier one for the same elements.
   /// \throws ModelError for an element index out of range.
-  void assign_material(const IsotropicMaterial& material, const std::vector<Index>& elements);
+  void assign_material(const Material& material, const std::vector<Index>& elements);
 
-  const std::vector<IsotropicMaterial>& materials() const { return materials_; }
+  const std::vector<Material>& materials() const { return materials_; }
   /// True when every element uses the primary material.
   bool single_material() const { return element_material_.empty(); }
   /// Index into `materials()` of element `e`'s material.
   int element_material(Index e) const {
     return element_material_.empty() ? 0 : element_material_[static_cast<std::size_t>(e)];
   }
-  const IsotropicMaterial& material_of(Index e) const {
+  const Material& material_of(Index e) const {
     return materials_[static_cast<std::size_t>(element_material(e))];
   }
   const Matrix& constitutive_of(Index e) const {
@@ -107,7 +107,7 @@ class FemModel {
   void check_sheet_integration() const;
 
   Mesh mesh_;
-  std::vector<IsotropicMaterial> materials_;
+  std::vector<Material> materials_;
   std::vector<int> element_material_;  ///< empty: every element uses materials_[0]
   Scalar thickness_;
   StressState stress_state_;
