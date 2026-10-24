@@ -1,4 +1,4 @@
-"""Speed-halving check (docs/forming.md 7.2): profile differences between two explicit runs, and the springback
+"""Speed-halving check (docs/forming.md 7.2 at commit 7d571e6): profile differences between two explicit runs, and the springback
 (release minus unload) of each. usage: python3 speed_check.py cases/a cases/b -> speed_check.json"""
 import sys, os, json
 import numpy as np

@@ -10,12 +10,6 @@
 ///   <out>/step_<k>_<s>_elements.csv    element,eq_plastic_strain,von_mises_Pa
 ///   <out>/step_<k>_<s>.vtk             the same fields for ParaView
 ///   <out>/step_<k>_<s>_inc_<i>_nodes.csv  (and .vtk) snapshots every `stride` increments
-///   <out>/step_<k>_<s>_energy.csv      form_explicit steps: the energy history
-///                                      (step,t_s,pseudo_t_s,time_step_s,kinetic_J,
-///                                      internal_work_J,stored_J,elastic_J,
-///                                      plastic_dissipation_J,contact_normal_work_J,
-///                                      contact_friction_work_J,damping_J,external_work_J,
-///                                      mass_scaling_work_J,energy_error_J,kinetic_ratio)
 ///   <out>/tool_forces.csv              step,increment,t,tool,cx,cy,cz,fx,fy,fz,
 ///                                      active_nodes,max_penetration_m
 /// \endcode
@@ -26,8 +20,7 @@
 /// points', its von Mises stress that of its point-averaged Cauchy stress
 /// [Pa]; the tool force is the force the body exerts on the tool [N], and
 /// (cx, cy, cz) the tool's reference point [m], at the end of each converged
-/// increment - for an explicit step every `history_every` steps, the force
-/// averaged over them, t the tools' pseudo-time. Only completed steps have
+/// increment, t the tools' pseudo-time. Only completed steps have
 /// files. sparlab_form writes
 /// config.json and mesh.json before the first step, each step's files and
 /// tool_forces.csv as the step ends, and summary.json last.

@@ -14,10 +14,12 @@
 #include "sparlab/elements/Hex8Incompatible.hpp"
 #include "sparlab/elements/Quadrature.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
-#include "sparlab/fem/ExplicitDynamics.hpp"
 #include "sparlab/fem/Forming.hpp"
 #include "sparlab/io/Config.hpp"
 #include "sparlab/io/Json.hpp"
+
+// The library-internal element loop the forming analysis evaluates (header-only).
+#include "../src/fem/NonlinearSystem.hpp"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -765,9 +767,8 @@ TEST_CASE("the incompatible-mode system evaluates bitwise alike on one and sever
   Assembler assembler(model);
   NonlinearOptions nl;
   nl.kinematics = Kinematics::Finite;
-  // The generic element dispatch of NonlinearSystem, which the forming
-  // analysis evaluates (the explicit integrator's comparison hook).
-  const ExplicitDynamics system(model, assembler, nl, {}, ExplicitOptions());
+  // The element loop of every Newton iteration of the forming analysis.
+  const detail::NonlinearSystem system(model, assembler, nl);
   Vector u = Vector::Zero(model.dofs().num_dofs());
   for (Index n = 0; n < model.mesh().num_nodes(); ++n) {
     const Vector3 x = model.mesh().node(n);
@@ -778,11 +779,11 @@ TEST_CASE("the incompatible-mode system evaluates bitwise alike on one and sever
   const int threads = omp_get_max_threads();
   omp_set_num_threads(1);
 #endif
-  const Vector serial = system.internal_force(u, {}, /*generic=*/true);
+  const Vector serial = system.evaluate(u, 0.0, false).internal;
 #if defined(SPARLAB_HAVE_OPENMP)
   omp_set_num_threads(3);
 #endif
-  const Vector parallel = system.internal_force(u, {}, /*generic=*/true);
+  const Vector parallel = system.evaluate(u, 0.0, false).internal;
 #if defined(SPARLAB_HAVE_OPENMP)
   omp_set_num_threads(threads);
 #endif
@@ -877,7 +878,7 @@ TEST_CASE("mean dilatation is refused with incompatible modes, and auto does not
   Assembler assembler(model);
   NonlinearOptions nl;
   nl.mean_dilatation = MeanDilatation::All;
-  REQUIRE_THROWS_AS(ExplicitDynamics(model, assembler, nl, {}, ExplicitOptions()), ConfigError);
+  REQUIRE_THROWS_AS(detail::NonlinearSystem(model, assembler, nl), ConfigError);
   const std::vector<PlasticState> virgin(8);
   REQUIRE_THROWS_AS(elastoplastic_element(model, 0, Vector::Zero(24), virgin, true, nullptr, 0.0,
                                           false, Kinematics::SmallStrain),

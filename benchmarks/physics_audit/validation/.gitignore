@@ -1,4 +1,4 @@
-# raw solver output (reproducible from bm3/cases/<name>/deck.json + mesh.inp); summaries, tool forces, logs, extracted profiles kept
+# raw solver output (reproducible from bm3/cases/<name>/deck.json + mesh.inp; the explicit x_std_* cases need a build of commit 7d571e6); summaries, tool forces, logs, extracted profiles kept
 bm3/cases/*/output/*_nodes.csv
 bm3/cases/*/output/*_elements.csv
 bm3/cases/*/output/mesh.json

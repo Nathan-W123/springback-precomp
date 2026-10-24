@@ -1,5 +1,9 @@
 # Physics audit - lens: validation against published experiments
 
+> **Cleanup note.** The BM3 replica's `x_std_*` cases (every completed run) used the explicit forming step (`form_explicit`), which was
+> removed in the cleanup; at commit 7d571e6. Their committed outputs here are the record; re-running them needs a
+> build of that commit, and references to `docs/forming.md` section 7 mean that commit's version.
+
 Status: complete except where marked.
 
 **Resume note (2026-10-01 01:15, after a machine restart):** `bm3/cases/x_std_dz4_v20_kin` had been cut off at 72 % of

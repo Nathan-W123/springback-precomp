@@ -9,7 +9,7 @@
 /// \f]
 /// where \f$\mathbf{A}_e\f$ is the (implicit) DOF gather operator, and
 /// \f$s_e\f$, \f$m_e\f$ are optional per-element scale factors (1 when
-/// omitted; the explicit integrator scales the mass of selected elements).
+/// omitted).
 ///
 /// On a *uniform structured* mesh every cell has identical geometry, so
 /// \f$\mathbf{K}_e^0\f$ and \f$\mathbf{M}_e^0\f$ are computed once and reused.
@@ -30,9 +30,9 @@
 /// result stays the same.
 ///
 /// Where this fits: Simulations stage - sums element matrices into global sparse matrices:
-///   the Newton tangent of the forming analysis and the lumped mass of the explicit one.
+///   the Newton tangent of the forming analysis (the mass matrices are tested, not used by it).
 /// Called from: fem/NonlinearSystem.hpp:NonlinearSystem::evaluate (assemble_elementwise),
-///   fem/ExplicitDynamics.cpp:ExplicitDynamics::run (assemble_mass), apps/sparlab_form.cpp:main
+///   apps/sparlab_form.cpp:main
 /// Calls into: fem/FemModel (mesh, element, materials), fem/DofManager (element DOFs)
 /// Start reading at: Assembler::assemble_elementwise, Assembler::scatter (fem/Assembler.cpp)
 #pragma once
@@ -71,9 +71,6 @@ class Assembler {
 
   /// Extract the free-free block \f$K_{ff}\f$ of a full-size matrix.
   SparseMatrix reduce_free_free(const SparseMatrix& full) const;
-
-  /// Total structural mass of the model [kg] for the given element factors.
-  Scalar total_mass(const Vector* scale = nullptr) const;
 
   /// Assemble \f$\sum_e A_e^T M_e A_e\f$ for element matrices computed on
   /// demand by `element_matrix(e)` (num_dofs x num_dofs of the element, in

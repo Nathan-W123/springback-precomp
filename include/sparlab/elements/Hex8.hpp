@@ -23,8 +23,7 @@
 ///
 /// Where this fits: Simulations stage - the standard trilinear Hex8 (element_formulation
 ///   "standard") and the Hex8 shape functions that other files reuse.
-/// Called from: elements/Element.cpp:make_element, mesh/Mesh.cpp:Mesh::validate (hex8_volume),
-///   fem/ExplicitDynamics.cpp:characteristic_length (hex8_volume, hex8_face_area)
+/// Called from: elements/Element.cpp:make_element, mesh/Mesh.cpp:Mesh::validate (hex8_volume)
 /// Calls into: elements/Hex8Kernels, elements/Quadrature
 /// Start reading at: Hex8Element::stiffness, Hex8Element::strain_operator
 #pragma once

@@ -1,5 +1,9 @@
 # Physics audit, process-realism lens: is the modelled process the real one?
 
+> **Cleanup note.** Where this lens names `form_explicit` as the route for metre-scale parts: that explicit
+> forming step was removed in the cleanup; at commit 7d571e6. Full-size parts would need an explicit solver again,
+> or a cheaper element; references to `docs/forming.md` section 7 mean that commit's version.
+
 **Question.** The engine is meant to predict the formed-and-released shape of
 parts made by robotic incremental sheet forming - the "RoboForming" process of
 a start-up (Machina Labs) that forms sheet from CAD with two industrial robots,

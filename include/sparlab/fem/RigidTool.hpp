@@ -96,7 +96,7 @@
 ///
 /// Where this fits: Simulations stage - the moving rigid tools and their contact with the sheet.
 /// Called from: fem/Forming.cpp:FormingAnalysis::run (ToolContact),
-///   fem/ExplicitDynamics.cpp:PenaltyContact, io/Config.cpp:parse_configuration (tools)
+///   io/Config.cpp:parse_configuration (tools)
 /// Calls into: fem/Selector (tool surface), fem/BoundaryConditions (faces_in_region),
 ///   elements/FaceGeometry (tributary areas)
 /// Start reading at: ToolContact::evaluate, ToolContact::begin_increment (fem/RigidTool.cpp)
@@ -254,10 +254,8 @@ class ToolContact {
 
   /// Index of the tool called `name`, or -1.
   int find(const std::string& name) const;
-  /// The slave nodes of tool k (ascending), their tributary areas A_j [m^2]
-  /// and penalty stiffnesses kappa_j [Pa/m].
+  /// The slave nodes of tool k (ascending).
   const std::vector<Index>& slave_nodes(std::size_t k) const { return slaves_[k].nodes; }
-  const std::vector<Scalar>& areas(std::size_t k) const { return slaves_[k].area; }
   /// The smallest characteristic size h_j of any slave node [m].
   Scalar min_node_size() const { return min_size_; }
 

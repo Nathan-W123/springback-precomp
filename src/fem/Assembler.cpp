@@ -266,7 +266,7 @@ SparseMatrix Assembler::assemble_mass(MassType type, const Vector* scale) const 
     if (material.density() <= 0.0) {
       throw ModelError("mass assembly requires a positive density of every material; "
                        "material '" + material.name() +
-                       "' has none. Set its 'density' to run an explicit step");
+                       "' has none");
     }
   }
 
@@ -331,19 +331,6 @@ SparseMatrix Assembler::assemble_elementwise(
         return buffer;
       },
       nullptr);
-}
-
-Scalar Assembler::total_mass(const Vector* scale) const {
-  const Mesh& mesh = model_.mesh();
-  check_scale(scale, mesh.num_elements(), "mass");
-  // The thickness factor is 1 for a solid mesh, which leaves the product exact.
-  const Scalar thickness = mesh.dim() == 2 ? model_.thickness() : 1.0;
-  Scalar mass = 0.0;
-  for (Index e = 0; e < mesh.num_elements(); ++e) {
-    const Scalar s = scale ? (*scale)(e) : 1.0;
-    mass += s * model_.material_of(e).density() * mesh.element_measure(e) * thickness;
-  }
-  return mass;
 }
 
 SparseMatrix Assembler::reduce_free_free(const SparseMatrix& full) const {

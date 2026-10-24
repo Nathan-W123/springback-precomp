@@ -163,8 +163,7 @@
 ///
 /// Where this fits: Simulations stage - the stress update at one integration point (J2 radial
 ///   return, or the general return for Hill48 and Chaboche) that the element kernels call.
-/// Called from: fem/Elastoplastic.cpp:elastoplastic_element, fem/IncompatibleModes.cpp:respond,
-///   fem/ExplicitKernel.cpp:element_kernel
+/// Called from: fem/Elastoplastic.cpp:elastoplastic_element, fem/IncompatibleModes.cpp:respond
 /// Calls into: material/Material (PlasticityParameters), core/Exceptions
 /// Start reading at: plastic_return, then return_3d and return_general_3d (material/Plasticity.cpp)
 #pragma once

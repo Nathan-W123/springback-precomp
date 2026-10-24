@@ -1,5 +1,9 @@
 # Adversarial challenge of the five physics-audit lenses
 
+> **Cleanup note.** The BM3 runs behind finding C6 and recommendation 7 used the explicit forming step
+> (`form_explicit`), which was removed in the cleanup; at commit 7d571e6. Their committed outputs in
+> `../validation/bm3/` are the record; re-running them needs a build of that commit.
+
 Reviewer lens: I tried to break the claims that decide the verdict. For each claim I opened the
 evidence, recomputed the numbers from raw outputs where I could, and reran two cheap cases
 (two single-thread runs at a time, as the rules require). Nothing here is committed.

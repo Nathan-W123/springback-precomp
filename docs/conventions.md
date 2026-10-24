@@ -19,7 +19,7 @@ a warning naming that key.
 | Mass | kilogram | `kg` |
 | Strain (engineering shears), equivalent plastic strain | dimensionless | `[-]` |
 | Energy, work | joule | `J` (= N m) |
-| Time (the forming pseudo-time and the explicit physical time), time step | second | `s` |
+| Time (the forming pseudo-time), time step | second | `s` |
 | Velocity, acceleration | metre per second (squared) | `m/s`, `m/s^2` |
 
 ## Coordinate system
@@ -108,9 +108,8 @@ columns follow the same order (`sxx, syy, szz, sxy, syz, szx`).
 
 The implicit forming steps' Newton tolerances (`forming.newton`:
 `residual_tolerance`, `displacement_tolerance`, `max_iterations`, `max_cuts`,
-`max_increments`) and the explicit steps' settings (`forming.steps[].explicit`)
-are deck keys, documented with their defaults in [`forming.md`](forming.md),
-sections 2 and 7.2; every run records the values it used in `summary.json`.
+`max_increments`) are deck keys, documented with their defaults in
+[`forming.md`](forming.md), section 2; every run records the values it used in `summary.json`.
 The material-point and element tolerances are fixed constants:
 
 | Tolerance | Value | What it bounds |
@@ -118,9 +117,6 @@ The material-point and element tolerances are fixed constants:
 | J2 / Hill48 return, Voce hardening | `1e-13` | the consistency residual of the plastic multiplier over the yield radius; 60 Newton iterations, else an error |
 | elastic return at the yield surface | `1e-12` | a trial overshoot of the yield radius below this is elastic (round-off must not start plastic flow); a point that yielded in its last step and sits within `1e-10` of its surface keeps the continuum tangent |
 | incompatible-mode parameters (local iteration) | `1e-8` | `\|r_alpha\|_inf` of the nine mode parameters over the gross scale `max_i sum_q w_q \|B~_q\|^T \|sigma_q\|`, plus a round-off floor of `1e-13` of the forces of a unit relative strain error; 25 Newton iterations (each with at most 8 line-search trials, a shifted direction lifting the smallest eigenvalue of an indefinite `K_aa` to `1e-3` of the largest, and at most 8 Levenberg-Marquardt trials from `1e-6` of the largest diagonal entry of `K^T K`), else `SolverError` and the step is cut; constants in `src/fem/IncompatibleModes.hpp`, not config keys |
-| explicit energy balance onset | 10 time steps | the balance is not judged over this many time steps after the first contact (the new contact forces' half-step lag) |
-| explicit kernel closed-form eigensolver | `64 eps` | residual and orthogonality of the closed-form 3 x 3 eigendecomposition (relative to the largest entry of the matrix, and absolute) above which the logarithmic strain takes the iterative solver |
-| explicit Hex8 kernel self-check | `1e-10` | relative difference between the dedicated kernel and the element dispatch at the start of a run above which the dispatch is used instead |
 
 Exceeding a solver tolerance raises an exception with a diagnosis, or cuts
 the increment where the forming analysis allows it; nothing is silently

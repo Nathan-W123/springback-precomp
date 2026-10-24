@@ -25,6 +25,7 @@ ap.add_argument('--rout', type=float, default=79.0)
 ap.add_argument('--path', default='spiral', help='spiral | zlevel')
 ap.add_argument('--kin', action='store_true', help='Voce part of the fitted curve as an Armstrong-Frederick backstress (C = Q b, gamma = b): same monotonic curve, Bauschinger effect')
 ap.add_argument('--split', type=float, default=0.0, help='implicit: split the form step every this many mm of depth (files per step)')
+# --explicit writes a form_explicit step, removed in the cleanup: such decks need a build of commit 7d571e6
 ap.add_argument('--explicit', type=float, default=0.0, help='tool speed [m/s] of a form_explicit step (0: implicit)')
 ap.add_argument('--dt', type=float, default=1e-6, help='explicit mass-scaling target time step [s]')
 a = ap.parse_args()

@@ -209,7 +209,7 @@ class Material {
   ///        3-D elasticity and (-1, 1) excluding +-1 for plane stress. SparLab
   ///        restricts the input to (-1, 0.5) so every idealisation remains
   ///        well posed.
-  /// \param density rho [kg/m^3], must be >= 0 (an explicit step needs it > 0).
+  /// \param density rho [kg/m^3], must be >= 0 (only the mass matrices use it).
   /// \param name optional label carried into result files.
   Material(Scalar youngs_modulus, Scalar poisson_ratio, Scalar density,
                     std::string name = "material");

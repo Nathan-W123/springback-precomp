@@ -3,8 +3,8 @@
 This document states exactly what SparLab's forming analysis solves for its
 continuum: the element, the assembly and the boundary conditions, the linear
 algebra, the large-deformation statics and the plasticity. What is specific
-to forming - the tools, their contact and friction, the steps, the
-increments and the explicit integrator - is in `docs/forming.md`. Notation
+to forming - the tools, their contact and friction, the steps and the
+increments - is in `docs/forming.md`. Notation
 follows `docs/conventions.md`; every equation below is implemented in the
 file named beside it.
 
@@ -129,8 +129,7 @@ integration, since any asymmetry is pure round-off.
 translations and three rotations - and eighteen strictly positive ones. Both
 parts of that statement are unit-tested on a box and on a distorted element.
 
-Row-sum lumping of `M_e` gives the diagonal mass matrix of an explicit
-forming step. The row sums add up to the exact element mass, and the sum of
+Row-sum lumping of `M_e` gives a diagonal mass matrix. The row sums add up to the exact element mass, and the sum of
 every entry of `M_e` is `3 rho V`, one factor per translation direction;
 both are unit-tested on a box and on a distorted cell.
 
@@ -177,8 +176,7 @@ and Armero (1992, *Geometrically non-linear enhanced strain mixed methods
 and the method of incompatible modes*, IJNME 33) and Simo, Armero and Taylor
 (1993, CMAME 110); it is objective (a rigid turn `R` is carried by `R A`).
 
-**The linear stiffness** - which the stable-step estimate of an explicit
-step takes - condenses in closed form, with fixed-size 24 x 24, 24 x 9 and
+**The linear stiffness** condenses in closed form, with fixed-size 24 x 24, 24 x 9 and
 9 x 9 blocks:
 
 ```
@@ -321,8 +319,8 @@ history at commit 7d571e6).
 ```
 
 `A_e` is the (implicit) DOF gather operator, and `s_e`, `m_e` are optional
-per-element scale factors, 1 when omitted: the explicit integrator scales
-the mass of selected elements (mass scaling, `docs/forming.md`, section 7.1).
+per-element scale factors, 1 when omitted. The forming analysis assembles
+only the tangent; the mass matrices are tested but no analysis uses them.
 
 On a **uniform structured mesh** all cells are geometrically identical, so
 `K_e^0` and `M_e^0` are integrated once and reused. The generic per-element
@@ -372,8 +370,7 @@ through a cached index map and refactorises numerically.
 
 `"solver": "eigen"` in the `forming` block selects Eigen's factorisations
 in a SuiteSparse build. `docs/forming.md`, section 1.5, gives the build
-option and what the summary records about the factorisations. An explicit
-step factorises nothing (section 8).
+option and what the summary records about the factorisations.
 
 ## 6. Geometrically non-linear statics
 
@@ -690,11 +687,9 @@ those, never from the last iterate, and only a converged increment commits
 the new ones - so halving an increment leaves no trace, and the path is the
 sequence of converged increments.
 
-## 8. Explicit dynamics
+## 8. Explicit dynamics (removed)
 
-A `form_explicit` step integrates `M a + alpha M v + f_int(u) = f_c(u, v, t)`
-by central differences, with the lumped mass of section 2 (scaled per
-element by mass scaling), the internal forces `f_int` of sections 6 and 7,
-and a stable time step bounded through the element eigenvalues of the
-linear element stiffness of section 2. `docs/forming.md`, section 7.1, and
-`include/sparlab/fem/ExplicitDynamics.hpp` state the formulation in full.
+The explicit central-difference step (`form_explicit`) was removed in the
+cleanup; its formulation is in the history at commit
+[`7d571e6`](https://github.com/Nathan-W123/springback-precomp/tree/7d571e63af6c899717d49f95f4d7842c9fd7c682)
+(`docs/forming.md`, section 7, and `include/sparlab/fem/ExplicitDynamics.hpp`).

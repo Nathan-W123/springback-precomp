@@ -173,7 +173,7 @@ enum class MeanDilatation {
 MeanDilatation parse_mean_dilatation(const std::string& text);
 
 /// How the elements of a non-linear system are evaluated (NonlinearSystem.hpp,
-/// the forming analysis and the explicit integrator).
+/// the forming analysis).
 struct NonlinearOptions {
   Kinematics kinematics = Kinematics::Finite;
   MeanDilatation mean_dilatation = MeanDilatation::Auto;

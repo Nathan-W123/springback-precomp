@@ -91,21 +91,6 @@
 /// else Eigen's SparseLU) for a non-symmetric one or when \f$LDL^T\f$ meets
 /// a vanishing pivot.
 ///
-/// **Explicit forming** (`form_explicit`, ExplicitDynamics.hpp): the step's
-/// tools follow their paths in physical time - the pseudo-time mapped by a
-/// tool speed along the path or by a duration - and the model is integrated
-/// by central differences with a lumped (optionally scaled) mass and the
-/// mass-based penalty contact of the explicit integrator, its constraints
-/// held (or moved linearly in physical time), from the analysis's state
-/// (displacement, velocity, plastic history, friction history) to the
-/// state handed on. The step records the tool forces every
-/// `history_every` steps (averaged over them) and the energy balance.
-/// A following implicit step starts quasi-statically (the velocity is
-/// dropped): its start imbalance \f$R_{0f}\f$ then holds, besides the
-/// reactions of released constraints and the forces of removed tools, the
-/// inertia and damping forces of the explicit step's end, which a
-/// `release` ramps out with the rest.
-///
 /// **Assumptions and limits.** Quasi-static (no inertia), isothermal; the
 /// penalty leaves a penetration of about \f$p\,h/(sE)\f$; the elastoplastic
 /// law is the additive split of the Green-Lagrange strain, meant for small
@@ -117,7 +102,7 @@
 ///   form steps drive the tools over the sheet, release steps let it spring back.
 /// Called from: apps/sparlab_form.cpp:main, io/Config.cpp:parse_configuration (parse_step_type),
 ///   io/FormingWriter.cpp:forming_summary_json (forming_suitesparse_available)
-/// Calls into: fem/NonlinearSystem, fem/RigidTool, fem/ExplicitDynamics, fem/Elastoplastic
+/// Calls into: fem/NonlinearSystem, fem/RigidTool, fem/Elastoplastic
 /// Start reading at: FormingAnalysis::run(const AnalysisState&) (fem/Forming.cpp)
 #pragma once
 
@@ -126,7 +111,6 @@
 #include "sparlab/fem/Assembler.hpp"
 #include "sparlab/fem/BoundaryConditions.hpp"
 #include "sparlab/fem/Elastoplastic.hpp"
-#include "sparlab/fem/ExplicitDynamics.hpp"
 #include "sparlab/fem/FemModel.hpp"
 #include "sparlab/fem/RigidTool.hpp"
 #include "sparlab/material/Plasticity.hpp"
@@ -155,9 +139,8 @@ StepConstraint::Mode parse_constraint_mode(const std::string& text);
 /// One step of a forming analysis.
 struct FormingStep {
   enum class Type {
-    Form,         ///< the listed tools follow their trajectories over the window
-    Release,      ///< the start imbalance is ramped out; tools usually removed
-    FormExplicit  ///< as Form, integrated in time by central differences
+    Form,    ///< the listed tools follow their trajectories over the window
+    Release  ///< the start imbalance is ramped out; tools usually removed
   };
   std::string name = "step";
   Type type = Type::Form;
@@ -183,17 +166,9 @@ struct FormingStep {
   /// The step's own constraints; empty: the model's boundary conditions, in
   /// `absolute` mode.
   std::vector<StepConstraint> constraints;
-  /// form_explicit: the physical time of the window - the active tools
-  /// travelling along their paths at `tool_speed` [m/s] (the fastest at
-  /// exactly that speed, ExplicitTimeMap::tool_speed) or the window lasting
-  /// `duration` [s]; exactly one of them is positive.
-  Scalar tool_speed = 0.0;
-  Scalar duration = 0.0;
-  /// form_explicit: the integrator's settings.
-  ExplicitOptions explicit_options;
 };
 std::string to_string(FormingStep::Type type);
-/// "form", "release" or "form_explicit".
+/// "form" or "release".
 FormingStep::Type parse_step_type(const std::string& text);
 
 struct FormingOptions {
@@ -235,10 +210,6 @@ struct AnalysisState {
   /// (empty: none was). A restart checks against it that a tool active in
   /// its first step does not jump (FormingStep::t_begin).
   std::vector<char> tools_active;
-  /// The velocity [m/s] at the end of an explicit step, which a following
-  /// explicit step starts from; empty after an implicit (quasi-static) step:
-  /// at rest.
-  Vector velocity;
 };
 
 /// One active tool at a converged increment.
@@ -285,7 +256,7 @@ struct FormingStepResult {
   Vector reactions;
   Scalar reaction_norm = 0.0;       ///< [N]
   Scalar reference_force = 0.0;     ///< F_ref at the end [N]
-  Scalar start_imbalance = 0.0;     ///< |R_0f|, the imbalance ramped out [N] (0: form_explicit)
+  Scalar start_imbalance = 0.0;     ///< |R_0f|, the imbalance ramped out [N]
   Scalar max_plastic_strain = 0.0;
   /// Per element at the end: the largest equivalent plastic strain of its
   /// points and the von Mises stress of its point-averaged Cauchy stress.
@@ -297,12 +268,6 @@ struct FormingStepResult {
   int constrained_dofs = 0;
   std::vector<std::string> warnings;
   std::vector<FormingSnapshot> snapshots;
-  /// form_explicit: the integrator's report - time steps, mass scaling,
-  /// the energy history (`records`), the quasi-static checks, its timing;
-  /// its end state is the step's (`displacement`), not repeated here.
-  bool explicit_step = false;
-  ExplicitResult explicit_result;
-  Scalar explicit_tool_speed = 0.0;  ///< [m/s], 0 when set by a duration
 };
 
 struct FormingResult {
@@ -313,7 +278,6 @@ struct FormingResult {
   int total_increments = 0;
   int total_iterations = 0;
   int total_cuts = 0;
-  long total_explicit_steps = 0;  ///< central-difference steps of form_explicit steps
   bool plastic = false;
   bool mean_dilatation = false;
   std::string kinematics;
@@ -327,9 +291,7 @@ struct FormingResult {
   /// assembly with the tangent), "element_residual" (without it: line search
   /// and acceptance), "contact", "factorisation" (scatter into the
   /// partition's pattern, analysis, numeric factorisation), "solve",
-  /// "output" (the step observer), "total"; and for explicit steps
-  /// "explicit_internal_force", "explicit_contact", "explicit_stable_step",
-  /// "explicit_integration" and "explicit" (their total).
+  /// "output" (the step observer), "total".
   TimingLedger timing;
   std::vector<std::string> warnings;
 };

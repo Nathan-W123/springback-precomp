@@ -209,13 +209,11 @@ From [`benchmarks/physics_audit`](benchmarks/physics_audit/README.md)
 ## History
 
 This repository was trimmed on 2026-10-13 to the code the workflow above
-uses, plus what its validation needs: the explicit forming step
-(`form_explicit`, [`docs/forming.md`](docs/forming.md) section 7) is kept
-because the physics audit's BM3 replica and explicit-vs-implicit cases ran on
-it, although the workflow itself only runs implicit steps. Everything
-removed - the general-purpose SparLab engine (static, modal, buckling and
-thermal analyses, topology optimisation, other element types), the elastic
-large-strain laws, the U-Net and gradient-boosting models, the follow-up
+uses. Everything removed - the general-purpose SparLab engine (static,
+modal, buckling and thermal analyses, topology optimisation, other element
+types), the explicit forming step (on which the physics audit's BM3 replica
+and explicit-vs-implicit cases ran; their committed results stay as the
+record), the elastic large-strain laws, the U-Net and gradient-boosting models, the follow-up
 experiments on top of the headline method, the robot-compliance study, the
 `precomp` command line, the proxy-data demonstration and the engine
 figures - is in the history at commit

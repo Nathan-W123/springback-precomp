@@ -1,5 +1,9 @@
 # Physics audit, lens: numerical convergence
 
+> **Cleanup note.** The explicit cases (`cases/*_x05`, finding 5) used the explicit forming step (`form_explicit`), which was
+> removed in the cleanup; at commit 7d571e6. Their committed outputs here are the record; re-running them needs a
+> build of that commit, and references to `docs/forming.md` section 7 mean that commit's version.
+
 **Question.** Is the discretisation of the springback benchmark
 (`benchmarks/springback/config.json`: 20 x 20 x 2 standard Hex8 with mean
 dilatation, 2 mm in plane, 0.5 mm layers, 2 x 2 x 2 points, `finite_logarithmic`,

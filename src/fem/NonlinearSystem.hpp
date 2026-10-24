@@ -1,13 +1,11 @@
 /// \file NonlinearSystem.hpp
 /// \brief The non-linear system of a model - internal forces, tangent, the
-///        committed history of the elastoplastic points - shared by the
-///        forming analysis (Forming.cpp) and the explicit integrator
-///        (ExplicitKernel.cpp). Internal to the library.
+///        committed history of the elastoplastic points - of the forming
+///        analysis (Forming.cpp). Internal to the library.
 ///
 /// Where this fits: Simulations stage - internal forces, tangent and plastic history of the
 ///   whole model: what each Newton iteration of a forming step evaluates.
-/// Called from: fem/Forming.cpp:FormingAnalysis::run (evaluate, commit),
-///   fem/ExplicitKernel.cpp:ExplicitInternalForce::evaluate (the generic dispatch)
+/// Called from: fem/Forming.cpp:FormingAnalysis::run (evaluate, commit)
 /// Calls into: fem/Elastoplastic, fem/Assembler (assemble_elementwise)
 /// Start reading at: NonlinearSystem::evaluate, NonlinearSystem::commit
 #pragma once
@@ -107,7 +105,6 @@ class NonlinearSystem {
   }
 
   bool symmetric() const { return symmetric_; }
-  const Vector& dead() const { return dead_; }
   /// Some material is elastoplastic.
   bool plastic() const { return plastic_; }
   /// Element e averages its dilatation.

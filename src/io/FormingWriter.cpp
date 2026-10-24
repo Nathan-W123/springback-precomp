@@ -87,28 +87,6 @@ std::vector<std::string> write_forming_step(const ResultWriter& writer, const Fe
               &s.element_von_mises);
     files.push_back(stem + ".vtk");
   }
-  if (s.explicit_step) {
-    // The energy history of an explicit step (ExplicitDynamics.hpp).
-    CsvWriter csv(writer.file(stem + "_energy.csv"),
-                  {"step", "t_s", "pseudo_t_s", "time_step_s", "kinetic_J", "internal_work_J",
-                   "stored_J", "elastic_J", "plastic_dissipation_J", "contact_normal_work_J",
-                   "contact_friction_work_J", "damping_J", "external_work_J",
-                   "mass_scaling_work_J", "energy_error_J", "kinetic_ratio"});
-    // The kinetic energy over the step's reference energy (its
-    // kinetic_ratio_basis in summary.json), unfiltered.
-    const bool elastic_basis = s.explicit_result.kinetic_ratio_basis == "elastic energy";
-    for (const ExplicitRecord& r : s.explicit_result.records) {
-      const Scalar reference = elastic_basis ? r.elastic : r.internal_energy;
-      csv.raw_row({std::to_string(r.step), number(r.time), number(r.pseudo_time),
-                   number(r.time_step), number(r.kinetic), number(r.internal), number(r.stored),
-                   number(r.elastic), number(r.plastic), number(r.contact_normal),
-                   number(r.contact_friction), number(r.damping), number(r.external),
-                   number(r.mass_scaling), number(r.error),
-                   number(reference > 0.0 ? r.kinetic / reference : 0.0)});
-    }
-    csv.close();
-    files.push_back(stem + "_energy.csv");
-  }
   for (const FormingSnapshot& snap : s.snapshots) {
     const std::string name = stem + "_inc_" + std::to_string(snap.increment);
     write_nodes(writer.file(name + "_nodes.csv"), mesh, snap.displacement);
@@ -160,7 +138,6 @@ json::Value forming_summary_json(const Configuration& config, const FemModel& mo
   timing.set("increments", num(result.total_increments));
   timing.set("iterations", num(result.total_iterations));
   timing.set("cuts", num(result.total_cuts));
-  timing.set("explicit_steps", num(static_cast<Scalar>(result.total_explicit_steps)));
   timing.set("linear_solver", str(result.linear_solver));
   timing.set("failed_factorisations", str(result.failed_factorisations));
   timing.set("suitesparse", json::Value::make_bool(options.suitesparse &&
@@ -177,24 +154,6 @@ json::Value forming_summary_json(const Configuration& config, const FemModel& mo
   analysis.set("max_iterations", num(options.max_iterations));
   analysis.set("max_cuts", num(options.max_cuts));
   analysis.set("line_search", json::Value::make_bool(options.line_search));
-  // The explicit steps' tolerances (their settings are under steps[k].explicit).
-  {
-    json::Value tolerances = json::Value::make_array();
-    for (const FormingStep& st : options.steps) {
-      if (st.type != FormingStep::Type::FormExplicit) continue;
-      json::Value jt = json::Value::make_object();
-      jt.set("step", str(st.name));
-      jt.set("energy_tolerance", num(st.explicit_options.energy_tolerance));
-      jt.set("energy_limit", num(st.explicit_options.energy_limit));
-      jt.set("kinetic_ratio_warning", num(st.explicit_options.kinetic_ratio_warning));
-      jt.set("penetration_warning", num(st.explicit_options.penetration_warning));
-      jt.set("max_added_mass_fraction",
-             num(st.explicit_options.mass_scaling.max_added_mass_fraction));
-      jt.set("stable_step_safety", num(st.explicit_options.stable_step.safety));
-      tolerances.push_back(jt);
-    }
-    analysis.set("explicit_tolerances", tolerances);
-  }
   out.set("analysis", analysis);
 
   json::Value steps = json::Value::make_array();
@@ -230,54 +189,6 @@ json::Value forming_summary_json(const Configuration& config, const FemModel& mo
       }
     }
     js.set("max_displacement_m", num(max_u));
-    if (s.explicit_step && k < options.steps.size()) {
-      // The explicit integration: time steps, mass scaling, validity checks.
-      const ExplicitResult& er = s.explicit_result;
-      const ExplicitOptions& eo = options.steps[k].explicit_options;
-      json::Value je = json::Value::make_object();
-      je.set("steps", num(static_cast<Scalar>(er.steps)));
-      je.set("physical_time_s", num(er.duration));
-      je.set("tool_speed_m_s", num(s.explicit_tool_speed));
-      je.set("duration_s", num(options.steps[k].duration));
-      je.set("time_step_s", num(er.time_step));
-      je.set("min_time_step_s", num(er.min_time_step));
-      je.set("final_time_step_s", num(er.final_time_step));
-      je.set("stable_time_step_s", num(er.stable_time_step));
-      je.set("scaled_stable_time_step_s", num(er.scaled_stable_time_step));
-      je.set("stable_step_method", str(to_string(eo.stable_step.method)));
-      je.set("safety", num(eo.stable_step.safety));
-      je.set("step_updates", num(er.step_updates));
-      je.set("mass_scaling", str(to_string(eo.mass_scaling.mode)));
-      je.set("target_time_step_s", num(eo.mass_scaling.target_time_step));
-      je.set("dynamic_mass_scaling", json::Value::make_bool(eo.mass_scaling.dynamic));
-      je.set("mass_updates", num(er.mass_updates));
-      je.set("mass_scale_max", num(er.max_mass_scale));
-      je.set("scaled_elements", num(er.scaled_elements));
-      je.set("physical_mass_kg", num(er.physical_mass));
-      je.set("scaled_mass_kg", num(er.scaled_mass));
-      je.set("added_mass_fraction", num(er.added_mass_fraction));
-      je.set("max_added_mass_fraction", num(eo.mass_scaling.max_added_mass_fraction));
-      je.set("damping_per_s", num(eo.mass_damping));
-      je.set("contact_stiffness", num(eo.contact_stiffness));
-      je.set("contact", json::Value::make_bool(er.contact));
-      je.set("max_kinetic_ratio", num(er.max_kinetic_ratio));
-      je.set("peak_kinetic_ratio", num(er.peak_kinetic_ratio));
-      je.set("kinetic_ratio_basis", str(er.kinetic_ratio_basis));
-      je.set("kinetic_ratio_warning", num(eo.kinetic_ratio_warning));
-      je.set("max_penetration_ratio", num(er.max_penetration_ratio));
-      je.set("penetration_warning", num(eo.penetration_warning));
-      je.set("max_energy_error", num(er.max_energy_error));
-      je.set("energy_tolerance", num(eo.energy_tolerance));
-      je.set("energy_limit", num(eo.energy_limit));
-      je.set("history_every", num(eo.history_every));
-      je.set("kernel", str(er.kernel));
-      json::Value jt = json::Value::make_object();
-      for (const auto& [name, seconds] : er.timing.totals()) jt.set(name + "_s", num(seconds));
-      je.set("timing", jt);
-      je.set("wall_s", num(er.timing.get("total")));
-      je.set("energy_file", str(forming_step_stem(k, s.name) + "_energy.csv"));
-      js.set("explicit", je);
-    }
     steps.push_back(js);
   }
   out.set("steps", steps);

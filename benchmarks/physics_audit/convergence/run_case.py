@@ -18,6 +18,8 @@ then patched for the settings `FormingSetup` does not expose:
   solver_extra  keys merged into the deck's forming block (e.g. "newton")
   release_increments  increments of the unload and release steps (default 10)
   explicit None, or {"speed": m/s, "dt": target step s, "sc": contact_stiffness}
+           (form_explicit was removed in the cleanup: such decks need a build of
+           commit 7d571e6)
            -> the "form" step becomes a form_explicit step (selective,
               dynamic mass scaling) and the implicit unload / release follow.
 

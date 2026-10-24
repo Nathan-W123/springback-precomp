@@ -408,48 +408,6 @@ std::vector<std::string> string_list(const ConfigNode& parent, const std::string
   return out;
 }
 
-/// The `explicit` block of a form_explicit step (docs/forming.md, "Explicit
-/// forming").
-void parse_explicit_step(const ConfigNode& ex, FormingStep& step, const std::string& label) {
-  step.tool_speed = ex.number_or("tool_speed", 0.0);
-  step.duration = ex.number_or("duration", 0.0);
-  const bool speed = ex.child("tool_speed").exists();
-  const bool duration = ex.child("duration").exists();
-  if (speed == duration) {
-    throw ConfigError("'" + ex.path() + "' needs either 'tool_speed' [m/s] (the tools travel "
-                      "along their paths at that speed) or 'duration' [s], not both");
-  }
-  if ((speed && !(step.tool_speed > 0.0)) || (duration && !(step.duration > 0.0))) {
-    throw ConfigError("'" + ex.path() + "': 'tool_speed' and 'duration' must be positive");
-  }
-  ExplicitOptions& o = step.explicit_options;
-  const ConfigNode ms = ex.child("mass_scaling");
-  if (ms.exists()) {
-    o.mass_scaling.mode = parse_mass_scaling_mode(ms.string_or("mode", "none"));
-    o.mass_scaling.target_time_step = ms.number_or("target_time_step", 0.0);
-    o.mass_scaling.max_added_mass_fraction =
-        ms.number_or("max_added_mass_fraction", o.mass_scaling.max_added_mass_fraction);
-    o.mass_scaling.dynamic = ms.boolean_or("dynamic", o.mass_scaling.dynamic);
-  }
-  const ConfigNode ss = ex.child("stable_step");
-  if (ss.exists()) {
-    o.stable_step.method = parse_stable_step_method(ss.string_or("method", "element_eigenvalue"));
-    o.stable_step.safety = ss.number_or("safety", o.stable_step.safety);
-    o.stable_step.update_every = ss.integer_or("update_every", o.stable_step.update_every);
-    o.stable_step.power_iterations =
-        ss.integer_or("power_iterations", o.stable_step.power_iterations);
-  }
-  o.mass_damping = ex.number_or("damping", o.mass_damping);
-  o.contact_stiffness = ex.number_or("contact_stiffness", o.contact_stiffness);
-  o.history_every = ex.integer_or("history_every", o.history_every);
-  o.snapshot_every = ex.integer_or("snapshot_every", o.snapshot_every);
-  o.energy_tolerance = ex.number_or("energy_tolerance", o.energy_tolerance);
-  o.energy_limit = ex.number_or("energy_limit", o.energy_limit);
-  o.kinetic_ratio_warning = ex.number_or("kinetic_ratio_warning", o.kinetic_ratio_warning);
-  o.penetration_warning = ex.number_or("penetration_warning", o.penetration_warning);
-  o.validate(label + ", '" + ex.path() + "'");
-}
-
 }  // namespace
 
 Configuration parse_configuration(const json::Value& document, const std::string& source,
@@ -747,29 +705,8 @@ Configuration parse_configuration(const json::Value& document, const std::string
           step.t_end = w[1];
           previous_end = w[1];
         }
-        const ConfigNode explicit_block = st.child("explicit");
-        if (step.type == FormingStep::Type::FormExplicit) {
-          // Explicit forming: central differences over the window's physical
-          // time (ExplicitDynamics.hpp); its steps follow from the stable
-          // time step, not from the implicit increments.
-          if (st.child("max_tool_travel").exists() || st.child("increments").exists()) {
-            throw ConfigError(label + ": 'max_tool_travel' and 'increments' set the increments "
-                                      "of an implicit step; a form_explicit step takes its time "
-                                      "steps from the stability limit (its 'explicit' block)");
-          }
-          if (!explicit_block.exists()) {
-            throw ConfigError(label + " (form_explicit) needs an 'explicit' block with its "
-                                      "'tool_speed' [m/s] or 'duration' [s]");
-          }
-          parse_explicit_step(explicit_block, step, label);
-        } else {
-          if (explicit_block.exists()) {
-            throw ConfigError(label + ": an 'explicit' block belongs to a step of type "
-                                      "\"form_explicit\"");
-          }
-          step.max_tool_travel = st.number_or("max_tool_travel", 0.0);
-          step.increments = st.integer_or("increments", 0);
-        }
+        step.max_tool_travel = st.number_or("max_tool_travel", 0.0);
+        step.increments = st.integer_or("increments", 0);
         if (!(step.max_tool_travel >= 0.0) || step.increments < 0) {
           throw ConfigError(label + ": 'max_tool_travel' and 'increments' must not be negative");
         }

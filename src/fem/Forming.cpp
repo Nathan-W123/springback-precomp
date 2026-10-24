@@ -485,7 +485,6 @@ StepConstraint::Mode parse_constraint_mode(const std::string& text) {
 std::string to_string(FormingStep::Type type) {
   switch (type) {
     case FormingStep::Type::Release: return "release";
-    case FormingStep::Type::FormExplicit: return "form_explicit";
     case FormingStep::Type::Form: break;
   }
   return "form";
@@ -494,9 +493,7 @@ std::string to_string(FormingStep::Type type) {
 FormingStep::Type parse_step_type(const std::string& text) {
   if (text == "form") return FormingStep::Type::Form;
   if (text == "release") return FormingStep::Type::Release;
-  if (text == "form_explicit") return FormingStep::Type::FormExplicit;
-  throw ConfigError("unknown step type '" + text +
-                    "'; expected \"form\", \"release\" or \"form_explicit\"");
+  throw ConfigError("unknown step type '" + text + "'; expected \"form\" or \"release\"");
 }
 
 // ---------------------------------------------------------------------------
@@ -532,19 +529,6 @@ FormingAnalysis::FormingAnalysis(const FemModel& model, const Assembler& assembl
     }
     if (step.increments < 0 || !(step.max_tool_travel >= 0.0)) {
       throw ConfigError(label + ": 'increments' and 'max_tool_travel' must not be negative");
-    }
-    if (step.type == FormingStep::Type::FormExplicit) {
-      const bool speed = step.tool_speed > 0.0 && std::isfinite(step.tool_speed);
-      const bool duration = step.duration > 0.0 && std::isfinite(step.duration);
-      if (speed == duration || !(step.tool_speed >= 0.0) || !(step.duration >= 0.0)) {
-        throw ConfigError(label + " (form_explicit) needs its physical time: either a positive "
-                                  "'tool_speed' [m/s] or a positive 'duration' [s], not both");
-      }
-      if (speed && step.tools.empty()) {
-        throw ConfigError(label + " (form_explicit) has no tool to set its time by "
-                                  "'tool_speed'; give a 'duration' [s]");
-      }
-      step.explicit_options.validate(label);
     }
     std::vector<char> active(nt, 0);
     for (const std::string& name : step.tools) {
@@ -733,8 +717,6 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
   TimingLedger& timing = result.timing;
 
   Vector u = start.displacement;
-  // The velocity an explicit step hands on (empty: at rest).
-  Vector velocity = start.velocity.size() == n ? start.velocity : Vector();
   Scalar time = start.time;
   Scalar reference = start.reference_force;  // running largest F_ref
   Vector last_residual = start.residual.size() == n ? start.residual : Vector::Zero(n);
@@ -875,23 +857,13 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
            << tr.active_nodes << " node(s) up to " << tr.max_penetration
            << " m inside it at t = " << tb << " s; the force of that penetration, "
            << tr.force.norm()
-           << (step.type == FormingStep::Type::FormExplicit
-                   ? " N (the implicit penalty's), acts at once instead of being reached by "
-                     "travel - start its path clear of the surface"
-                   : " N, is ramped in over the step at the tool's positions instead of being "
-                     "reached by travel - start its path clear of the surface");
+           << " N, is ramped in over the step at the tool's positions instead of being "
+              "reached by travel - start its path clear of the surface";
         sr.warnings.push_back(os.str());
         log::warn(label, ": ", os.str());
       }
     }
-    if (started && step.type == FormingStep::Type::FormExplicit) {
-      // An explicit step ramps nothing out: it integrates from the state as
-      // it is (its imbalance above, with the implicit penalty, is only the
-      // check that the state can be evaluated).
-      sr.start_imbalance = 0.0;
-      log::info("forming ", label, " (", to_string(step.type), ", t = ", tb, " .. ", te, " s, ",
-                sr.tools.size(), " tool(s), ", part.fixed.size(), " prescribed DOF(s))");
-    } else if (started) {
+    if (started) {
       log::info("forming ", label, " (", to_string(step.type), ", t = ", tb, " .. ", te, " s, ",
                 sr.tools.size(), " tool(s), ", part.fixed.size(), " prescribed DOF(s)): start "
                 "imbalance ", sr.start_imbalance, " N");
@@ -1167,96 +1139,15 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
       return false;
     };
 
-    // An explicit step: central differences over the window's physical time.
-    const bool explicit_step = step.type == FormingStep::Type::FormExplicit;
-    bool explicit_done = false;
-    if (explicit_step && started) {
-      ExplicitDrive drive;
-      drive.fixed = part.fixed;
-      drive.fixed_start = p_start;
-      drive.fixed_end = p_end;
-      drive.active = active;
-      std::vector<const ToolTrajectory*> paths;
-      for (std::size_t k = 0; k < nt; ++k) {
-        if (active[k]) paths.push_back(&options_.tools[k].trajectory);
-      }
-      drive.time_map = step.tool_speed > 0.0
-                           ? ExplicitTimeMap::tool_speed(paths, tb, te, step.tool_speed)
-                           : ExplicitTimeMap::linear(tb, te, step.duration);
-      drive.duration = drive.time_map.duration();
-      ExplicitState from;
-      from.displacement = u;
-      from.velocity = velocity;
-      from.history = system.committed_all();
-      from.friction = contact.history();
-      ExplicitDynamics integrator(model_, assembler_, nl, options_.tools, step.explicit_options);
-      log::info("forming ", label, ": explicit, ", drive.duration, " s of physical time",
-                step.tool_speed > 0.0 ? " (tool speed " + std::to_string(step.tool_speed) +
-                                            " m/s)"
-                                      : std::string());
-      ExplicitResult er = integrator.run(drive, from);
-      for (const auto& [name, seconds] : er.timing.totals()) {
-        timing.add(name == "total" ? "explicit" : "explicit_" + name, seconds);
-      }
-      // The state it hands on (the last valid one when it stopped).
-      u = er.final_state.displacement;
-      velocity = er.final_state.velocity;
-      system.set_committed(er.final_state.history);
-      contact.set_history(er.final_state.friction);
-      last_residual = er.residual;
-      time = drive.time_map.pseudo_time(er.duration);
-      if (er.steps > 0) placed = active;
-      // The recorded steps are the step's increments (tool_forces.csv).
-      for (const ExplicitRecord& rec : er.records) {
-        for (const ExplicitToolRecord& tr : rec.tools) {
-          reference = std::max(reference, tr.force.norm());
-        }
-        if (rec.step == 0) continue;
-        FormingIncrement inc;
-        inc.index = static_cast<int>(std::min<long>(rec.step, std::numeric_limits<int>::max()));
-        inc.time = rec.pseudo_time;
-        inc.max_plastic_strain = rec.max_plastic_strain;
-        for (const ExplicitToolRecord& tr : rec.tools) {
-          ToolRecord tool;
-          tool.tool = tr.tool;
-          tool.centre = tr.centre;
-          tool.force = tr.force;
-          tool.active_nodes = tr.active_nodes;
-          tool.slipping_nodes = tr.slipping_nodes;
-          tool.max_penetration = tr.max_penetration;
-          inc.tools.push_back(tool);
-        }
-        sr.increments.push_back(std::move(inc));
-      }
-      for (const ExplicitSnapshot& snap : er.snapshots) {
-        sr.snapshots.push_back(
-            {static_cast<int>(std::min<long>(snap.step, std::numeric_limits<int>::max())),
-             snap.pseudo_time, snap.displacement});
-      }
-      reference = std::max(reference, restrict(er.reactions, part.fixed).norm());
-      for (const std::string& w : er.warnings) sr.warnings.push_back(w);
-      if (!er.completed) sr.termination = "the explicit integration stopped at " + er.termination;
-      explicit_done = er.completed;
-      // The report without the end state, which the step keeps itself.
-      er.final_state = ExplicitState();
-      er.acceleration.resize(0);
-      er.residual.resize(0);
-      er.reactions.resize(0);
-      er.snapshots.clear();
-      sr.explicit_step = true;
-      sr.explicit_tool_speed = step.tool_speed;
-      sr.explicit_result = std::move(er);
-    }
-
     // The increments.
     Timer progress;  // since the last progress report
     Scalar t = tb;
     Scalar dt = dt_max;
     std::size_t next_station = 0;
     int cuts_in_a_row = 0;
-    bool done = explicit_done;
+    bool done = false;
     // Increment loop: size the increment (tool travel, stations), run Newton, cut or commit.
-    while (started && !done && !explicit_step) {
+    while (started && !done) {
       if (static_cast<int>(sr.increments.size()) >= options_.max_increments) {
         sr.termination = "the increment budget (max_increments) ran out";
         break;
@@ -1358,12 +1249,7 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
     }
     result.total_cuts += sr.cuts;
     result.total_iterations += sr.iterations;
-    if (explicit_step) {
-      result.total_explicit_steps += sr.explicit_result.steps;
-    } else {
-      result.total_increments += static_cast<int>(sr.increments.size());
-      velocity.resize(0);  // an implicit step ends at rest
-    }
+    result.total_increments += static_cast<int>(sr.increments.size());
     sr.completed = done;
 
     // The end state of the step (the last converged one if it failed).
@@ -1457,7 +1343,6 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
   result.final_state.residual = last_residual;
   result.final_state.reference_force = reference;
   result.final_state.tools_active = placed;
-  result.final_state.velocity = velocity;
   result.linear_solver = factor.names();
   result.failed_factorisations = factor.failures();
   timing.add("total", wall.elapsed_seconds());

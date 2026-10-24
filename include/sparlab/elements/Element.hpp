@@ -12,8 +12,7 @@
 /// Where this fits: Simulations stage - the element interface; make_element picks the
 ///   standard or incompatible-mode Hex8 from the deck's model.element_formulation.
 /// Called from: fem/FemModel.cpp:FemModel::FemModel (make_element),
-///   fem/Elastoplastic.cpp:kinematics_of,
-///   fem/ExplicitKernel.cpp:ExplicitInternalForce::build_dedicated
+///   fem/Elastoplastic.cpp:kinematics_of
 /// Calls into: elements/Hex8, elements/Hex8Incompatible, mesh/Mesh (ElementType)
 /// Start reading at: Element, make_element
 #pragma once

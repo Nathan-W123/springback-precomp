@@ -99,8 +99,6 @@ add_library(sparlab STATIC
   src/fem/IncompatibleModes.cpp
   src/fem/RigidTool.cpp
   src/fem/Forming.cpp
-  src/fem/ExplicitKernel.cpp
-  src/fem/ExplicitDynamics.cpp
   src/io/Json.cpp
   src/io/Config.cpp
   src/io/CsvWriter.cpp

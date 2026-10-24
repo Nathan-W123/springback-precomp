@@ -66,6 +66,8 @@ CASES = {
                                                        "displacement_tolerance": 1e-8}}),
     "h2_L2_std_rel40": case(release_increments=40),
     # --- explicit (standard Hex8 only: the dedicated kernel) ------------------
+    # form_explicit was removed in the cleanup; these decks run only on a build
+    # of commit 7d571e6 (their committed outputs are the record).
     "h1_L2_std_x1": case(h=1.0, explicit={"speed": 1.0, "dt": 1.0e-6, "sc": 0.5}),
     "h1_L2_std_x05": case(h=1.0, explicit={"speed": 0.5, "dt": 1.0e-6, "sc": 0.5}),
     "h2_L2_std_x05": case(explicit={"speed": 0.5, "dt": 1.0e-6, "sc": 0.5}),

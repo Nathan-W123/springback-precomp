@@ -2,8 +2,8 @@
 
 This is what `sparlab_form` does **not** do, and what its results do **not**
 claim. Nothing here is a bug list; every item is a deliberate scope boundary.
-The forming analysis's own limits (tools, contact, increments, the explicit
-steps) are in [`forming.md`](forming.md), sections 6 and 7.5; the springback
+The forming analysis's own limits (tools, contact, increments) are in
+[`forming.md`](forming.md), section 6; the springback
 model's error budget against a real cell is in
 [`benchmarks/physics_audit`](../benchmarks/physics_audit/README.md).
 

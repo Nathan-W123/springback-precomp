@@ -257,12 +257,11 @@ refuses unknown ones).
 | `tools[].tangential_penalty` | 1 | `kappa_T / kappa` |
 | `tools[].trajectory` | required | `{ "file": "path.csv" }` (header `t,x,y,z`, s and m; blank lines and `#` comments allowed) or `{ "times": [...], "points": [[...], ...] }`; at least two knots, times strictly increasing; the sphere's centre, a point of the plane, a point of the cylinder's axis; constant outside its span |
 | `steps[].name` | `"step<k>"` | unique; part of the result file names |
-| `steps[].type` | `"form"` | `"form"`, `"release"` or `"form_explicit"` (section 7) |
+| `steps[].type` | `"form"` | `"form"` or `"release"` |
 | `steps[].tools` | `[]` | active tools; a release may keep only tools the step before it lists |
 | `steps[].time` | see below | `[t_begin, t_end]` [s], not before the previous step's end; later only if the tools active in both steps do not move in between |
 | `steps[].max_tool_travel` | half the smallest slave-node size | largest travel of an active tool in one increment [m] |
 | `steps[].increments` | 1 (form), 10 (release) | the window in this many equal increments at the start (and at most) |
-| `steps[].explicit` | required for `form_explicit` | the explicit integration's settings (section 7.2); refused on other step types, and `max_tool_travel` / `increments` are refused on a `form_explicit` step |
 | `steps[].boundary_conditions` | the model's, `absolute` | as the deck's, plus `"mode"`: `"hold"` (default: the DOFs stay where the step finds them; a non-zero `value` is refused) or `"absolute"` (`value` the absolute end value) |
 | `newton.*` | see above | Newton settings |
 | `output.vtk` | true | per-step VTK files (`--no-vtk` overrides) |
@@ -297,15 +296,14 @@ writes, into `dir`:
 
 | File | Content |
 |------|---------|
-| `summary.json` | `case`, `sparlab_version` (`"<version> (<git revision>)"`), `completed`, `termination`, `runtime_s`, `timing` (seconds per phase: `element_tangent_s`, `element_residual_s`, `contact_s`, `factorisation_s` with `factor_<kind>_s` per factorisation, `solve_s`, `output_s` (the step files written during the run), `total_s`; `increments`, `iterations`, `cuts`, `linear_solver` with the count of each factorisation used, `failed_factorisations` with the count of each attempt that failed - a Cholesky of a tangent that is not positive definite, then `LDL^T`; an `LDL^T` with a vanishing pivot, then LU; a singular LU, which fails the iteration - empty if none, `suitesparse`), `analysis` (kinematics, tolerances), `steps` (per step: `name`, `type`, `completed`, `increments`, `iterations`, `cuts`, `max_plastic_strain`, `reaction_norm_N`, `warnings`, and `termination`, `files_stem`, `t_begin_s`, `t_end_s`, `tools`, `constrained_dofs`, `start_imbalance_N`, `reference_force_N`, `max_displacement_change_m`, `max_displacement_m`, and for a `form_explicit` step `explicit`: `steps`, `physical_time_s`, `tool_speed_m_s`, `duration_s`, `time_step_s`, `min_time_step_s`, `final_time_step_s`, `stable_time_step_s` (unscaled), `scaled_stable_time_step_s`, `stable_step_method`, `safety`, `step_updates`, `mass_scaling`, `target_time_step_s`, `dynamic_mass_scaling`, `mass_updates`, `mass_scale_max`, `scaled_elements`, `physical_mass_kg`, `scaled_mass_kg`, `added_mass_fraction`, `max_added_mass_fraction`, `damping_per_s`, `contact_stiffness`, `contact`, `max_kinetic_ratio`, `peak_kinetic_ratio`, `kinetic_ratio_basis`, `kinetic_ratio_warning`, `max_penetration_ratio`, `penetration_warning`, `max_energy_error`, `energy_tolerance`, `energy_limit`, `history_every`, `kernel`, `timing`, `wall_s`, `energy_file`), `tools` (per tool: shape, radius, friction, penalty, trajectory span and length, peak force and its time, largest contact node count and penetration), `mesh` (element type, dim, nodes, elements, DOFs, bounding box), `warnings`, `files`, `provenance` |
+| `summary.json` | `case`, `sparlab_version` (`"<version> (<git revision>)"`), `completed`, `termination`, `runtime_s`, `timing` (seconds per phase: `element_tangent_s`, `element_residual_s`, `contact_s`, `factorisation_s` with `factor_<kind>_s` per factorisation, `solve_s`, `output_s` (the step files written during the run), `total_s`; `increments`, `iterations`, `cuts`, `linear_solver` with the count of each factorisation used, `failed_factorisations` with the count of each attempt that failed - a Cholesky of a tangent that is not positive definite, then `LDL^T`; an `LDL^T` with a vanishing pivot, then LU; a singular LU, which fails the iteration - empty if none, `suitesparse`), `analysis` (kinematics, tolerances), `steps` (per step: `name`, `type`, `completed`, `increments`, `iterations`, `cuts`, `max_plastic_strain`, `reaction_norm_N`, `warnings`, and `termination`, `files_stem`, `t_begin_s`, `t_end_s`, `tools`, `constrained_dofs`, `start_imbalance_N`, `reference_force_N`, `max_displacement_change_m`, `max_displacement_m`), `tools` (per tool: shape, radius, friction, penalty, trajectory span and length, peak force and its time, largest contact node count and penetration), `mesh` (element type, dim, nodes, elements, DOFs, bounding box), `warnings`, `files`, `provenance` |
 | `config.json` | the deck, verbatim |
 | `mesh.json` | nodes, connectivity (`ResultWriter::write_mesh`) |
 | `step_<k>_<s>_nodes.csv` | `node,X,Y,Z,ux,uy,uz`: reference coordinates and the displacement at the end of step `k` (1-based) named `s` [m]; Z and uz are 0 on a 2-D model |
 | `step_<k>_<s>_elements.csv` | `element,eq_plastic_strain,von_mises_Pa`: the largest equivalent plastic strain of the element's integration points, and the von Mises stress of its point-averaged Cauchy stress |
 | `step_<k>_<s>.vtk` | the same fields for ParaView (unless `--no-vtk`) |
 | `step_<k>_<s>_inc_<i>_nodes.csv`, `.vtk` | snapshots every `output.snapshots` increments (step ends excluded) |
-| `tool_forces.csv` | `step,increment,t,tool,cx,cy,cz,fx,fy,fz,active_nodes,max_penetration_m`: per converged increment and active tool, the tool's reference point [m] and the force the body exerts **on the tool** [N]; for a `form_explicit` step a row every `history_every` time steps (`increment` is the time step's number), the force averaged over those steps |
-| `step_<k>_<s>_energy.csv` | `form_explicit` steps only: `step,t_s,pseudo_t_s,time_step_s,kinetic_J,internal_work_J,stored_J,elastic_J,plastic_dissipation_J,contact_normal_work_J,contact_friction_work_J,damping_J,external_work_J,mass_scaling_work_J,energy_error_J,kinetic_ratio` every `history_every` time steps (section 7.1): `elastic_J` the elastic strain energy of the state (`nan` through the generic element dispatch), `kinetic_ratio` the kinetic energy over the step's reference energy (`kinetic_ratio_basis`), unfiltered |
+| `tool_forces.csv` | `step,increment,t,tool,cx,cy,cz,fx,fy,fz,active_nodes,max_penetration_m`: per converged increment and active tool, the tool's reference point [m] and the force the body exerts **on the tool** [N] |
 
 `s` is the step name with every character other than letters, digits, `-`
 and `_` replaced by `_`. Only completed steps have files. They are written
@@ -340,7 +338,6 @@ build, with `-dirty` for uncommitted changes.
 | A sphere grazing the surface exactly at the end of the first increment, from the reference state (a round-off reference force) | converges without a cut, the first increment in at most 3 iterations |
 | SPIF smoke case (section 5) on a coarse 12 x 12 x 2 mesh with 12 chords a contour (86 increments, 785 iterations; about 17 s on one thread) | completes; the centre sinks 1.70 mm (tool tip at 2 mm), the release moves the part by up to 0.16 mm; tool force positive in z at every increment in contact. The 20 x 20 x 2 deck sinks 1.65 mm and springs back 0.18 mm. In both the `retract` step exercises nothing: the tool has no node in contact by the end of the second contour (on the 20 x 20 deck, at the last two increments of `form`), and the retract moves the part by about `1e-18 m` - a 5 mm tool on 2 to 3.3 mm elements touches the deformed surface at one or two nodes and can pass between them |
 | The `forming` block: every key, trajectory file, refusals; the result files and summary keys of the contract | every key read in strict mode; every refusal names its key; every file with its exact header and row count |
-| Explicit forming step (`tests/test_explicit.cpp`, `[explicit][forming]`): a plastic sheet dented and lifted by a sphere in `form_explicit` steps (finite kinematics, friction, selective mass scaling), damped to rest by a tool-free explicit step, released implicitly with the same clamps; a restart from the explicit steps' end state | the restart releases to the same state bit for bit; with nothing changed at the handoff the release ramps out `6e-14` of the forming force and moves the part by `7e-19 m`, one iteration per increment; the `explicit` block read key by key strictly, every refusal naming its key; the energy CSV, tool force rows and summary fields written |
 
 Every check also passes in a build without SuiteSparse. `ctest` runs each
 case with one OpenMP thread (`tests/CMakeLists.txt`): under `ctest -j4`
@@ -415,8 +412,8 @@ What the numbers say:
   factorisation of 0.5 to 0.8 s);
   a symmetric factorisation with the friction's non-symmetric part applied
   iteratively; and, for full-size parts, explicit dynamics with mass
-  scaling, which is how incremental forming is usually simulated at scale -
-  now the `form_explicit` step (section 7).
+  scaling, which is how incremental forming is usually simulated at scale
+  (an explicit step existed and was removed in the cleanup, section 7).
 
 ## 6. Limitations
 
@@ -440,8 +437,8 @@ What the numbers say:
   is solved by Newton's method with a direct sparse factorisation per
   iteration, which is the dominant cost for large sheets (section 5); a
   forming path of hundreds of millimetres over a fine sheet takes hours.
-  The explicit `form_explicit` step (section 7) is the answer for full-size
-  parts, with its own limitations (section 7.5).
+  Full-size parts need explicit dynamics or a cheaper element; the explicit
+  step that existed was removed in the cleanup (section 7).
 * **Hex8 through the thickness.** A sheet meshed with a few fully integrated
   Hex8 layers is stiff in bending (shear locking grows with the element
   aspect ratio); mean dilatation cures volumetric, not shear, locking.
@@ -489,460 +486,11 @@ What the numbers say:
   ramps that imbalance out over the whole step, which is exact only at its
   end.
 
-## 7. Explicit forming
+## 7. Explicit forming (removed)
 
-A `form_explicit` step moves its tools along their paths in **physical
-time** and integrates the model by explicit central differences
-(`include/sparlab/fem/ExplicitDynamics.hpp`, whose header states the
-formulation in full): no Newton iterations, no factorisation - a time step
-costs one evaluation of the internal forces - but a time step bounded by the
-stability limit. It is the industrial way of simulating incremental forming
-at scale (a large lumped mass and a fast tool, checked for quasi-static
-validity), followed here by the same implicit `release` as the implicit
-analysis, which gives the springback.
-
-### 7.1 Formulation
-
-* **Equations of motion** on the step's free DOFs,
-  `M a + alpha M v + f_int(u) = f_c(u, v, t)`: `M` the lumped mass (the row
-  sums of the consistent element masses), `alpha` the
-  optional mass-proportional damping [1/s], `f_int` the internal forces of the
-  non-linear static analysis (the same elements, kinematics, plasticity,
-  mean dilatation and history), `f_c` the contact forces of the step's tools.
-  The step's constraints (`hold` or `absolute`, as for `form`) move linearly
-  in physical time.
-* **Central differences with half-step velocities** (Belytschko, Liu and
-  Moran, *Nonlinear Finite Elements for Continua and Structures*, 2000, box
-  6.1): `v(n+1/2) = v(n) + dt/2 a(n)`, `u(n+1) = u(n) + dt v(n+1/2)`,
-  `a(n+1) = M^-1 (f_c - f_int(u(n+1)) - alpha M v(n+1/2))`,
-  `v(n+1) = v(n+1/2) + dt/2 a(n+1)`. Every time step is final: the plastic
-  history is updated in place, never iterated.
-* **Time scaling.** The tool trajectories are tabulated in pseudo-time; the
-  step maps the pseudo-time window to physical time either by `tool_speed`
-  [m/s] - each segment between the paths' knots lasts the largest travel of a
-  tool on it over the speed, so the fastest tool moves at exactly that speed
-  and segments on which no tool moves take no time - or by a `duration` [s]
-  (linearly).
-* **Stable time step.** Central differences are stable for
-  `omega_max dt <= 2`. The default estimate bounds `omega_max` by the largest
-  element eigenvalue `omega_e^2 = lambda_max(M_e^-1/2 K_e M_e^-1/2)` - the
-  element's linear elastic stiffness at its current configuration and its
-  (scaled) lumped mass - an upper bound of the assembled system's by Irons'
-  theorem; `power_iteration` estimates `omega_max` of the assembled,
-  unconstrained `M^-1 K` (Rayleigh quotient times 1.05, tighter, whole model
-  only); `element_length` takes `L_e / c_e` (volume over largest face,
-  dilatational wave speed; the conventional estimate, not a bound). With
-  finite kinematics the estimate is repeated every `update_every` steps on
-  the current configuration (a thinning sheet lowers it), the step never
-  growing by more than 1 % at an update. Damping and the contact penalty
-  lower the limit to `omega^2 dt^2 + 2 alpha dt <= 4 - s_c`; the step is
-  `safety` times that.
-* **Mass scaling** multiplies an element's density by `s_e >= 1`: `uniform`,
-  `s_e = (dt_target / dt_crit)^2` for every element; `selective`
-  (conventional, per element), `s_e = max(1, (dt_target / dt_e)^2)`, which adds
-  mass only where an element limits the step. With `dynamic` selective
-  scaling the scales are raised at every stable-step update wherever an
-  element's step has fallen below the target (a wall thinning and shearing
-  under the tool), so the step stays at the target; the velocities are kept
-  and the kinetic energy of the added mass, `W_m = 1/2 sum dm v^2`, is booked
-  in the energy balance. The added mass is reported (`added_mass_fraction`,
-  at the end of the run) and warned about above `max_added_mass_fraction`.
-  (Selective mass scaling proper - a non-diagonal mass that keeps the
-  rigid-body inertia, Olovsson, Simonsson and Unosson, IJNME 63 (2005)
-  1436-1445 - needs an iterative mass solve and is not provided.)
-* **Contact** with the same rigid tools (sphere, plane, cylinder; the slave
-  surfaces, trajectories and tributary areas of the implicit analysis), node
-  to surface in the current configuration, but with the **mass-based
-  penalty** of explicit codes: `k_j = s_c m_j / dt^2` per slave node (`m_j`
-  its lumped mass, `s_c` = `contact_stiffness`, default 0.5). It adds at most
-  `s_c / dt^2` to `omega^2`, so it cannot destabilise the step - the implicit
-  law `kappa = s E / h` is stiffer still and would. Its penetration, about
-  `f dt^2 / (s_c m_j)`, does **not** fall with the tool speed (with mass
-  scaling to a target step, `m_j / dt^2` is fixed): it biases the formed
-  shape at any speed, so every run measures the largest penetration against
-  the element thickness at the node (volume over the largest face of its
-  thinnest element; `max_penetration_ratio`) and warns above
-  `penetration_warning` (1 %). Friction is
-  regularised Coulomb friction with a committed tangential force per node,
-  carried onto the current tangent plane, incremented by the tangential
-  motion relative to the tool times `k_T = tangential_penalty k_j`, and
-  returned onto the cone `|F_T| <= mu |f_N|`; for a frictional tool the step
-  reserves `s_c max(1, tangential_penalty)`, the stiffer of the two springs
-  (a share of 4 or more is refused).
-* **Internal forces.** A dedicated Hex8 kernel (finite, logarithmic or small
-  strain; elastoplastic through the return of `Plasticity.hpp`, elastic
-  elements with small strain only; mean dilatation) caches the reference
-  gradients and weights, updates the history in place, gathers the element
-  forces per node in ascending element order (the order of the serial
-  assembly), and allocates nothing. It is checked against the generic element
-  dispatch (`NonlinearSystem::evaluate`) at the start of every run and falls
-  back to it above a relative difference of `1e-10`; every other element,
-  formulation, kinematics or material takes the generic dispatch - the single
-  entry point of the element technologies, so a new one works in explicit
-  steps unchanged. The results are the same, bit for bit, on any number of
-  threads.
-* **Energy balance** (kept at every step, written every `history_every`):
-  the kinetic energy `T`, the work of the internal forces `W_int` (the
-  stored elastic and hardening energy plus the plastic dissipation), of the
-  contact forces on the body (normal and friction parts), of the damping and
-  of the reactions, as trapezoidal sums, and `W_m` of dynamic mass scaling;
-  the balance error `T - T_0 + W_int + D - W_ext - W_c - W_m` relative to the
-  largest energy so far - not judged over the ten time steps after the first
-  contact, where the new contact forces' half-step kick is in `T` a step
-  before their work is in the balance (a relative error of 1 at the first
-  touch, when that kick is all the energy there is; `1e-2` ten steps on).
-* **Validity checks.** Quasi-static: the largest ratio of `T` to a
-  reference energy after the first contact (`max_kinetic_ratio`, warned
-  above `kinetic_ratio_warning`, 0.1). From a virgin sheet the reference is
-  the internal work `W_int`; for a step that continues a stressed part (a
-  retract) it is the **elastic strain energy** of the state, which the
-  dedicated kernel sums at every record (`kinetic_ratio_basis`): the stored
-  energy of a formed part is mostly hardening energy, which no retract stirs
-  (92 % of it after the test dent). The generic element dispatch does not
-  separate the elastic energy and keeps the internal energy. The warned
-  ratio skips the records whose reference energy is below 1 % of its final
-  value - the first touch of a flat sheet, where any motion is large against
-  the little work done; the unfiltered peak is reported beside it
-  (`peak_kinetic_ratio`: 0.4 to 0.8 on the smoke runs, 0.2 to 0.4 on the
-  test dent, whatever the speed). Also checked: the balance error (warned
-  above `energy_tolerance`, 0.05), the penetration and the added mass. A
-  run stops - the step not completed, its termination naming the time step
-  and the time, the analysis keeping the last recorded state - when the
-  state becomes non-finite, an element inverts, a return fails, a tool is
-  found through the body, or the balance error exceeds `energy_limit` (0.5).
-* **Handoff to the implicit release.** The explicit step hands on the
-  analysis state (displacement, plastic history, friction history) and its
-  velocity (which a following explicit step starts from; an implicit step
-  starts at rest). A following `release` finds as its start imbalance, besides
-  the reactions of released constraints and the forces of removed tools, the
-  **inertia and damping forces** of the explicit step's end state, and ramps
-  them out with the rest: after a quasi-static run they are small (`T/W_int`
-  small), and a sheet brought to rest before the release leaves only
-  round-off (`tests/test_explicit.cpp`, section 4). An implicit `form` step with a tool still in
-  contact would evaluate the explicit penetration with the stiffer implicit
-  penalty; follow an explicit step by a `release` (or retract the tool
-  explicitly first, as the decks do).
-
-### 7.2 Configuration and settings guide
-
-```jsonc
-{ "name": "form", "type": "form_explicit", "tools": ["tool"], "time": [0.0, 3.1],
-  "explicit": {
-    "tool_speed": 1.0,                       // [m/s]; or "duration": [s] - exactly one
-    "mass_scaling": { "mode": "selective",   // "none" | "uniform" | "selective"
-                      "target_time_step": 1.0e-6,          // [s], required with a mode
-                      "max_added_mass_fraction": 0.05,      // warn above
-                      "dynamic": true },                    // keep the step at the target
-    "stable_step": { "method": "element_eigenvalue",        // | "element_length" | "power_iteration"
-                     "safety": 0.9, "update_every": 1000, "power_iterations": 60 },
-    "damping": 0.0,                          // alpha of C = alpha M [1/s]
-    "contact_stiffness": 0.5,                // s_c of k = s_c m / dt^2, in (0, 1]
-    "history_every": 100,                    // records (energy CSV, tool_forces.csv rows)
-    "snapshot_every": 0,                     // node CSV snapshots every N time steps (0: none)
-    "energy_tolerance": 0.05, "energy_limit": 0.5, "kinetic_ratio_warning": 0.1,
-    "penetration_warning": 0.01 },
-  "boundary_conditions": [ ... ] }
-```
-
-| Key | Default | Meaning |
-|-----|---------|---------|
-| `tool_speed` | - | the fastest active tool's speed along its path [m/s]; the window's physical time follows |
-| `duration` | - | the window's physical time [s] (linear in pseudo-time); needed when no tool moves |
-| `mass_scaling.mode` | `"none"` | `"uniform"`: one factor `(dt_target / dt_crit)^2`; `"selective"`: per element `max(1, (dt_target / dt_e)^2)` |
-| `mass_scaling.target_time_step` | - | [s]; the time step is at most this |
-| `mass_scaling.max_added_mass_fraction` | 0.05 | added / physical mass above which the run warns |
-| `mass_scaling.dynamic` | false | selective, finite kinematics: at every stable-step update, raise the scale of the elements whose step has fallen below the target (a thinning wall), so the step stays at the target; the velocities are kept and the added mass's kinetic energy is booked in the balance |
-| `stable_step.method` | `"element_eigenvalue"` | see 7.1; `"power_iteration"` cannot drive selective scaling (refused) |
-| `stable_step.safety` | 0.9 | the step over the stability limit, in (0, 1] |
-| `stable_step.update_every` | 1000 | finite kinematics: re-estimate every N steps (0: never) |
-| `stable_step.power_iterations` | 60 | iterations of the power method |
-| `damping` | 0 | mass-proportional damping `alpha` [1/s] |
-| `contact_stiffness` | 0.5 | `s_c` of the mass-based penalty; `s_c max(1, tangential_penalty)` of a frictional tool must stay below 4 |
-| `history_every` | 100 | a record every N steps (and the last): the energy CSV rows and the tool force rows, the force averaged over the N steps |
-| `snapshot_every` | 0 | node snapshots every N time steps (`step_<k>_<s>_inc_<N>_nodes.csv`) |
-| `energy_tolerance`, `energy_limit` | 0.05, 0.5 | balance error warned about / stopping the run |
-| `kinetic_ratio_warning` | 0.1 | `T` over the reference energy (internal or elastic, 7.1) after the first contact warned about |
-| `penetration_warning` | 0.01 | the largest contact penetration over the element thickness at the node warned about |
-
-**How to choose the tool speed and the mass scaling.** Both make the run
-cheaper and both raise the inertia forces: the tool speed `v` by `v^2`, the
-mass scale `s` by `s` - so what governs the dynamics is the **equivalent
-speed `v sqrt(s)`**, and the number of time steps is `path / (v dt)` with
-`dt` proportional to `sqrt(s)`: the cost is inversely proportional to the
-equivalent speed, however it is split. A sheet meshed with Hex8 is limited by
-its through-thickness size: on the 1 mm blanks of the decks (0.5 mm layers)
-the unscaled stable step is about `8e-8 s`, so a `1e-6 s` target scales every
-element by 150 to 270 (`added_mass_fraction` about 200, which the decks
-warn about: their threshold is the default) and `v = 1 m/s` is an
-equivalent speed of about 14 m/s. The equivalent speed governs the inertia;
-the contact penalty is a second, independent parameter (item 5). Guidance,
-from the smoke study (section 7.3) and the `explicit-dent` validation
-(in the history at commit `7d571e6`):
-
-1. Pick the mass scaling target so that the unscaled stable step is not the
-   bottleneck (selective scaling scales only the elements that limit it);
-   then set the tool speed from the time budget.
-2. Check the validity measures: `max_kinetic_ratio` below 0.1 (0.04 at the
-   recommended 7 m/s on the smoke case; `peak_kinetic_ratio`, which includes
-   the tool's plunge into the flat sheet, is 0.4 to 0.8 at any speed and is
-   not a criterion), `max_energy_error` below 0.05, `max_penetration_ratio`
-   below 0.01, the tool force's moving average smooth.
-3. Check convergence: halve the equivalent speed once and compare the
-   springback of the two runs on the same mesh (the comparison script,
-   `compare_forming_runs.py`, is in the history at commit `7d571e6`); the difference should be small against the springback. Halving the
-   speed does not reveal the penalty's bias (item 5).
-4. Leave `damping` at 0 for forming: mass-proportional damping resists the
-   rigid motion of the material that follows the tool and adds a force
-   proportional to the speed. It is useful to bring a sheet to rest (a
-   tool-free explicit step with a `duration`) before comparing states.
-5. Keep `contact_stiffness` at 0.5 or above. The penetration,
-   `f dt^2 / (s_c m)`, is the same at every tool speed. On the test dent
-   (a 2 mm ball 0.3 mm into a 1 mm sheet, 0.5 mm elements) the former default
-   0.1 penetrated 17 um - 3.4 % of the element - and left the shape 7 % of
-   the depth from the implicit analysis at 4 and at 1 m/s alike; 0.5
-   penetrates 3 um (0.6 %) and agrees to 0.9 %, the implicit reference's own
-   increment difference. On the smoke case the penetration is 6 um at 0.1 and
-   0.5 um at 1, and the shape does not move with it (section 7.3). The
-   penalty's share lowers the stable step as `sqrt(4 - s_c)`: with selective
-   scaling to a target step it costs added mass - 0.5 against 0.1 raises the
-   equivalent speed by 5.6 %, 1 by 14 %.
-
-### 7.3 Verification against the implicit analysis (smoke case)
-
-`configs/forming/spif_smoke_explicit.json` is `spif_smoke.json` with its
-`form` and `retract` steps explicit; it was run at four equivalent speeds and
-three to four contact penalties and compared node by node (by
-`python/scripts/compare_forming_runs.py`, in the history at commit `7d571e6`) with
-the implicit analysis (`sparlab_form --threads 2`, load average 3 to 7 from
-other jobs, so the run times are indicative only). The implicit reference is
-itself discretised by its tool travel per increment: the deck's 1 mm and a
-refined 0.5 mm differ by `0.033 mm` (largest) and `0.006 mm` (RMS) in the
-formed tool-side surface and by 2.8 % in the mean tool force, so the
-comparison is made with the refined run (springback `0.182 mm` largest,
-`0.126 mm` RMS; depth 2.23 mm; mean tool force 418 N over the contours;
-largest penetration `0.32 um`). Distances are over the 441 nodes of the
-tool-side surface; the springback is the displacement over the `unclamp`
-release; the tool force is `fz`, its moving average over 0.1 s of
-pseudo-time (the explicit rows scatter by 12 % RMS about it).
-
-**The equivalent speed**, at the former default penalty `contact_stiffness`
-0.1:
-
-| Equivalent speed `v sqrt(s)` | Settings | Time steps | Run [s] | `max_kinetic_ratio` (over the contours) | Springback difference, largest / RMS [mm] | Final shape difference [mm] | Formed shape difference [mm] | Mean tool force | Moving-average force difference, RMS |
-|---|---|---|---|---|---|---|---|---|---|
-| 28 m/s | 2 m/s, 1 us (`s` = 201) | 53 722 | 25 | 0.247 (0.103) | 0.042 / 0.023 (23 % of the springback) | 0.046 / 0.018 | 0.049 / 0.012 | -3.4 % | 9.0 % |
-| 14 m/s | 1 m/s, 1 us | 107 694 | 47 | 0.142 (0.011) | 0.017 / 0.008 (9.1 %) | 0.020 / 0.008 | 0.029 / 0.006 | -3.3 % | 4.4 % |
-| 7.1 m/s | 0.5 m/s, 1 us - or 1 m/s, 0.5 us (`s` = 50): the same, bit for bit | 215 532 | 93 | 0.038 (0.007) | 0.0076 / 0.0040 (4.2 %) | 0.014 / 0.005 | 0.021 / 0.004 | -1.4 % | 3.3 % |
-| 3.5 m/s | 1 m/s, 0.25 us (`s` = 13) | 431 297 | 187 | 0.015 (0.004) | 0.0024 / 0.0011 (1.3 %) | 0.017 / 0.004 | 0.020 / 0.004 | -0.8 % | 3.4 % |
-| implicit, 1 mm travel (the deck) | 137 increments, 1 274 iterations | - | 110 | - | 0.0032 / 0.0011 | 0.034 / 0.006 | 0.033 / 0.006 | -2.8 %  (against 0.5 mm) | 4.7 % |
-| implicit, 0.5 mm travel (reference) | 249 increments, 1 862 iterations | - | 169 | - | - | - | - | - | - |
-
-**The contact penalty** at three equivalent speeds (the unfiltered peak
-of the kinetic ratio, over the plunge into the flat sheet, in brackets):
-
-| Equivalent speed | `contact_stiffness` | Largest penetration | Springback difference, largest / RMS [mm] | Final shape [mm] | Formed shape [mm] | Formed depth [mm] | Mean tool force | `max_kinetic_ratio` (peak) | Energy balance |
-|---|---|---|---|---|---|---|---|---|---|
-| 14 m/s | 0.1 | 6.5 um | 0.017 / 0.008 (9.1 %) | 0.020 / 0.008 | 0.029 / 0.006 | 2.247 | -3.3 % | 0.142 | `5.6e-5` |
-| 14 m/s | 0.4 | 1.5 um | 0.022 / 0.010 (12.2 %) | 0.023 / 0.008 | 0.028 / 0.007 | 2.256 | -3.6 % | 0.146 | `3.5e-4` |
-| 14 m/s | 0.5 | 1.2 um | 0.026 / 0.011 (14.5 %) | 0.023 / 0.008 | 0.024 / 0.006 | 2.254 | -3.7 % | 0.148 (0.45) | `4.6e-4` |
-| 14 m/s | 1 | 0.6 um | 0.013 / 0.008 (7.1 %) | 0.022 / 0.009 | 0.021 / 0.004 | 2.241 | -3.5 % | 0.156 (0.44) | `1.6e-3` |
-| 7.1 m/s | 0.1 | 6.3 um | 0.0076 / 0.0040 (4.2 %) | 0.014 / 0.005 | 0.021 / 0.004 | 2.246 | -1.4 % | 0.038 | `6.0e-5` |
-| 7.1 m/s | 0.4 | 1.5 um | 0.0054 / 0.0032 (3.0 %) | 0.018 / 0.005 | 0.023 / 0.005 | 2.249 | -1.7 % | 0.038 | `3.3e-4` |
-| **7.1 m/s** | **0.5 (the deck)** | 1.2 um | **0.0063 / 0.0032 (3.5 %)** | 0.017 / 0.005 | 0.023 / 0.004 | 2.249 | -1.7 % | **0.039** (0.62) | `4.3e-4` |
-| 7.1 m/s | 1 | 0.5 um | 0.0042 / 0.0026 (2.3 %) | 0.016 / 0.005 | 0.024 / 0.005 | 2.253 | -1.8 % | 0.049 (0.63) | `1.3e-3` |
-| 3.5 m/s | 0.1 | 6.3 um | 0.0024 / 0.0011 (1.3 %) | 0.017 / 0.004 | 0.020 / 0.004 | 2.245 | -0.8 % | 0.015 | `5.7e-5` |
-| 3.5 m/s | 0.4 | 1.5 um | 0.0023 / 0.0012 (1.3 %) | 0.020 / 0.005 | 0.022 / 0.005 | 2.248 | -1.2 % | 0.015 | `3.1e-4` |
-| 3.5 m/s | 0.5 | 1.1 um | 0.0023 / 0.0011 (1.3 %) | 0.020 / 0.005 | 0.022 / 0.005 | 2.249 | -1.2 % | 0.015 (0.76) | `3.9e-4` |
-| 3.5 m/s | 1 | 0.5 um | 0.0035 / 0.0016 (1.9 %) | 0.020 / 0.005 | 0.022 / 0.005 | 2.246 | -1.3 % | 0.014 (0.80) | `9.0e-4` |
-
-(The 0.5 runs at the current revision - 52 s, 111 s and 394 s at load 4 to
-4.6; the others with earlier builds, whose states are the same: their
-Green-Lagrange kernel is unchanged, and the energy-balance onset of 7.1
-only lets the `s_c = 1` runs past their first touch, where they stopped
-before.)
-
-What it shows:
-
-* **The springback converges to the implicit one** as the equivalent speed
-  falls - 23 %, 9.1 %, 4.2 % and 1.3 % of the springback for 28, 14, 7.1 and
-  3.5 m/s at the former penalty, 14.5 %, 3.5 % and 1.3 % at the default
-  one - and so does the mean tool force (-3.4 % to -0.8 %).
-* **The penalty is a second parameter**, not a part of the equivalent speed.
-  At 14 m/s the springback difference moves between 7 % and 15 % with it, at
-  no monotonic trend - the inertia's error is then of that order anyway; at
-  7.1 m/s between 2.3 % and 4.2 %, at 3.5 m/s between 1.3 % and 1.9 %. On this
-  sheet (2 x 2 x 0.5 mm elements, 400 N on a 5 mm tool) the penetration is
-  6 um at 0.1 and 1 um at 0.5: small against the shape differences, which do
-  not follow it. On the test dent, a stiffer contact, it is 17 um at 0.1 and
-  biases the shape by 7 % of the depth at any speed (`explicit-dent`,
-  in the history at commit `7d571e6`); hence the default 0.5.
-* **The formed and final shapes** level off at about `0.02 mm` largest and
-  `0.004` to `0.005 mm` RMS on the 2.2 mm deep part, at every speed and every
-  penalty - their explicit depth is 0.015 to 0.03 mm deeper than the
-  reference's - of the size of the implicit reference's own increment
-  difference (`0.033 mm` between 1 and 0.5 mm of travel, so its own error at
-  0.5 mm is likely of that order). The study cannot resolve the shapes better
-  than that.
-* **Mass scaling and tool speed are interchangeable**: 1 m/s with a 0.5 us
-  target gives the same run as 0.5 m/s with 1 us, bit for bit (the equations
-  differ only in the unit of time, by a power of two).
-* **The kinetic energy ratio** after the plunge is below the 0.1 warning at
-  7.1 m/s and below, which is the recommended setting for springback work
-  (3 to 4 % of the springback); 14 m/s gives the shapes and forces at half
-  the cost, its springback 7 to 15 % off. The unfiltered peak, 0.4 to 0.8
-  while the tool plunges into the flat sheet, does not fall with the speed:
-  it measures the first touch, not the forming.
-* The energy balance closes to `1.1e-4` (28 m/s) and `6e-5` (the others) of
-  the internal work at 0.1, `3e-4` to `5e-4` at 0.4 and 0.5 and `1.6e-3` at 1:
-  the stiffer penalty's contact work is integrated less exactly.
-* The explicit run is not cheaper than the implicit one on this small sheet
-  (4 000 DOFs, where a factorisation is cheap): the explicit cost grows with
-  the number of elements times the path length, the implicit one faster
-  (section 7.4).
-
-### 7.4 Cost
-
-Measured with `sparlab_form --threads 2` on the development machine (four
-cores shared with other jobs; the load average is given with each number,
-and above 4 the other jobs take cores from the run - a spinning OpenMP
-barrier then waits for a descheduled thread, so the loaded runs are 2 to 3
-times slower than the unloaded rate), GCC 13 `-O3`.
-
-**Per time step** (`spif_cone_60_explicit.json`, in the history at commit `7d571e6`, the first
-1 518 time steps: 7 200 Hex8, 33 489 DOFs, plastic, frictional contact;
-load average 2.7 to 2.9 before each run):
-
-| Threads | Time steps / s | ns per element and step (total) | of which internal forces | integration (vector updates, energies) | contact | stable-step updates |
-|---|---|---|---|---|---|---|
-| 1 | 158 | 879 | 715 | 0.93 s (12 %) | 0.12 s | 0.50 s |
-| 2 | 296 | 470 | 358 | 0.69 s (13 %) | 0.10 s | 0.26 s |
-| 4 | 195 (27 with the default active wait) | 711 | 548 | 1.17 s | 0.12 s | 0.29 s |
-
-The four-thread row was measured with other jobs holding about three of the
-four cores (load average 3.1 to 3.6; the one- and two-thread rows repeated
-then gave 134 and 230 time steps a second): it shows the oversubscription,
-not the code. With `OMP_WAIT_POLICY=PASSIVE` four threads still gained 10 %
-over two; with OpenMP's default active wait a thread spinning at a barrier
-took the core its partner needed, and the run was seven times slower. On a
-shared machine, use no more threads than there are free cores (or passive
-waiting).
-
-The internal forces - the dedicated kernel's `3 000` instructions an element
-and step, vectorised over the eight points - take 80 % and scale with the
-threads; the vector updates are memory-bound (33 000 DOFs, a dozen arrays).
-The step loop allocates nothing (tested); the stable-step updates (every
-1 000 steps, an eigenvalue problem per element) and the records allocate.
-
-**The full cone** (622 mm of toolpath, ten contours to 10 mm, 7 200 Hex8;
-selective mass scaling to 1 us, scale about 224; `sparlab_form --threads 2`):
-
-| Run | Tool speed | Time steps | Wall [s] (load) | Result |
-|---|---|---|---|---|
-| Green-Lagrange (`"finite"`), fixed scaling | 2 m/s | 367 800 | 1 871 (3.5 to 8.7) | stopped at pseudo-time 9.70 s of 11.9 (88 % of the path): element 1777 inverted; the step fell from 1 us to 0.43 us as the wall thinned; `max_kinetic_ratio` 0.012, energy balance `2.1e-5` |
-| Green-Lagrange, dynamic scaling | 1 m/s | 539 600 | 4 598 (5 to 11) | stopped at the same place, the same element; the step held at 1 us (538 mass updates; added mass 224 to 261 times the physical, the largest element scale 1 262); 0.005, `3.0e-5` |
-| **logarithmic, dynamic scaling** (the deck, revision `694eeaa`, `contact_stiffness` 0.5) | 4 m/s | 152 677 + 2 750 (retract) | **2 766** (2.9 to 3.9) | **completed**: depth 10.23 mm, largest plastic strain 1.05; `max_kinetic_ratio` 0.042 (form; unfiltered peak 0.56, at the plunge), 0.14 against the elastic energy in the retract (warned); largest penetration 1.8 % of the element (warned: about 9 um); energy balance `7.2e-4`; 152 mass updates (added mass 279 times the physical, largest element scale 645, warned); release 10 increments, 40 iterations; internal forces 94 % of the time (2.25 us an element and step on two threads). An earlier build (`2fea9a3`, `contact_stiffness` 0.1, iterative eigensolver) took 4 081 s at load 3 to 8 |
-
-Both Green-Lagrange runs stop at the same point of the path - the tool's
-step-down from the ninth contour to the tenth, its tip pressing the part's
-floor at 7 mm radius - at the same element under it, whatever the speed and
-the mass scaling: the limit is the law's, not the integration's (the
-additive Green-Lagrange law softens in compression, section 7.5; the
-plastic strain there is 1.04). With the logarithmic kinematics the same
-path completes. On an unloaded machine (296 time steps a second on two
-threads with the Green-Lagrange kernel) the Green-Lagrange path would take
-305 000 steps, 17 minutes at 2 m/s; the logarithmic kernel costs 3.6 us
-against 0.64 us an element and step on one thread, so the deck's
-logarithmic run takes about 45 minutes on two threads, and 1.5 to 3 hours at
-2 or 1 m/s (projections, not runs) - against the implicit analysis's
-estimated 7 hours (with the Green-Lagrange law, which would meet the same
-collapse). **The deck is a feasibility and cost run, not a springback
-result**: its equivalent speed (4 m/s times the square root of a scale of
-250 to 645, 63 to 100 m/s) lies far above the 28 m/s at which the smoke study
-leaves the springback 23 % off, and the retract warns. The implicit analysis
-could not be run over the full cone for comparison; the smoke study (section
-7.3) and `explicit-dent` are the comparisons.
-
-**Choosing the speed for a part.** The cone's filtered kinetic energy ratio
-stays below the 0.1 warning even at 2 m/s with the Green-Lagrange law
-(0.012, against 0.25 on the smoke case at the same equivalent speed): a
-large part's internal work grows with its plastic zone while the kinetic
-energy stays with the material near the tool. That makes the ratio a weak
-check on a large part: the unfiltered peak (0.56 on the cone at 4 m/s) and
-the retract's ratio against the elastic energy (0.14) say more. The ratio is
-a necessary check only; the springback error at a given
-equivalent speed is what the smoke study measured (section 7.3: 23 % of the
-springback at 28 m/s, 9 % at 14 m/s, 4 % at 7 m/s), and a part's own
-convergence check (halving the speed once) is the sufficient one.
-
-### 7.5 Limitations
-
-* **The Green-Lagrange elastoplastic law softens in compression.** Its
-  additive split bounds the second Piola-Kirchhoff stress by the yield
-  stress, so the nominal stress `F S` falls with the compressive stretch:
-  one plastic Hex8 compressed uniaxially (free sides, 100 MPa yield,
-  300 MPa hardening) carries at most 123 N at a stretch of 0.7-0.8 and
-  71 N at 0.3, where the logarithmic kinematics carry 295 N and 1 531 N.
-  Under a tool, an element past that limit can collapse - the full cone's
-  runs stop there (section 7.4), whatever the speed or scaling. Parts
-  formed to plastic strains of order one need
-  `"kinematics": "finite_logarithmic"`, which the dedicated kernel runs at
-  about 6 times the Green-Lagrange cost.
-
-* **Inertia is real in the model.** Mass and time scaling make the run
-  dynamic by design; the results approach the quasi-static ones as the
-  equivalent speed `v sqrt(s)` falls (section 7.3), at a cost inversely
-  proportional to it. `max_kinetic_ratio` is a necessary check, not a
-  sufficient one: the springback is the sensitive quantity - check it by
-  halving the equivalent speed once.
-* **Conventional mass scaling** is diagonal: it adds rigid-body inertia to
-  the scaled elements (on the decks, to every element - the sheet's mass is
-  about 200 times the physical one). Selective mass scaling that leaves the
-  translational inertia intact (Olovsson et al. 2005) is not provided, nor is
-  subcycling.
-* **Mass-based penalty contact** is softer than the implicit penalty (a
-  penetration of about `f dt^2 / (s_c m)`: at the default 0.5, 3 um on the
-  test dent and 1 um on the smoke case, against 0.4 and 0.3 um implicitly).
-  The penetration does not fall with the tool speed, so it is a bias of its
-  own beside the inertia: 7 % of the test dent's depth at 0.1, 0.9 % at 0.5
-  (`explicit-dent`, in the history at commit `7d571e6`). Watch `max_penetration_ratio`;
-  `contact_stiffness` above 1 is refused (the step would shrink as
-  `sqrt(4 - s_c)`). An implicit `form` step directly after an explicit step
-  with a tool still in contact would see that penetration with the stiffer
-  implicit law. Follow an explicit forming step by a `release`, or retract
-  the tool explicitly first.
-* **The element eigenvalue bound is conservative**: on undeformed 1 mm
-  sheets of 8 x 8 to 24 x 24 x 2 Hex8 clamped on one edge it lies at 0.93 of
-  the exact limit of the lumped system with 1 x 1 x 0.5 mm elements (the
-  cone's) and 0.98 with 2 x 2 x 0.5 mm ones (the smoke case's), so selective
-  scaling to a target step adds 15 % and 4 % more mass than the exact limit
-  would need (7 % and 2 % more equivalent speed); distorted, formed elements
-  were not measured. Power iteration lies at 0.97 to 0.98 but gives no step
-  per element and cannot drive selective scaling.
-* **The kinetic energy ratio of a retract** is measured against the
-  elastic energy only in the dedicated kernel; through the generic element
-  dispatch it falls back to the internal energy, whose hardening share hides
-  it (`kinetic_ratio_basis` says which). The onset window of the energy
-  balance (10 time steps after the first contact) and the closed-form
-  eigensolver's acceptance (64 units of round-off) are fixed, not settings.
-* **The dedicated kernel** covers Hex8 with the 2 x 2 x 2 rule in 3-D, finite
-  (Green-Lagrange), logarithmic or small-strain kinematics, the elastoplastic
-  laws (and linear elasticity with small strain), no temperature, follower
-  pressure or centrifugal load; everything else (other elements, an element
-  technology added to the element dispatch) runs through the generic
-  dispatch - correct, but about 35 times slower (a plastic 20 x 20 x 2 sheet
-  on one thread: 21 us an element and step against 0.59 us; it allocates its
-  buffers at every step and forms the plastic moduli it does not need). The
-  logarithmic kinematics cost 3.6 us an element and step in the kernel on one
-  thread (the cone's first 1 518 time steps, load 3.3; 4.0 us before the
-  closed-form eigensolver, which is accepted only where its residual shows it
-  accurate - the gain, 10 %, is smaller than the solver's own 2-fold speed-up
-  in isolation, whose fallback rate on a real run was not measured; 30 us
-  through the dispatch): about 6 times the Green-Lagrange kernel
-  (section 7.4). No reduced integration with hourglass control is provided: a
-  fully integrated Hex8 costs about 3 000 instructions a step in the kernel.
-* **Bulk viscosity** is not provided (it matters for shocks, not for
-  quasi-static forming); tools translate (no spin); the time step is uniform
-  over the model.
-* **The quasi-static release** after an explicit step starts from rest: the
-  kinetic energy left at the end of the explicit step is dropped, and its
-  inertia forces are ramped out as part of the start imbalance.
+An explicit central-difference forming step (`form_explicit`) existed until
+the cleanup. The workflow never used it; the physics audit's BM3 replica and
+its explicit-vs-implicit convergence cases ran on it. Its code, tests and
+this section are in the history at commit
+[`7d571e6`](https://github.com/Nathan-W123/springback-precomp/tree/7d571e63af6c899717d49f95f4d7842c9fd7c682).
+A deck with a `form_explicit` step is now refused as an unknown step type.

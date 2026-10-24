@@ -28,9 +28,8 @@
 /// \f$\{11, 22, 33, 12, 23, 31\}\f$ in 3-D) with engineering shear strain.
 ///
 /// Where this fits: Simulations stage - the Green-Lagrange kinematics the elastoplastic
-///   element and the explicit kernel build on.
-/// Called from: fem/Elastoplastic.cpp:kinematics_of,
-///   fem/ExplicitKernel.cpp:ExplicitInternalForce::build_dedicated (reference_gradients)
+///   element builds on.
+/// Called from: fem/Elastoplastic.cpp:kinematics_of
 /// Calls into: elements/Element (StrainOperator)
 /// Start reading at: green_lagrange_operator (fem/TotalLagrangian.cpp)
 #pragma once

@@ -72,7 +72,7 @@ How to read the table:
 | D3 | Forces on the 2 mm mesh | Mean force +7 % (TC) or +24 % (part 2), so robot-compensation inputs are wrong by up to 0.2 mm at 1 µm/N | High, corrected by the challenge | `convergence/results_c1.csv`, challenge C1 |
 | D4 | Layers, thickness points, tool travel per increment, Newton tolerance, contact penalty 10 → 30, release increments | ≤0.008 (≤0.027) each: converged | High | [`convergence/README.md`](convergence/README.md), [`calculix/README.md`](calculix/README.md) |
 | D5 | Penalty 3 instead of 10 | 0.005–0.009 (about 0.02), always towards more sag; halves the cost | High | `convergence/results.csv` |
-| D6 | Explicit vs implicit | 0.017–0.019 on the shape, but 13–20 % less springback, and the gap grows with refinement | Medium | `convergence/cases/h0.625_L2_std_x05` |
+| D6 | Explicit vs implicit | 0.017–0.019 on the shape, but 13–20 % less springback, and the gap grows with refinement | Medium | `convergence/cases/h0.625_L2_std_x05` (the explicit step was removed in the cleanup; at commit 7d571e6; the committed outputs are the record) |
 | **Material parameters (library card vs the published AA5754-O spread)** | | | | |
 | M1 | Yield-locus shape. r-based Hill48 gives a biaxial-to-uniaxial yield ratio of 0.95; AA5754-O is measured at 1.0–1.1. | 0.027–0.042 (≤0.066); springback −6 to −20 % | Medium, upheld | `material/sensitivity.csv` (`hill_sb110`, `vm`) |
 | M2 | Hardening curve beyond tensile-test strains (27–46 % of elements exceed plastic strain 0.19) | 0.007–0.016 (≤0.030) | Medium, upheld | `material/sensitivity.csv` (`hard_*`) |
@@ -120,7 +120,7 @@ profiles and axial-force history were digitised from the PDF's vector graphics.
 - von Mises instead of Yld91.
 
 Halving the pitch alone moved the floor RMS from 0.95 to 0.44 mm. **Neither the 1.4 mm nor the 25–60 % force figure
-may be applied to the AA5754 benchmark.** A converged replica would need about 18 h of explicit time on one thread.
+may be applied to the AA5754 benchmark.** A converged replica would need about 18 h of explicit time on one thread. (The replica's runs used the explicit step, which was removed in the cleanup; at commit 7d571e6; `validation/bm3/` holds their committed outputs.)
 
 **Material data found.** The ESAFORM 2024 benchmark (https://doi.org/10.1007/s12289-025-01928-1, open access)
 reports measured AA5754 data:
@@ -170,7 +170,7 @@ check.
 | 8 | **Material library: replace r-based Hill48** with von Mises, or stress-ratio Hill48 fitted to ESAFORM 2024 / Iadicola biaxial data; take the hardening curve from ESAFORM 2024 Swift | ≤0.04 | Hours, plus retraining the surrogates |
 | 9 | **Gravity as a body load**; element removal plus stress output for trimming | Gravity 0.3–1.9 mm at product scale; trimming 0.1–0.2 here (inferred) | Gravity 1–2 days; trimming 1–2 weeks |
 | 10 | **Force- or spring-controlled tool in sparlab_form** (compliant robot, force-controlled support) | Enables P1/P2 without fixed-point iteration | 1–2 weeks |
-| 11 | **Element refinement along the tool path, or a solid-shell element** (+ multithreaded explicit). A uniform 0.833 mm mesh on a 500 mm sheet is about 360k elements. | Makes production-scale parts (0.1–3.7 m) affordable at converged accuracy | 2–4 weeks |
+| 11 | **Element refinement along the tool path, or a solid-shell element** (+ a multithreaded explicit solver; the one this audit used was removed in the cleanup; at commit 7d571e6). A uniform 0.833 mm mesh on a 500 mm sheet is about 360k elements. | Makes production-scale parts (0.1–3.7 m) affordable at converged accuracy | 2–4 weeks |
 | 12 | **Per-family mesh check** at 0.833 / 0.625 mm for pyramids, domes and elliptic cones | Confirms fix 1 beyond cones | About 1.5 CPU-h per family |
 
 ### 4b. Needs the company (coupons, cell data, scans)
@@ -194,7 +194,7 @@ check.
 | Mesh | In-plane size 40/48 = 0.833 mm, so that it divides the blank and the 5 mm clamp margin; 1 layer; `model.integration.thickness_points: 5`. Rule for other geometries: about 0.2 × tool radius along the path. | Released-shape error 0.021–0.033 RMS; central worst-point estimate about 0.035 (pessimistic 0.08) |
 | Increments | `max_tool_travel` 1 mm; 10 release increments; Newton tolerance 1e-6 | Converged to ≤0.008 |
 | Contact | Penalty scale 10 for validation and compensation runs; 3 for bulk surrogate data (+0.005–0.009, halves cost) | Measured |
-| Solver | Implicit quasi-static, SuiteSparse direct solver | At this size explicit costs 1.5–2.8× more and gives 13–20 % less springback |
+| Solver | Implicit quasi-static, SuiteSparse direct solver | At this size explicit costs 1.5–2.8× more and gives 13–20 % less springback (the explicit step was removed in the cleanup; at commit 7d571e6) |
 | Material, now | AA5754-O, linear+Voce isotropic hardening matched to the ESAFORM 2024 Swift curve; von Mises or stress-ratio Hill48 (not r-based); no kinematic hardening until coupon data exist | The library card is within the published spread; r-based Hill48 contradicts the measured biaxial ratio |
 | Material, after coupons | Hill48 by stress ratio (Yld2000-2d only if the bulge test demands it); Voce fitted to the bulge curve; 2 Chaboche backstresses from the tension-compression test | Fix D |
 | Process | Two tools when the cell is two-sided (fixes A and 6); robot-compliance fixed point (fixes C and 7); real frame and free span (fix E); report the shop's measurement state (fix 4) | Gaps P1–P3, A1 |
@@ -246,6 +246,6 @@ The rules below were followed throughout:
   third run.
 
 What is not committed (see `.gitignore` files):
-- Raw solver output; it is reproducible from the kept decks.
+- Raw solver output; it is reproducible from the kept decks, except the 9 explicit decks (`convergence/cases/*_x05`, `validation/bm3/cases/x_std_*`), which need a build of commit 7d571e6.
 - Literature PDFs and the non-open-access NUMISHEET full text; these are cited by DOI.
 - Raw CalculiX logs.

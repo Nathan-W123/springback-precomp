@@ -25,7 +25,7 @@ prescribed displacements drive the model.
 | `material_regions` | array | `[]` | other materials on element regions; see below |
 | `model` | object | `{}` | element formulation and integration |
 | `boundary_conditions` | array | `[]` | displacement constraints, taken by every step that lists none of its own; may be omitted when every step lists its own |
-| `forming` | object | required | incremental forming by rigid tools; its keys, defaults and refusals are in [`forming.md`](forming.md), section 2, and the `explicit` block of a `form_explicit` step in section 7.2 |
+| `forming` | object | required | incremental forming by rigid tools; its keys, defaults and refusals are in [`forming.md`](forming.md), section 2 |
 
 ## `mesh`
 
@@ -87,7 +87,7 @@ errors on a `file` mesh.
 | `name` | string | `"material"` | names the material in messages |
 | `youngs_modulus` | number [Pa] | required | `> 0` |
 | `poisson_ratio` | number | required | in `(-1, 0.5)` so the constitutive matrix stays positive definite |
-| `density` | number [kg/m^3] | `0` | `>= 0`; a `form_explicit` step needs a positive density of every material |
+| `density` | number [kg/m^3] | `0` | `>= 0`; only the mass matrices use it, and the forming analysis does not |
 | `thermal_expansion`, `reference_temperature`, `conductivity` | number | `0` | accepted and checked (finite; `conductivity >= 0`), without effect: the forming analysis applies no temperature |
 | `plasticity` | object | none | plasticity, below; without it the material is elastic, which only `small_strain` kinematics take: `sparlab_form` models elastoplastic sheets, and under `finite` or `finite_logarithmic` kinematics a deck in which an element's material (after `material_regions`) has none is refused (the elastic large-strain laws were removed; [`forming.md`](forming.md), section 2) |
 
@@ -206,7 +206,7 @@ A sheet of solid Hex8, one element layer through its thickness along `z`:
 |-----|------|---------|---------|
 | `element_formulation` | string | `standard` | `standard`: the trilinear Hex8; `incompatible_modes`: the Hex8 with Wilson-Taylor incompatible modes (nine condensed parameters, Taylor's correction), which does not lock in bending - one or two elements through a sheet's thickness bend correctly. Every kinematics and material of the forming analysis (J2, Hill48, Chaboche; elastic with `small_strain`); not with `mean_dilatation: all` (`auto` leaves it off for these elements) (`docs/formulation.md`, "The Hex8 with incompatible modes") |
 | `integration.stiffness_points` | integer | `2` | Gauss points per direction for the stiffness and the internal forces, 1-4 (2 x 2 x 2) |
-| `integration.mass_points` | integer | `3` | Gauss points per direction for the consistent element mass, 1-4, whose row sums are the lumped mass of a `form_explicit` step |
+| `integration.mass_points` | integer | `3` | Gauss points per direction for the consistent element mass, 1-4 (computed with the model; the forming analysis does not use it) |
 | `integration.thickness_points` | integer | `0` (= `stiffness_points`) | Gauss points through the thickness of a sheet, 1-7, for the stiffness rule `stiffness_points` x `stiffness_points` x `thickness_points` (standard or incompatible modes): 5 to 7 integrate the kinked elastic-plastic stress of a bent sheet, which springback is sensitive to. The plastic history, the stress points and the outputs follow the rule. With `element_formulation: incompatible_modes` a one-point rule (here or in `stiffness_points`) is refused: the mode gradients vanish at the element centre |
 | `integration.thickness_direction` | string | `z` | `x`, `y` or `z`: the direction through the sheet, which carries `thickness_points` - the element's natural axis that the structured generator aligns with it (elements of a mesh from a file whose axis across the sheet is another are warned about) |
 | `integration.face_points` | integer | `2` | accepted (`edge_points` as a synonym) and without effect: the forming analysis integrates no load over faces |
@@ -282,8 +282,7 @@ partitioning (`docs/formulation.md`, section 4), so the reactions are exact.
 
 The tools, the steps, the Newton settings and the output switches of the
 analysis: [`forming.md`](forming.md), section 2 lists every key with its
-default and the refusals, and section 7.2 the `explicit` block of a
-`form_explicit` step. `summary.json`, `config.json`, `mesh.json` and
+default and the refusals. `summary.json`, `config.json`, `mesh.json` and
 `tool_forces.csv` are always written; `output.vtk` and `output.snapshots`
 select the rest (section 3).
 
