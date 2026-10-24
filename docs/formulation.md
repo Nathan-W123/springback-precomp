@@ -315,12 +315,13 @@ history at commit 7d571e6).
 `fem/Assembler.cpp` builds the sparse global matrices,
 
 ```
-  K = sum_e  s_e  A_e^T K_e^0 A_e            M = sum_e  m_e  A_e^T M_e^0 A_e
+  K = sum_e  s_e  A_e^T K_e^0 A_e            M = sum_e  A_e^T M_e^0 A_e
 ```
 
-`A_e` is the (implicit) DOF gather operator, and `s_e`, `m_e` are optional
-per-element scale factors, 1 when omitted. The forming analysis assembles
-only the tangent; the mass matrices are tested but no analysis uses them.
+`A_e` is the (implicit) DOF gather operator, and `s_e` an optional
+per-element stiffness factor, 1 when omitted. The forming analysis
+assembles only the tangent; the consistent mass matrix is tested but no
+analysis uses it.
 
 On a **uniform structured mesh** all cells are geometrically identical, so
 `K_e^0` and `M_e^0` are integrated once and reused. The generic per-element

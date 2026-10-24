@@ -18,7 +18,7 @@
 /// **Finite kinematics** (large displacement and rotation, small strain).
 /// The return takes the Green-Lagrange strain \f$E\f$ for the strain and
 /// gives the second Piola-Kirchhoff stress \f$S\f$: the additive split
-/// \f$E = E^e + E^p + E^\theta\f$ with \f$S = D E^e\f$ (linear elasticity
+/// \f$E = E^e + E^p\f$ with \f$S = D E^e\f$ (linear elasticity
 /// written in the Green-Lagrange strain, the Saint Venant-Kirchhoff form),
 /// exact under any rigid rotation and meant for strains that stay small
 /// (with small strains the materially-non-linear-only relations may be

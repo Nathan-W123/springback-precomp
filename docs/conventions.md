@@ -109,7 +109,8 @@ columns follow the same order (`sxx, syy, szz, sxy, syz, szx`).
 The implicit forming steps' Newton tolerances (`forming.newton`:
 `residual_tolerance`, `displacement_tolerance`, `max_iterations`, `max_cuts`,
 `max_increments`) are deck keys, documented with their defaults in
-[`forming.md`](forming.md), section 2; every run records the values it used in `summary.json`.
+[`forming.md`](forming.md), section 2; every run records them in
+`config.json`, and all but `max_increments` again in `summary.json`.
 The material-point and element tolerances are fixed constants:
 
 | Tolerance | Value | What it bounds |

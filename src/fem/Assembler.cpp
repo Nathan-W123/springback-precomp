@@ -258,56 +258,14 @@ SparseMatrix Assembler::assemble_stiffness(const Vector* scale) const {
   return k;
 }
 
-SparseMatrix Assembler::assemble_mass(MassType type, const Vector* scale) const {
-  const Mesh& mesh = model_.mesh();
-  const Index ne = mesh.num_elements();
-  check_scale(scale, ne, "mass");
+SparseMatrix Assembler::assemble_mass() const {
   for (const Material& material : model_.materials()) {
     if (material.density() <= 0.0) {
       throw ModelError("mass assembly requires a positive density of every material; "
-                       "material '" + material.name() +
-                       "' has none");
+                       "material '" + material.name() + "' has none");
     }
   }
-
-  if (type == MassType::Consistent && (scale == nullptr || scale->minCoeff() > 0.0)) {
-    return scatter([this](Index e) -> const Matrix& { return element_mass(e); }, scale);
-  }
-
-  const int npe = mesh.nodes_per_elem();
-  const int edofs = npe * model_.dofs_per_node();
-  TripletList triplets;
-  triplets.reserve(static_cast<std::size_t>(ne) * edofs * edofs);
-
-  std::vector<Index> gdofs(static_cast<std::size_t>(edofs));
-  for (Index e = 0; e < ne; ++e) {
-    const Scalar s = scale ? (*scale)(e) : 1.0;
-    if (s == 0.0) continue;
-    const Matrix& me = element_mass(e);
-    model_.dofs().element_dofs(mesh.element_nodes(e), npe, gdofs.data());
-    if (type == MassType::Consistent) {
-      for (int i = 0; i < edofs; ++i) {
-        for (int j = 0; j < edofs; ++j) {
-          triplets.emplace_back(gdofs[static_cast<std::size_t>(i)],
-                                gdofs[static_cast<std::size_t>(j)], s * me(i, j));
-        }
-      }
-    } else {
-      // Row-sum lumping. For the Hex8 with a consistent mass matrix the row
-      // sums are positive and reproduce the element mass exactly, so total
-      // mass is conserved.
-      for (int i = 0; i < edofs; ++i) {
-        const Scalar lumped = me.row(i).sum();
-        triplets.emplace_back(gdofs[static_cast<std::size_t>(i)],
-                              gdofs[static_cast<std::size_t>(i)], s * lumped);
-      }
-    }
-  }
-
-  SparseMatrix m(model_.dofs().num_dofs(), model_.dofs().num_dofs());
-  m.setFromTriplets(triplets.begin(), triplets.end());
-  m.makeCompressed();
-  return m;
+  return scatter([this](Index e) -> const Matrix& { return element_mass(e); }, nullptr);
 }
 
 SparseMatrix Assembler::assemble_elementwise(

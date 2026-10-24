@@ -5,11 +5,10 @@
 /// \f[
 ///   \mathbf{K} = \sum_e s_e\, \mathbf{A}_e^T \mathbf{K}_e^0 \mathbf{A}_e,
 ///   \qquad
-///   \mathbf{M} = \sum_e m_e\, \mathbf{A}_e^T \mathbf{M}_e^0 \mathbf{A}_e,
+///   \mathbf{M} = \sum_e \mathbf{A}_e^T \mathbf{M}_e^0 \mathbf{A}_e,
 /// \f]
 /// where \f$\mathbf{A}_e\f$ is the (implicit) DOF gather operator, and
-/// \f$s_e\f$, \f$m_e\f$ are optional per-element scale factors (1 when
-/// omitted).
+/// \f$s_e\f$ are optional per-element stiffness factors (1 when omitted).
 ///
 /// On a *uniform structured* mesh every cell has identical geometry, so
 /// \f$\mathbf{K}_e^0\f$ and \f$\mathbf{M}_e^0\f$ are computed once and reused.
@@ -64,10 +63,8 @@ class Assembler {
   ///        num_elements); `nullptr` means all ones.
   SparseMatrix assemble_stiffness(const Vector* scale = nullptr) const;
 
-  /// Assemble the global mass matrix [kg].
-  /// \param type consistent or lumped (row sums).
-  /// \param scale optional per-element mass factors; `nullptr` means all ones.
-  SparseMatrix assemble_mass(MassType type, const Vector* scale = nullptr) const;
+  /// Assemble the global consistent mass matrix [kg].
+  SparseMatrix assemble_mass() const;
 
   /// Extract the free-free block \f$K_{ff}\f$ of a full-size matrix.
   SparseMatrix reduce_free_free(const SparseMatrix& full) const;

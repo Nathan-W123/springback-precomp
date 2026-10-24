@@ -92,11 +92,13 @@
 /// a vanishing pivot.
 ///
 /// **Assumptions and limits.** Quasi-static (no inertia), isothermal; the
-/// penalty leaves a penetration of about \f$p\,h/(sE)\f$; the elastoplastic
-/// law is the additive split of the Green-Lagrange strain, meant for small
-/// elastic strains (Elastoplastic.hpp) - plastic strains of order one in
-/// forming are beyond its accuracy for the stress, not for equilibrium; the
-/// mesh is never refined, trimmed or remapped.
+/// penalty leaves a penetration of about \f$p\,h/(sE)\f$; with `finite`
+/// kinematics the elastoplastic law is the additive split of the
+/// Green-Lagrange strain, meant for small elastic strains - plastic strains
+/// of order one are beyond its accuracy for the stress, not for equilibrium
+/// - while `finite_logarithmic` (precomp's setting) returns in the
+/// logarithmic strain (Elastoplastic.hpp); the mesh is never refined,
+/// trimmed or remapped.
 ///
 /// Where this fits: Simulations stage - the analysis sparlab_form runs on a forming deck:
 ///   form steps drive the tools over the sheet, release steps let it spring back.

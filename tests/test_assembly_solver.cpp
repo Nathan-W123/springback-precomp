@@ -100,8 +100,8 @@ TEST_CASE("the element-matrix cache agrees with per-element integration",
   REQUIRE((a - b).cwiseAbs().maxCoeff() / a.cwiseAbs().maxCoeff() ==
           Approx(0.0).margin(1.0e-15));
 
-  const Matrix ma(cached.assemble_mass(MassType::Consistent));
-  const Matrix mb(plain.assemble_mass(MassType::Consistent));
+  const Matrix ma(cached.assemble_mass());
+  const Matrix mb(plain.assemble_mass());
   REQUIRE((ma - mb).cwiseAbs().maxCoeff() / ma.cwiseAbs().maxCoeff() ==
           Approx(0.0).margin(1.0e-15));
 }

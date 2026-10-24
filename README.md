@@ -107,7 +107,7 @@ since been removed (see [History](#history)).
 |---|---|
 | `src/`, `include/`, `apps/sparlab_form.cpp` | the C++ forming simulator ([`docs/forming.md`](docs/forming.md)) |
 | `tests/` | C++ unit tests of the kept engine code (ctest) |
-| `configs/forming/` | small forming decks: the CI smoke case and examples |
+| `configs/forming/` | the CI smoke deck (`spif_smoke.json`) and its tool path |
 | `python/precomp/` | the Python package ([`docs/precomp.md`](docs/precomp.md), [`docs/precomp_ml.md`](docs/precomp_ml.md)) |
 | `python/tests/` | pytest suite, including integration tests against the real `sparlab_form` |
 | `python/scripts/springback_fine_benchmark.py` | baselines: uncompensated and FE-DA runs of the 8 test parts |
@@ -208,12 +208,14 @@ From [`benchmarks/physics_audit`](benchmarks/physics_audit/README.md)
 
 ## History
 
-This repository was trimmed on 2026-10-13 to the code the workflow above
-uses. Everything removed - the general-purpose SparLab engine (static,
-modal, buckling and thermal analyses, topology optimisation, other element
-types), the explicit forming step (on which the physics audit's BM3 replica
-and explicit-vs-implicit cases ran; their committed results stay as the
-record), the elastic large-strain laws, the U-Net and gradient-boosting models, the follow-up
+This repository was trimmed on 2026-10-13 and 2026-10-24 to the code the
+workflow above uses. Everything removed - the general-purpose SparLab
+engine (static, modal, buckling and thermal analyses, topology
+optimisation, other element types), the explicit forming step and the
+unused thermal material properties (both removed on 2026-10-24; the physics
+audit's BM3 replica and explicit-vs-implicit cases ran on the explicit
+step, and their committed results stay as the record), the elastic
+large-strain laws, the U-Net and gradient-boosting models, the follow-up
 experiments on top of the headline method, the robot-compliance study, the
 `precomp` command line, the proxy-data demonstration and the engine
 figures - is in the history at commit

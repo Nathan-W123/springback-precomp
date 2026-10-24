@@ -34,12 +34,6 @@
 
 namespace sparlab {
 
-/// Mass-matrix formulation.
-enum class MassType {
-  Consistent,  ///< M_e = rho t int N^T N dOmega (default)
-  Lumped       ///< row-sum lumping of the consistent matrix (diagonal)
-};
-
 /// A finite element model: mesh, element, materials, constraints and DOFs.
 class FemModel {
  public:

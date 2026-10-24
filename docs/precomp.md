@@ -19,7 +19,7 @@ material data**; nothing was formed or scanned.
 pip install -e .                  # the package `precomp` from python/precomp
 pip install -e '.[dev]'           # + pytest
 pip install -e '.[torch]'         # + torch, for precomp.ml's MLPEnsemble
-python3 -m pytest python/tests -q # 151 tests (42 for precomp.ml), about 3.5 min on a
+python3 -m pytest python/tests -q # 149 tests (42 for precomp.ml), about 3.5 min on a
                                   # 4-core machine; the 6 integration tests skip
                                   # without build/bin/sparlab_form
 ```
