@@ -39,7 +39,6 @@ struct Point {
   Matrix g;              ///< reference gradients dN/dX, dim x n
   Matrix h;              ///< displacement gradient, dim x dim
   Scalar weight = 0.0;   ///< w detJ t
-  Scalar delta_t = 0.0;  ///< temperature change per unit load factor
   Matrix bnl;            ///< logarithmic: B_NL (6 x nd), the variation of E
   LogarithmicStrain log; ///< logarithmic: E_log and its derivatives
   /// logarithmic + averaged: s = b-bar - b, the mean less the point's
@@ -95,22 +94,13 @@ void refuse_inverted(const Matrix& f, int dim) {
 }
 
 Kinematic kinematics_of(const FemModel& model, Index e, const Vector& ue, Kinematics kinematics,
-                        bool mean_dilatation, const Vector* temperature) {
+                        bool mean_dilatation) {
   const Mesh& mesh = model.mesh();
   const Element& element = model.element();
   const int dim = mesh.dim();
   const int n = mesh.nodes_per_elem();
   const Scalar t = dim == 2 ? model.thickness() : 1.0;
   const Matrix x0 = mesh.element_coordinates(e);
-  const Material& mat = model.material_of(e);
-  const bool thermal = temperature != nullptr && temperature->size() > 0 &&
-                       mat.thermal_expansion() != 0.0;
-  Vector te;
-  if (thermal) {
-    te.resize(n);
-    const Index* nodes = mesh.element_nodes(e);
-    for (int a = 0; a < n; ++a) te(a) = (*temperature)(nodes[a]);
-  }
   Matrix u(dim, n);
   for (int a = 0; a < n; ++a) {
     for (int k = 0; k < dim; ++k) u(k, a) = ue(dim * a + k);
@@ -142,9 +132,6 @@ Kinematic kinematics_of(const FemModel& model, Index e, const Vector& ue, Kinema
       p.strain = p.b * ue;
     }
     p.weight = ip.weight * op.detJ * t;
-    if (thermal) {
-      p.delta_t = element.shape_functions(ip.point).dot(te) - mat.reference_temperature();
-    }
     out.points.push_back(std::move(p));
   }
   // Mean dilatation: every point's dilatation (with logarithmic kinematics
@@ -177,35 +164,6 @@ Kinematic kinematics_of(const FemModel& model, Index e, const Vector& ue, Kinema
     }
   }
   return out;
-}
-
-/// The temperature change the return sees at load factor lambda, and its
-/// derivative with respect to lambda: lambda dT0 with small strain; with
-/// finite kinematics the change whose linear thermal strain is the Green
-/// strain of the free thermal stretch, dT (1 + alpha dT / 2); with
-/// logarithmic kinematics the one whose thermal strain is its log strain,
-/// ln(1 + alpha dT) / alpha.
-void thermal_change(const Material& mat, Kinematics kinematics, Scalar dt0,
-                    Scalar lambda, Scalar& change, Scalar& rate) {
-  const Scalar dt = lambda * dt0;
-  const Scalar alpha = mat.thermal_expansion();
-  if (kinematics == Kinematics::Finite) {
-    change = dt * (1.0 + 0.5 * alpha * dt);
-    rate = dt0 * (1.0 + mat.thermal_expansion() * dt);
-  } else if (kinematics == Kinematics::FiniteLogarithmic && alpha != 0.0) {
-    const Scalar stretch = 1.0 + alpha * dt;
-    if (!(stretch > 0.0)) {
-      std::ostringstream os;
-      os << "material '" << mat.name() << "': the free thermal stretch 1 + alpha dT = "
-         << stretch << " is not positive";
-      throw SolverError(os.str());
-    }
-    change = std::log1p(alpha * dt) / alpha;
-    rate = dt0 / stretch;
-  } else {
-    change = dt;
-    rate = dt0;
-  }
 }
 
 Matrix3 tensor3(const Vector6& v) {
@@ -267,18 +225,16 @@ int elastoplastic_points(const FemModel& model) {
 
 ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const Vector& ue,
                                            const std::vector<PlasticState>& committed,
-                                           bool mean_dilatation, const Vector* temperature,
-                                           Scalar temperature_scale, bool want_tangent,
+                                           bool mean_dilatation, bool want_tangent,
                                            Kinematics kinematics, const Vector* internal) {
   // Incompatible-mode Hex8: handled in fem/IncompatibleModes.cpp.
   if (model.element().num_internal_dofs() > 0) {
     detail::refuse_mean_dilatation(mean_dilatation);
     return detail::incompatible_elastoplastic_element(model, e, ue, committed, internal,
-                                                      temperature, temperature_scale,
                                                       want_tangent, kinematics);
   }
   // Strain and strain operator at every point (kinematics_of above).
-  Kinematic kin = kinematics_of(model, e, ue, kinematics, mean_dilatation, temperature);
+  Kinematic kin = kinematics_of(model, e, ue, kinematics, mean_dilatation);
   if (committed.size() != kin.points.size()) {
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
@@ -290,23 +246,15 @@ ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const
   const int nd = static_cast<int>(ue.size());
   const bool finite = kinematics == Kinematics::Finite;
   const bool logarithmic = kinematics == Kinematics::FiniteLogarithmic;
-  const bool thermal = std::any_of(kin.points.begin(), kin.points.end(),
-                                   [](const Point& p) { return p.delta_t != 0.0; });
 
   ElastoplasticElement out;
   out.internal_force = Vector::Zero(nd);
   if (want_tangent) out.tangent = Matrix::Zero(nd, nd);
-  if (thermal) out.thermal_force_rate = Vector::Zero(nd);
   out.states.reserve(kin.points.size());
   // Per point: plastic return (material/Plasticity), then add to force and tangent.
   for (std::size_t q = 0; q < kin.points.size(); ++q) {
     Point& p = kin.points[q];
-    Scalar change = 0.0;
-    Scalar rate = 0.0;
-    thermal_change(mat, kinematics, p.delta_t, temperature_scale, change, rate);
-    // The thermal load rate needs the tangent too.
-    const PlasticResponse r =
-        plastic_return(mat, state, p.strain, committed[q], change, want_tangent || thermal);
+    const PlasticResponse r = plastic_return(mat, state, p.strain, committed[q], want_tangent);
     const Scalar w = p.weight;
     out.internal_force.noalias() += w * (p.b.transpose() * r.stress);
     out.energy += w * r.energy;
@@ -339,14 +287,6 @@ ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const
           }
         }
       }
-    }
-    if (thermal && rate != 0.0) {
-      // At fixed displacement the thermal strain alpha dT_e(lambda) m moves
-      // the stress by -C alpha (d dT_e/d lambda) m, with the consistent (and,
-      // in plane stress, condensed) tangent.
-      Vector6 m = Vector6::Zero();
-      m.head(3).setConstant(mat.thermal_expansion() * rate);
-      out.thermal_force_rate.noalias() -= w * (p.b.transpose() * (r.tangent * m));
     }
     if (r.yielding) ++out.yielding_points;
     out.states.push_back(r.state);
@@ -401,15 +341,14 @@ ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const
 
 ElastoplasticStress elastoplastic_stress(const FemModel& model, Index e, const Vector& ue,
                                          const std::vector<PlasticState>& committed,
-                                         bool mean_dilatation, const Vector* temperature,
-                                         Scalar temperature_scale, Kinematics kinematics,
+                                         bool mean_dilatation, Kinematics kinematics,
                                          const Vector* internal) {
   if (model.element().num_internal_dofs() > 0) {
     detail::refuse_mean_dilatation(mean_dilatation);
     return detail::incompatible_elastoplastic_stress(model, e, ue, committed, internal,
-                                                     temperature, temperature_scale, kinematics);
+                                                     kinematics);
   }
-  const Kinematic kin = kinematics_of(model, e, ue, kinematics, mean_dilatation, temperature);
+  const Kinematic kin = kinematics_of(model, e, ue, kinematics, mean_dilatation);
   if (committed.size() != kin.points.size()) {
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
@@ -423,12 +362,9 @@ ElastoplasticStress elastoplastic_stress(const FemModel& model, Index e, const V
   out.min_jacobian = std::numeric_limits<Scalar>::infinity();
   for (std::size_t q = 0; q < kin.points.size(); ++q) {
     const Point& p = kin.points[q];
-    Scalar change = 0.0;
-    Scalar rate = 0.0;
-    thermal_change(mat, kinematics, p.delta_t, temperature_scale, change, rate);
     // The committed state is the converged one at this displacement, so the
     // return reproduces it (an elastic check from it).
-    const PlasticResponse r = plastic_return(mat, state, p.strain, committed[q], change, false);
+    const PlasticResponse r = plastic_return(mat, state, p.strain, committed[q], false);
     Vector6 cauchy = r.stress;
     Vector6 piola_kirchhoff = r.stress;
     // The deformation measures use the element's own strain, not the
@@ -492,11 +428,6 @@ ElastoplasticStress elastoplastic_stress(const FemModel& model, Index e, const V
 namespace detail {
 
 void refuse_inverted_point(const Matrix& f, int dim) { refuse_inverted(f, dim); }
-
-void elastoplastic_temperature_change(const Material& mat, Kinematics kinematics,
-                                      Scalar dt0, Scalar lambda, Scalar& change, Scalar& rate) {
-  thermal_change(mat, kinematics, dt0, lambda, change, rate);
-}
 
 }  // namespace detail
 }  // namespace sparlab

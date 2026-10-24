@@ -31,14 +31,10 @@ struct Evaluation {
   Vector load_rate;  ///< q = -dR/dlambda
   SparseMatrix tangent;
   Scalar energy = 0.0;
-  /// Norm of the gross assembly, sum_e |f_e| per DOF plus |f_ext| (and the
-  /// thermal forces below): the scale of the round-off in the residual,
-  /// below which no tolerance can be met.
+  /// Norm of the gross assembly, sum_e |f_e| per DOF plus |f_ext|: the
+  /// scale of the round-off in the residual, below which no tolerance can be
+  /// met.
   Scalar gross = 0.0;
-  /// Norm of the gross thermal forces, sum_e |lambda df_e/dlambda| per DOF:
-  /// the load a temperature change exerts, which a free expansion balances
-  /// with no external force or reaction at all.
-  Scalar thermal = 0.0;
   /// Elastoplastic elements: the internal variables of every point after the
   /// return from the committed ones (empty for an elastic element), and the
   /// number of points whose return was plastic.
@@ -200,10 +196,8 @@ class NonlinearSystem {
     const int nd = dim * npe;
     const Index ne = mesh.num_elements();
     const Index n = model_.dofs().num_dofs();
-    const Vector* temperature = nullptr;
 
     std::vector<Vector> f_el(static_cast<std::size_t>(ne));
-    std::vector<Vector> rate_el(static_cast<std::size_t>(ne));
     std::vector<Matrix> k_el(want_tangent ? static_cast<std::size_t>(ne) : 0);
     std::vector<Scalar> energy_el(static_cast<std::size_t>(ne), 0.0);
     std::vector<std::vector<PlasticState>> states(plastic_ ? static_cast<std::size_t>(ne) : 0);
@@ -221,9 +215,9 @@ class NonlinearSystem {
         for (int a = 0; a < npe; ++a) {
           for (int k = 0; k < dim; ++k) ue(dim * a + k) = u(nodes[a] * dim + k);
         }
-        ElastoplasticElement ep = elastoplastic_element(
-            model_, e, ue, committed(e), averaged(e), temperature, lambda, want_tangent,
-            options_.kinematics, internal_of(e));
+        ElastoplasticElement ep =
+            elastoplastic_element(model_, e, ue, committed(e), averaged(e), want_tangent,
+                                  options_.kinematics, internal_of(e));
         if (elastoplastic(e)) {
           states[static_cast<std::size_t>(e)] = std::move(ep.states);
           yielding[static_cast<std::size_t>(e)] = ep.yielding_points;
@@ -232,7 +226,6 @@ class NonlinearSystem {
           modes[static_cast<std::size_t>(e)] = std::move(ep.internal);
         }
         f_el[static_cast<std::size_t>(e)] = std::move(ep.internal_force);
-        rate_el[static_cast<std::size_t>(e)] = std::move(ep.thermal_force_rate);
         energy_el[static_cast<std::size_t>(e)] = ep.energy;
         if (want_tangent) k_el[static_cast<std::size_t>(e)] = std::move(ep.tangent);
       } catch (const std::exception& ex) {
@@ -249,20 +242,14 @@ class NonlinearSystem {
     out.internal = Vector::Zero(n);
     out.load_rate = dead_;
     Vector gross = Vector::Zero(n);
-    Vector thermal = Vector::Zero(n);  // sum_e |lambda thermal force rate|
     for (Index e = 0; e < ne; ++e) {
       const Index* nodes = mesh.element_nodes(e);
       const Vector& fe = f_el[static_cast<std::size_t>(e)];
-      const Vector& re = rate_el[static_cast<std::size_t>(e)];
       for (int a = 0; a < npe; ++a) {
         for (int k = 0; k < dim; ++k) {
           const Index dof = nodes[a] * dim + k;
           out.internal(dof) += fe(dim * a + k);
           gross(dof) += std::abs(fe(dim * a + k));
-          if (re.size() > 0) {
-            out.load_rate(dof) -= re(dim * a + k);
-            thermal(dof) += std::abs(lambda * re(dim * a + k));
-          }
         }
       }
       out.energy += energy_el[static_cast<std::size_t>(e)];
@@ -272,8 +259,7 @@ class NonlinearSystem {
     out.modes = std::move(modes);
     out.external = lambda * dead_;
     out.residual = out.internal - out.external;
-    out.gross = (gross + thermal + out.external.cwiseAbs()).norm();
-    out.thermal = thermal.norm();
+    out.gross = (gross + out.external.cwiseAbs()).norm();
     if (want_tangent) {
       out.tangent = assembler_.assemble_elementwise(
           [&](Index e) -> Matrix { return k_el[static_cast<std::size_t>(e)]; });

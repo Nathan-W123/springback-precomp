@@ -253,18 +253,11 @@ Hill48Parameters parse_anisotropy(const ConfigNode& node) {
   return h;
 }
 
-/// A material section: elastic constants, density, the thermal properties
-/// and the plasticity. `dim` is the mesh dimension (a plane model needs z
+/// A material section: elastic constants, density and the plasticity. `dim` is the mesh dimension (a plane model needs z
 /// along an axis of the Hill48 frame).
 Material parse_material(const ConfigNode& mat, const std::string& default_name, int dim) {
-  Material material(mat.positive_number("youngs_modulus"),
-                             mat.require("poisson_ratio").number(),
-                             mat.number_or("density", 0.0),
-                             mat.string_or("name", default_name));
-  const Scalar alpha = mat.number_or("thermal_expansion", 0.0);
-  const Scalar t_ref = mat.number_or("reference_temperature", 0.0);
-  const Scalar conductivity = mat.number_or("conductivity", 0.0);
-  material.set_thermal(alpha, t_ref, conductivity);
+  Material material(mat.positive_number("youngs_modulus"), mat.require("poisson_ratio").number(),
+                    mat.number_or("density", 0.0), mat.string_or("name", default_name));
   const ConfigNode plastic = mat.child("plasticity");
   if (plastic.exists()) {
     PlasticityParameters p;

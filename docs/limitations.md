@@ -55,10 +55,12 @@ What it does not do:
   The elastic large-strain laws (Saint Venant-Kirchhoff, neo-Hookean) and
   their deck key `forming.material_model` were removed.
 
-**No temperature.** The material block still accepts thermal expansion,
-reference temperature and conductivity (precomp writes them), but the forming
-analysis applies no temperature field: no heating from deformation or
-friction, no heat treatment after forming.
+**No temperature.** The forming analysis is isothermal: no thermal strain,
+no heating from deformation or friction, no heat treatment after forming.
+The material keys `thermal_expansion`, `reference_temperature` and
+`conductivity`, which were read but had no effect, were removed in the
+cleanup: a deck that sets them is refused under `--strict-config` and warned
+about otherwise.
 
 **Locking and the Hex8 with incompatible modes.** A fully integrated
 standard Hex8 locks under the isochoric flow of a fully plastic state

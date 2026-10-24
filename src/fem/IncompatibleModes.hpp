@@ -1,8 +1,8 @@
 /// \file IncompatibleModes.hpp
 /// \brief The non-linear kernels of the incompatible-mode Hex8
 ///        (Hex8Incompatible.hpp): the local Newton iteration for the nine
-///        mode parameters and the static condensation of the force, the
-///        tangent and the thermal load rate. Internal to the library; the
+///        mode parameters and the static condensation of the force and the
+///        tangent. Internal to the library; the
 ///        public entry points are `elastoplastic_element` and
 ///        `elastoplastic_stress`, which dispatch here.
 ///
@@ -58,13 +58,12 @@
 /// **Condensation** at the converged parameters:
 /// \f[
 ///   K^* = K_{uu} - K_{u\alpha}K_{\alpha\alpha}^{-1}K_{\alpha u} ,\qquad
-///   f^* = f_u - K_{u\alpha}K_{\alpha\alpha}^{-1}r_\alpha ,\qquad
-///   q^* = q_u - K_{u\alpha}K_{\alpha\alpha}^{-1}q_\alpha ,
+///   f^* = f_u - K_{u\alpha}K_{\alpha\alpha}^{-1}r_\alpha ,
 /// \f]
 /// the derivative of \f$f^*(u) = f_u(u, \alpha(u))\f$ with
 /// \f$d\alpha/du = -K_{\alpha\alpha}^{-1}K_{\alpha u}\f$; the term in
 /// \f$r_\alpha\f$ is the last Newton correction, which makes the error of
-/// \f$f^*\f$ quadratic in the local residual; q is the thermal load rate.
+/// \f$f^*\f$ quadratic in the local residual.
 /// \f$K_{\alpha u}\f$ is not \f$K_{u\alpha}^T\f$ when the material tangent
 /// is not symmetric (Chaboche), and \f$K^*\f$ is then left non-symmetric.
 ///
@@ -133,23 +132,17 @@ void refuse_mean_dilatation(bool mean_dilatation);
 
 ElastoplasticElement incompatible_elastoplastic_element(
     const FemModel& model, Index e, const Vector& ue, const std::vector<PlasticState>& committed,
-    const Vector* internal, const Vector* temperature, Scalar temperature_scale,
-    bool want_tangent, Kinematics kinematics);
+    const Vector* internal, bool want_tangent, Kinematics kinematics);
 
 ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Index e,
                                                       const Vector& ue,
                                                       const std::vector<PlasticState>& committed,
                                                       const Vector* internal,
-                                                      const Vector* temperature,
-                                                      Scalar temperature_scale,
                                                       Kinematics kinematics);
 
 /// Shared with Elastoplastic.cpp: SolverError at an inverted point
-/// (logarithmic kinematics), and the temperature change the return sees at
-/// load factor lambda with its derivative.
+/// (logarithmic kinematics).
 void refuse_inverted_point(const Matrix& f, int dim);
-void elastoplastic_temperature_change(const Material& mat, Kinematics kinematics,
-                                      Scalar dt0, Scalar lambda, Scalar& change, Scalar& rate);
 
 }  // namespace detail
 }  // namespace sparlab

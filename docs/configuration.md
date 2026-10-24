@@ -88,7 +88,6 @@ errors on a `file` mesh.
 | `youngs_modulus` | number [Pa] | required | `> 0` |
 | `poisson_ratio` | number | required | in `(-1, 0.5)` so the constitutive matrix stays positive definite |
 | `density` | number [kg/m^3] | `0` | `>= 0`; only the mass matrices use it, and the forming analysis does not |
-| `thermal_expansion`, `reference_temperature`, `conductivity` | number | `0` | accepted and checked (finite; `conductivity >= 0`), without effect: the forming analysis applies no temperature |
 | `plasticity` | object | none | plasticity, below; without it the material is elastic, which only `small_strain` kinematics take: `sparlab_form` models elastoplastic sheets, and under `finite` or `finite_logarithmic` kinematics a deck in which an element's material (after `material_regions`) has none is refused (the elastic large-strain laws were removed; [`forming.md`](forming.md), section 2) |
 
 ### `material.plasticity`

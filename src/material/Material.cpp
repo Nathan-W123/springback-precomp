@@ -70,23 +70,6 @@ Matrix6 Material::three_dimensional_matrix() const {
   return d;
 }
 
-void Material::set_thermal(Scalar expansion, Scalar reference_temperature,
-                                    Scalar conductivity) {
-  if (!std::isfinite(expansion) || !std::isfinite(reference_temperature) ||
-      !std::isfinite(conductivity)) {
-    throw ConfigError("material '" + name_ + "' has a non-finite thermal property");
-  }
-  if (conductivity < 0.0) {
-    std::ostringstream os;
-    os << "material '" << name_ << "' needs a non-negative conductivity (got "
-       << conductivity << " W/(m K))";
-    throw ConfigError(os.str());
-  }
-  alpha_ = expansion;
-  t_ref_ = reference_temperature;
-  k_ = conductivity;
-}
-
 Scalar PlasticityParameters::yield(Scalar alpha) const {
   return yield_stress + hardening_modulus * alpha +
          saturation_stress * -std::expm1(-saturation_rate * alpha);

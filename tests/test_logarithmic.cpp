@@ -289,11 +289,11 @@ TEST_CASE("the logarithmic element tangent is the derivative of its internal for
             static_cast<std::size_t>(elastoplastic_points(model)));
         const Vector u1 = element_motion(model, 0, f1, 0.01, 7u);
         const ElastoplasticElement first =
-            elastoplastic_element(model, 0, u1, virgin, averaged, nullptr, 0.0, false,
+            elastoplastic_element(model, 0, u1, virgin, averaged, false,
                                   Kinematics::FiniteLogarithmic);
         const Vector u2 = element_motion(model, 0, f2, 0.01, 9u);
         const ElastoplasticElement base =
-            elastoplastic_element(model, 0, u2, first.states, averaged, nullptr, 0.0, true,
+            elastoplastic_element(model, 0, u2, first.states, averaged, true,
                                   Kinematics::FiniteLogarithmic);
         const Scalar h = 1.0e-7;
         Scalar error = 0.0;
@@ -302,11 +302,9 @@ TEST_CASE("the logarithmic element tangent is the derivative of its internal for
           Vector um = u2;
           up(j) += h;
           um(j) -= h;
-          const Vector fd = (elastoplastic_element(model, 0, up, first.states, averaged, nullptr,
-                                                   0.0, false, Kinematics::FiniteLogarithmic)
+          const Vector fd = (elastoplastic_element(model, 0, up, first.states, averaged, false, Kinematics::FiniteLogarithmic)
                                  .internal_force -
-                             elastoplastic_element(model, 0, um, first.states, averaged, nullptr,
-                                                   0.0, false, Kinematics::FiniteLogarithmic)
+                             elastoplastic_element(model, 0, um, first.states, averaged, false, Kinematics::FiniteLogarithmic)
                                  .internal_force) /
                             (2.0 * h);
           error = std::max(error, (fd - base.tangent.col(j)).cwiseAbs().maxCoeff());
@@ -326,41 +324,6 @@ TEST_CASE("the logarithmic element tangent is the derivative of its internal for
   }
   INFO("worst " << worst);
   REQUIRE(worst <= 1.0e-8);
-}
-
-TEST_CASE("the logarithmic thermal load rate is the derivative of the internal force with "
-          "respect to the temperature scale",
-          "[logarithmic][element]") {
-  PlasticityParameters p = j2(1.0e9, 60.0e6, 30.0);
-  Material m = steel(&p);
-  m.set_thermal(1.2e-5, 20.0, 50.0);
-  for (const StressState state : {StressState::ThreeDimensional}) {
-    FemModel model = one_element(ElementType::Hex8, state, m);
-    const int dim = model.dim();
-    Vector temperature(model.mesh().num_nodes());
-    for (Index n = 0; n < model.mesh().num_nodes(); ++n) {
-      temperature(n) = 20.0 + 300.0 * model.mesh().node(n).x() + 100.0 * model.mesh().node(n).y();
-    }
-    const Matrix3 f = dim == 3 ? large_deformation(0.5) : plane(large_deformation(0.5));
-    const Vector u = element_motion(model, 0, f, 0.005, 3u);
-    const std::vector<PlasticState> virgin(static_cast<std::size_t>(elastoplastic_points(model)));
-    const Scalar lambda = 0.8;
-    const ElastoplasticElement base = elastoplastic_element(
-        model, 0, u, virgin, false, &temperature, lambda, true, Kinematics::FiniteLogarithmic);
-    REQUIRE(base.yielding_points > 0);
-    // (A step of 1e-4 keeps the plane-stress iteration's residual sigma_33,
-    // 1e-12 of the stress, out of the difference.)
-    const Scalar h = 1.0e-4;
-    const Vector fd = (elastoplastic_element(model, 0, u, virgin, false, &temperature,
-                                             lambda + h, false, Kinematics::FiniteLogarithmic)
-                           .internal_force -
-                       elastoplastic_element(model, 0, u, virgin, false, &temperature,
-                                             lambda - h, false, Kinematics::FiniteLogarithmic)
-                           .internal_force) /
-                      (2.0 * h);
-    INFO(to_string(state) << ": " << relative(base.thermal_force_rate, fd));
-    REQUIRE(relative(base.thermal_force_rate, fd) <= 1.0e-8);
-  }
 }
 
 TEST_CASE("logarithmic kinematics is objective: a superposed rotation leaves T, S, the energy "
@@ -385,9 +348,9 @@ TEST_CASE("logarithmic kinematics is objective: a superposed rotation leaves T, 
     for (const bool averaged : {false, true}) {
       INFO(to_string(type) << (averaged ? ", mean dilatation" : ""));
       const ElastoplasticElement r1 = elastoplastic_element(
-          model, 0, u, virgin, averaged, nullptr, 0.0, false, Kinematics::FiniteLogarithmic);
+          model, 0, u, virgin, averaged, false, Kinematics::FiniteLogarithmic);
       const ElastoplasticElement r2 = elastoplastic_element(
-          model, 0, turned, virgin, averaged, nullptr, 0.0, false, Kinematics::FiniteLogarithmic);
+          model, 0, turned, virgin, averaged, false, Kinematics::FiniteLogarithmic);
       REQUIRE(r1.yielding_points > 0);
       REQUIRE(r2.yielding_points == r1.yielding_points);
       REQUIRE(r2.energy == Approx(r1.energy).epsilon(1e-12));
@@ -404,10 +367,8 @@ TEST_CASE("logarithmic kinematics is objective: a superposed rotation leaves T, 
                     .norm() <= 1.0e-11 * r1.internal_force.cwiseAbs().maxCoeff());
       }
       const ElastoplasticStress t1 = elastoplastic_stress(model, 0, u, r1.states, averaged,
-                                                          nullptr, 0.0,
                                                           Kinematics::FiniteLogarithmic);
       const ElastoplasticStress t2 = elastoplastic_stress(model, 0, turned, r2.states, averaged,
-                                                          nullptr, 0.0,
                                                           Kinematics::FiniteLogarithmic);
       REQUIRE(relative(t2.piola_kirchhoff, t1.piola_kirchhoff) <= 1.0e-11);
       REQUIRE(relative(t2.logarithmic_strain, t1.logarithmic_strain) <= 1.0e-12);
@@ -451,12 +412,12 @@ TEST_CASE("an inverted point is refused with logarithmic kinematics: det F <= 0 
                              << (averaged ? ", mean dilatation" : ""));
       const auto element = [&](const Matrix3& f) {
         return elastoplastic_element(model, 0, element_motion(model, 0, in_plane(f), 0.0, 1u),
-                                     virgin, averaged, nullptr, 0.0, true,
+                                     virgin, averaged, true,
                                      Kinematics::FiniteLogarithmic);
       };
       const auto stress = [&](const Matrix3& f) {
         return elastoplastic_stress(model, 0, element_motion(model, 0, in_plane(f), 0.0, 1u),
-                                    virgin, averaged, nullptr, 0.0,
+                                    virgin, averaged,
                                     Kinematics::FiniteLogarithmic);
       };
       const Matrix3 reflection = Vector3(-0.5, 1.0, 1.0).asDiagonal();
@@ -505,9 +466,8 @@ TEST_CASE("at strains of 1e-6 the logarithmic and the Green-Lagrange element agr
         const std::vector<PlasticState> virgin(
             static_cast<std::size_t>(elastoplastic_points(model)));
         const ElastoplasticElement lg = elastoplastic_element(
-            model, 0, u, virgin, true, nullptr, 0.0, true, Kinematics::FiniteLogarithmic);
-        const ElastoplasticElement gl = elastoplastic_element(model, 0, u, virgin, true, nullptr,
-                                                              0.0, true, Kinematics::Finite);
+            model, 0, u, virgin, true, true, Kinematics::FiniteLogarithmic);
+        const ElastoplasticElement gl = elastoplastic_element(model, 0, u, virgin, true, true, Kinematics::Finite);
         INFO(to_string(type) << (plastic ? ", plastic" : ", elastic") << ", strain "
                              << amplitude);
         REQUIRE(lg.yielding_points == gl.yielding_points);

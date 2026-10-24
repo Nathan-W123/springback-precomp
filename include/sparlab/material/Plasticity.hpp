@@ -8,8 +8,7 @@
 ///        strain and plane stress.
 ///
 /// **The law (J2, radial return).** The strain splits additively,
-/// \f$\varepsilon = \varepsilon^e + \varepsilon^p + \varepsilon^\theta\f$ (the thermal strain
-/// \f$\alpha\Delta T\,I\f$), the stress is \f$\sigma = D\varepsilon^e\f$, and
+/// \f$\varepsilon = \varepsilon^e + \varepsilon^p\f$, the stress is \f$\sigma = D\varepsilon^e\f$, and
 /// with the relative stress \f$\xi = \mathrm{dev}\,\sigma - \beta\f$ the
 /// yield function is
 /// \f[
@@ -216,8 +215,7 @@ struct PlasticResponse {
 
 /// Stress, consistent tangent and updated state at the total strain
 /// `strain` (all six components; in plane stress component 2 is ignored and
-/// found) from the converged state `committed`, with the thermal strain
-/// \f$\alpha\,\Delta T\f$ of `delta_t`: the radial return for von Mises
+/// found) from the converged state `committed`: the radial return for von Mises
 /// with Prager's kinematic hardening at most, the general closest-point
 /// return otherwise. Without `want_tangent` the general 3-D return skips the
 /// tangent (left elastic); plane stress always needs it.
@@ -226,7 +224,7 @@ struct PlasticResponse {
 ///         whose axes miss z (PlasticityParameters::plane_compatible()).
 PlasticResponse plastic_return(const Material& material, StressState state,
                                const Vector6& strain, const PlasticState& committed,
-                               Scalar delta_t = 0.0, bool want_tangent = true);
+                               bool want_tangent = true);
 
 /// The von Mises stress of a 3-D Voigt stress [Pa].
 Scalar von_mises_stress(const Vector6& stress);

@@ -463,14 +463,13 @@ TEST_CASE("the condensed elastoplastic tangent of the incompatible-mode Hex8 is 
     const bool plastic = c.material.plasticity().enabled();
     // A first step, committed; the check is at a second one from it.
     const ElastoplasticElement first = elastoplastic_element(
-        model, 0, deformation(x, c.scale), virgin, false, nullptr, 0.0, true, c.kinematics);
+        model, 0, deformation(x, c.scale), virgin, false, true, c.kinematics);
     REQUIRE(first.internal.size() == 9);
     const std::vector<PlasticState> committed = plastic ? first.states : virgin;
     const Vector alpha = first.internal;
     Vector ue = deformation(x, 1.3 * c.scale);
     for (int a = 0; a < 8; ++a) ue(3 * a + 2) += 0.2 * c.scale * x(0, a) * x(1, a);
-    const ElastoplasticElement el = elastoplastic_element(model, 0, ue, committed, false, nullptr,
-                                                          0.0, true, c.kinematics, &alpha);
+    const ElastoplasticElement el = elastoplastic_element(model, 0, ue, committed, false, true, c.kinematics, &alpha);
     if (plastic) REQUIRE(el.yielding_points == static_cast<int>(points));
     REQUIRE(el.internal_iterations >= 1);
     REQUIRE(el.internal_iterations <= (c.kinematics == Kinematics::SmallStrain && !plastic ? 1 : 5));
@@ -482,7 +481,7 @@ TEST_CASE("the condensed elastoplastic tangent of the incompatible-mode Hex8 is 
               1.0e-6 * el.tangent.cwiseAbs().maxCoeff());
     }
     const Scalar err = tangent_error(el.tangent, ue, 1.0e-8, [&](const Vector& v) {
-      return elastoplastic_element(model, 0, v, committed, false, nullptr, 0.0, false,
+      return elastoplastic_element(model, 0, v, committed, false, false,
                                    c.kinematics, &alpha)
           .internal_force;
     });
@@ -497,9 +496,9 @@ TEST_CASE("the condensed elastoplastic tangent of the incompatible-mode Hex8 is 
         Vector um = ue;
         up(j) += 1.0e-7;
         um(j) -= 1.0e-7;
-        const Scalar wp = elastoplastic_element(model, 0, up, committed, false, nullptr, 0.0,
+        const Scalar wp = elastoplastic_element(model, 0, up, committed, false,
                                                 false, c.kinematics, &alpha).energy;
-        const Scalar wm = elastoplastic_element(model, 0, um, committed, false, nullptr, 0.0,
+        const Scalar wm = elastoplastic_element(model, 0, um, committed, false,
                                                 false, c.kinematics, &alpha).energy;
         energy_err = std::max(energy_err, std::abs((wp - wm) / 2.0e-7 - el.internal_force(j)));
       }
@@ -525,12 +524,12 @@ TEST_CASE("the local iteration of the incompatible modes converges through a loa
       const Matrix x = model.mesh().element_coordinates(0);
       const Scalar scale = k == Kinematics::SmallStrain ? 4.0e-3 : 0.02;
       const ElastoplasticElement first = elastoplastic_element(
-          model, 0, deformation(x, scale), virgin, false, nullptr, 0.0, false, k);
+          model, 0, deformation(x, scale), virgin, false, false, k);
       REQUIRE(first.yielding_points > 0);
       Vector ue = deformation(x, -6.0 * scale);
       for (int a = 0; a < 8; ++a) ue(3 * a) += 2.0 * scale * x(2, a) * x(2, a);
       const ElastoplasticElement el = elastoplastic_element(
-          model, 0, ue, first.states, false, nullptr, 0.0, true, k, &first.internal);
+          model, 0, ue, first.states, false, true, k, &first.internal);
       INFO("local iterations " << el.internal_iterations);
       REQUIRE(el.yielding_points > 0);
       // Measured: 3 (small strain, J2 and Chaboche), 9 (logarithmic, J2),
@@ -539,7 +538,7 @@ TEST_CASE("the local iteration of the incompatible modes converges through a loa
       // And the result is the solution: a restart of the local iteration
       // from it stays there.
       const ElastoplasticElement again = elastoplastic_element(
-          model, 0, ue, first.states, false, nullptr, 0.0, false, k, &el.internal);
+          model, 0, ue, first.states, false, false, k, &el.internal);
       REQUIRE(again.internal_iterations <= 1);
       REQUIRE((again.internal_force - el.internal_force).cwiseAbs().maxCoeff() <=
               1.0e-8 * el.internal_force.cwiseAbs().maxCoeff());
@@ -577,47 +576,21 @@ TEST_CASE("the local iteration of the incompatible modes converges from reversal
         const Matrix x = model.mesh().element_coordinates(0);
         const Kinematics k = Kinematics::FiniteLogarithmic;
         const ElastoplasticElement first = elastoplastic_element(
-            model, 0, deformation(x, 0.02), virgin, false, nullptr, 0.0, false, k);
+            model, 0, deformation(x, 0.02), virgin, false, false, k);
         const Vector ue = deformation(x, factor * 0.02);
         const ElastoplasticElement el = elastoplastic_element(
-            model, 0, ue, first.states, false, nullptr, 0.0, false, k, &first.internal);
+            model, 0, ue, first.states, false, false, k, &first.internal);
         INFO("local iterations " << el.internal_iterations);
         REQUIRE(el.yielding_points > 0);
         // Measured: 9 to 18.
         REQUIRE(el.internal_iterations <= 20);
         const ElastoplasticElement again = elastoplastic_element(
-            model, 0, ue, first.states, false, nullptr, 0.0, false, k, &el.internal);
+            model, 0, ue, first.states, false, false, k, &el.internal);
         REQUIRE(again.internal_iterations <= 1);
         REQUIRE((again.internal_force - el.internal_force).cwiseAbs().maxCoeff() <=
                 1.0e-8 * el.internal_force.cwiseAbs().maxCoeff());
       }
     }
-  }
-}
-
-TEST_CASE("the thermal load rate of the incompatible-mode Hex8 is the derivative of its force",
-          "[incompatible][nonlinear][thermal]") {
-  Material m = j2_steel();
-  m.set_thermal(1.2e-5, 20.0, 50.0);
-  const FemModel model = single_hex(m);
-  const Matrix x = model.mesh().element_coordinates(0);
-  Vector temperature(8);
-  for (int a = 0; a < 8; ++a) temperature(a) = 20.0 + 300.0 * x(0, a) - 150.0 * x(2, a);
-  const std::vector<PlasticState> virgin(8);
-  for (Kinematics k : {Kinematics::SmallStrain, Kinematics::Finite, Kinematics::FiniteLogarithmic}) {
-    INFO(to_string(k));
-    const Vector ue = deformation(x, 2.0e-3);
-    const Scalar lambda = 0.7;
-    const ElastoplasticElement el =
-        elastoplastic_element(model, 0, ue, virgin, false, &temperature, lambda, false, k);
-    REQUIRE(el.thermal_force_rate.size() == 24);
-    const Scalar h = 1.0e-6;
-    const Vector fp = elastoplastic_element(model, 0, ue, virgin, false, &temperature,
-                                            lambda + h, false, k).internal_force;
-    const Vector fm = elastoplastic_element(model, 0, ue, virgin, false, &temperature,
-                                            lambda - h, false, k).internal_force;
-    REQUIRE(((fp - fm) / (2.0 * h) - el.thermal_force_rate).cwiseAbs().maxCoeff() <=
-            1.0e-6 * el.thermal_force_rate.cwiseAbs().maxCoeff());
   }
 }
 
@@ -648,9 +621,9 @@ TEST_CASE("a homogeneous deformation leaves the incompatible modes at zero under
       for (int a = 0; a < 8; ++a) ue.segment<3>(3 * a) = scale * (f - Matrix3::Identity()) * x.col(a);
       const std::vector<PlasticState> virgin(static_cast<std::size_t>(elastoplastic_points(model)));
       const ElastoplasticElement el =
-          elastoplastic_element(model, 0, ue, virgin, false, nullptr, 0.0, false, k);
+          elastoplastic_element(model, 0, ue, virgin, false, false, k);
       const ElastoplasticElement ref =
-          elastoplastic_element(standard, 0, ue, virgin, false, nullptr, 0.0, false, k);
+          elastoplastic_element(standard, 0, ue, virgin, false, false, k);
       REQUIRE(el.internal.cwiseAbs().maxCoeff() <= 1.0e-12);
       REQUIRE((el.internal_force - ref.internal_force).cwiseAbs().maxCoeff() <=
               1.0e-10 * ref.internal_force.cwiseAbs().maxCoeff());
@@ -672,7 +645,7 @@ TEST_CASE("the non-linear incompatible-mode Hex8 is objective and its tangent at
     Vector rigid(24);
     for (int a = 0; a < 8; ++a) rigid.segment<3>(3 * a) = (r - Matrix3::Identity()) * x.col(a);
     const ElastoplasticElement at_rest =
-        elastoplastic_element(model, 0, rigid, virgin, false, nullptr, 0.0, false, k);
+        elastoplastic_element(model, 0, rigid, virgin, false, false, k);
     REQUIRE(at_rest.internal_force.cwiseAbs().maxCoeff() <= 1.0e-3);  // [N], of 1e11 N/m
     REQUIRE(at_rest.internal.cwiseAbs().maxCoeff() <= 1.0e-14);
     // A rotation superposed on a plastic deformation rotates the force and
@@ -683,9 +656,9 @@ TEST_CASE("the non-linear incompatible-mode Hex8 is objective and its tangent at
       rotated.segment<3>(3 * a) = r * (x.col(a) + ue.segment<3>(3 * a)) - x.col(a);
     }
     const ElastoplasticElement el =
-        elastoplastic_element(model, 0, ue, virgin, false, nullptr, 0.0, false, k);
+        elastoplastic_element(model, 0, ue, virgin, false, false, k);
     const ElastoplasticElement er =
-        elastoplastic_element(model, 0, rotated, virgin, false, nullptr, 0.0, false, k);
+        elastoplastic_element(model, 0, rotated, virgin, false, false, k);
     REQUIRE(el.yielding_points == 8);
     for (int a = 0; a < 8; ++a) {
       REQUIRE((er.internal_force.segment<3>(3 * a) - r * el.internal_force.segment<3>(3 * a))
@@ -705,8 +678,7 @@ TEST_CASE("the non-linear incompatible-mode Hex8 is objective and its tangent at
                                           em.integration());
   for (Kinematics kin : {Kinematics::SmallStrain, Kinematics::Finite,
                          Kinematics::FiniteLogarithmic}) {
-    const ElastoplasticElement el = elastoplastic_element(em, 0, Vector::Zero(24), virgin, false,
-                                                          nullptr, 0.0, true, kin);
+    const ElastoplasticElement el = elastoplastic_element(em, 0, Vector::Zero(24), virgin, false, true, kin);
     REQUIRE((el.tangent - k).cwiseAbs().maxCoeff() <= 1.0e-12 * k.cwiseAbs().maxCoeff());
     REQUIRE(el.internal_iterations == 0);
   }
@@ -880,7 +852,7 @@ TEST_CASE("mean dilatation is refused with incompatible modes, and auto does not
   nl.mean_dilatation = MeanDilatation::All;
   REQUIRE_THROWS_AS(detail::NonlinearSystem(model, assembler, nl), ConfigError);
   const std::vector<PlasticState> virgin(8);
-  REQUIRE_THROWS_AS(elastoplastic_element(model, 0, Vector::Zero(24), virgin, true, nullptr, 0.0,
+  REQUIRE_THROWS_AS(elastoplastic_element(model, 0, Vector::Zero(24), virgin, true,
                                           false, Kinematics::SmallStrain),
                     ConfigError);
 }
@@ -1014,7 +986,7 @@ TEST_CASE("under plastic compression the incompatible-mode Hex8 develops its hou
           ue.segment<3>(3 * a) =
               Vector3(axial - 1.0, l - 1.0, l - 1.0).cwiseProduct(Vector3(x.col(a)));
         }
-        return elastoplastic_element(model, 0, ue, committed, false, nullptr, 0.0, tangent,
+        return elastoplastic_element(model, 0, ue, committed, false, tangent,
                                      Kinematics::FiniteLogarithmic, &alpha);
       };
       // The lateral force: f_y on the face y = 1.

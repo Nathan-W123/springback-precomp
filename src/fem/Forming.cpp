@@ -1271,8 +1271,8 @@ FormingResult FormingAnalysis::run(const AnalysisState& start) {
         for (int k = 0; k < dim; ++k) ue(dim * a + k) = u(nodes[a] * dim + k);
       }
       const ElastoplasticStress st =
-          elastoplastic_stress(model_, e, ue, system.committed(e), system.averaged(e), nullptr,
-                               0.0, options_.kinematics, system.internal(e));
+          elastoplastic_stress(model_, e, ue, system.committed(e), system.averaged(e),
+                               options_.kinematics, system.internal(e));
       sr.element_von_mises(e) = st.von_mises;
       if (system.elastoplastic(e)) {
         sr.element_plastic_strain(e) = st.max_equivalent_plastic_strain;

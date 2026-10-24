@@ -64,15 +64,13 @@ Matrix6 elastic_tangent(Scalar k, Scalar g) {
 
 /// The 3-D return at a fully given strain.
 PlasticResponse return_3d(const Material& m, const Vector6& strain,
-                          const PlasticState& committed, Scalar delta_t) {
+                          const PlasticState& committed) {
   const PlasticityParameters& p = m.plasticity();
   const Scalar g = m.shear_modulus();
   const Scalar k = m.lame_lambda() + 2.0 * g / 3.0;
   const Scalar hk = p.kinematic_hardening_modulus;
 
-  Vector6 elastic = strain - committed.plastic_strain;
-  const Scalar thermal = m.thermal_expansion() * delta_t;
-  if (thermal != 0.0) elastic.head(3).array() -= thermal;
+  const Vector6 elastic = strain - committed.plastic_strain;
   const Scalar volumetric = elastic(0) + elastic(1) + elastic(2);
   const Vector6 s_trial = deviatoric_stress(g, elastic);
   const Vector6 xi_trial = s_trial - committed.back_stress;
@@ -337,15 +335,12 @@ Scalar kinematic_energy(const GeneralReturn& r, const PlasticState& state) {
 /// The 3-D closest-point return of Hill48 and/or Chaboche at a fully given
 /// strain.
 PlasticResponse return_general_3d(const Material& m, const Vector6& strain,
-                                  const PlasticState& committed, Scalar delta_t,
-                                  bool want_tangent) {
+                                  const PlasticState& committed, bool want_tangent) {
   const PlasticityParameters& p = m.plasticity();
   const Scalar g = m.shear_modulus();
   const Scalar k = m.lame_lambda() + 2.0 * g / 3.0;
 
-  Vector6 elastic = strain - committed.plastic_strain;
-  const Scalar thermal = m.thermal_expansion() * delta_t;
-  if (thermal != 0.0) elastic.head(3).array() -= thermal;
+  const Vector6 elastic = strain - committed.plastic_strain;
   const Scalar volumetric = elastic(0) + elastic(1) + elastic(2);
   const Vector6 s_trial = deviatoric_stress(g, elastic);
   const GeneralReturn gr(m, committed, s_trial);
@@ -482,15 +477,12 @@ PlasticResponse return_general_3d(const Material& m, const Vector6& strain,
 template <class Return3d>
 PlasticResponse plane_stress(const Material& material, const Return3d& return_3d_at,
                              const Vector6& strain, const PlasticState& committed,
-                             Scalar delta_t, Scalar tolerance) {
+                             Scalar tolerance) {
   const Scalar g = material.shear_modulus();
   const Scalar lambda = material.lame_lambda();
-  const Scalar thermal = material.thermal_expansion() * delta_t;
   const Vector6& ep = committed.plastic_strain;
   Vector6 trial = strain;
-  trial(2) = ep(2) + thermal -
-             lambda / (lambda + 2.0 * g) *
-                 ((strain(0) - ep(0) - thermal) + (strain(1) - ep(1) - thermal));
+  trial(2) = ep(2) - lambda / (lambda + 2.0 * g) * ((strain(0) - ep(0)) + (strain(1) - ep(1)));
   PlasticResponse out = return_3d_at(trial);
   const Scalar scale =
       std::max(out.stress.head(3).cwiseAbs().maxCoeff(), material.plasticity().yield_stress);
@@ -520,13 +512,12 @@ PlasticResponse plane_stress(const Material& material, const Return3d& return_3d
 
 PlasticResponse plastic_return(const Material& material, StressState state,
                                const Vector6& strain, const PlasticState& committed,
-                               Scalar delta_t, bool want_tangent) {
+                               bool want_tangent) {
   if (!material.plasticity().general()) {
-    if (state != StressState::PlaneStress) return return_3d(material, strain, committed, delta_t);
+    if (state != StressState::PlaneStress) return return_3d(material, strain, committed);
     return plane_stress(
-        material,
-        [&](const Vector6& trial) { return return_3d(material, trial, committed, delta_t); },
-        strain, committed, delta_t, 1.0e-12);
+        material, [&](const Vector6& trial) { return return_3d(material, trial, committed); },
+        strain, committed, 1.0e-12);
   }
   if (state != StressState::ThreeDimensional && !material.plasticity().plane_compatible()) {
     throw ConfigError("material '" + material.name() +
@@ -536,17 +527,15 @@ PlasticResponse plastic_return(const Material& material, StressState state,
                       "in-plane flow)");
   }
   if (state != StressState::PlaneStress) {
-    return return_general_3d(material, strain, committed, delta_t, want_tangent);
+    return return_general_3d(material, strain, committed, want_tangent);
   }
   // sigma_33 to 1e-13 of the stress: a residual sigma_33 moves the yield
   // function of the elastic re-check (whose predictor zeroes it) by about as
   // much, and that must stay below the re-check's 1e-12 sigma_y.
   return plane_stress(
       material,
-      [&](const Vector6& trial) {
-        return return_general_3d(material, trial, committed, delta_t, true);
-      },
-      strain, committed, delta_t, 1.0e-13);
+      [&](const Vector6& trial) { return return_general_3d(material, trial, committed, true); },
+      strain, committed, 1.0e-13);
 }
 
 Scalar von_mises_stress(const Vector6& s) {

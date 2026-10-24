@@ -24,11 +24,6 @@
 /// In plane strain the out-of-plane stress is
 /// \f$\sigma_{zz} = \nu(\sigma_{xx}+\sigma_{yy})\f$.
 ///
-/// **Thermal strain.** A temperature change \f$\Delta T = T - T_{ref}\f$ gives
-/// the isotropic free strain \f$\varepsilon_0 = \alpha\Delta T\{1,1,1,0,0,0\}\f$,
-/// which the plastic returns (Plasticity.hpp) take off the 3-D strain, the
-/// plane states included: \f$\sigma = D(\varepsilon - \varepsilon_0)\f$.
-///
 /// Three-dimensional elasticity, with Lame constants
 /// \f$\lambda = E\nu/((1+\nu)(1-2\nu))\f$ and \f$G = E/(2(1+\nu))\f$:
 /// \f[
@@ -200,8 +195,8 @@ struct PlasticityParameters {
 };
 
 /// The material of the deck's `material` block: isotropic linear elasticity
-/// described by \f$(E, \nu, \rho)\f$, its PlasticityParameters (elastic
-/// unless set_plasticity is called) and its thermal properties.
+/// described by \f$(E, \nu, \rho)\f$ and its PlasticityParameters (elastic
+/// unless set_plasticity is called).
 class Material {
  public:
   /// \param youngs_modulus E [Pa], must be > 0.
@@ -253,27 +248,11 @@ class Material {
   ///         parallel to the sheet normal.
   void set_plasticity(const PlasticityParameters& parameters);
 
-  /// Linear thermal expansion coefficient alpha [1/K]; 0 means no thermal
-  /// strain.
-  Scalar thermal_expansion() const { return alpha_; }
-  /// Temperature at which the material carries no thermal strain [K, or
-  /// deg C when every temperature of the deck is in deg C].
-  Scalar reference_temperature() const { return t_ref_; }
-  /// Thermal conductivity k [W/(m K)]: read and validated, but no analysis
-  /// of sparlab_form uses it.
-  Scalar conductivity() const { return k_; }
-  /// Set the thermal properties.
-  /// \throws ConfigError for a negative conductivity or non-finite input.
-  void set_thermal(Scalar expansion, Scalar reference_temperature, Scalar conductivity);
-
  private:
   Scalar e_;
   Scalar nu_;
   Scalar rho_;
   std::string name_;
-  Scalar alpha_ = 0.0;
-  Scalar t_ref_ = 0.0;
-  Scalar k_ = 0.0;
   PlasticityParameters plasticity_;
 };
 

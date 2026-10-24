@@ -92,7 +92,7 @@ struct IntegrationPoint {
 ///   \alpha = K_{\alpha\alpha}^{-1}\Big(\int \tilde B^T D\,\varepsilon_0\,dV
 ///             - K_{\alpha u} u_e\Big)
 /// \f]
-/// for an element with the initial (thermal) strain \f$\varepsilon_0\f$,
+/// for an element with an initial strain \f$\varepsilon_0\f$,
 /// so that the strain \f$Bu_e + \tilde B\alpha\f$ is
 /// \f$\hat B u_e + \tilde B K_{\alpha\alpha}^{-1}\int\tilde B^T
 /// D\varepsilon_0\f$ with \f$\hat B = B - \tilde B\,K_{\alpha\alpha}^{-1}

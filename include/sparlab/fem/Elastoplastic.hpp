@@ -28,13 +28,7 @@
 ///   f_e = \int B_{NL}^T S\,dV_0 ,\qquad
 ///   K_e = \int B_{NL}^T C\,B_{NL}\,dV_0 + \int (G^T\mathbf{S}\,G)\otimes I\,dV_0
 /// \f]
-/// with the operators of TotalLagrangian.hpp. The thermal strain
-/// \f$E^\theta\f$ is the Green strain of the free thermal stretch
-/// \f$\vartheta = 1 + \alpha\Delta T\f$, \f$\alpha\Delta T\,(1 + \alpha\Delta T/2)\f$
-/// in each direction, so a freely heated body is stress-free; the elastic
-/// stiffness is not rescaled by the thermal stretch (a relative difference
-/// of \f$\alpha\Delta T\f$ in a thermal stress, below the model's
-/// small-strain premise).
+/// with the operators of TotalLagrangian.hpp.
 ///
 /// **Mean dilatation.** Plastic flow is isochoric. On an element with
 /// several integration points (the Hex8) each point's dilatation is
@@ -58,7 +52,7 @@
 /// **Logarithmic-strain finite kinematics** (large strain; Miehe, Apel and
 /// Lambrecht 2002, *Anisotropic additive plasticity in the logarithmic
 /// strain space*). Total Lagrangian: the return of Plasticity.hpp - the same
-/// J2, Hill48, Chaboche, plane-stress and thermal return, unchanged - takes
+/// J2, Hill48, Chaboche and plane-stress return, unchanged - takes
 /// the logarithmic strain \f$E_{\log} = \tfrac12\ln C\f$ of
 /// LogarithmicStrain.hpp as its strain and gives the stress T conjugate to
 /// it and \f$C_{alg} = dT/dE_{\log}\f$. The additive split
@@ -77,12 +71,7 @@
 ///       + \int (G^T\mathbf{S}\,G)\otimes I\,dV_0 ,
 /// \f]
 /// \f$T : \mathbb{L}\f$ the Hessian of \f$T : E_{\log}(E)\f$ at fixed T.
-/// The elasticity is Hencky's (quadratic in \f$E_{\log}\f$). The thermal
-/// strain is the log strain of the free thermal stretch
-/// \f$1 + \alpha\Delta T\f$ (the stretch of the finite path),
-/// \f$\ln(1 + \alpha\Delta T)\,I\f$, which the return takes as the
-/// change \f$\ln(1 + \alpha\Delta T)/\alpha\f$: a freely heated body is
-/// stress-free. In plane stress the return finds \f$E_{\log,33}\f$ with
+/// The elasticity is Hencky's (quadratic in \f$E_{\log}\f$). In plane stress the return finds \f$E_{\log,33}\f$ with
 /// \f$T_{33} = 0\f$ (which is \f$S_{33} = 0\f$: the normal is principal),
 /// and the thickness stretches by \f$\exp E_{\log,33}\f$. Since
 /// \f$C = F^TF\f$ is positive definite at an inverted point too, where
@@ -182,9 +171,6 @@ struct NonlinearOptions {
 struct ElastoplasticElement {
   Vector internal_force;               ///< \f$f_e\f$ [N]
   Matrix tangent;                      ///< \f$K_e\f$ [N/m], if requested
-  /// \f$\partial f_e/\partial\lambda\f$ at fixed displacement for a
-  /// temperature change \f$\lambda\Delta T_0\f$ [N]; empty without one.
-  Vector thermal_force_rate;
   Scalar energy = 0.0;                 ///< stored energy, elastic + hardening [J]
   std::vector<PlasticState> states;    ///< per integration point, after the return
   int yielding_points = 0;             ///< points whose return was plastic
@@ -200,9 +186,7 @@ struct ElastoplasticElement {
 };
 
 /// The element at displacement `ue` from the converged states `committed`
-/// (one per point of the element's stiffness rule), with the nodal
-/// temperature changes `temperature` (per unit load factor; may be null)
-/// scaled by `temperature_scale`. `mean_dilatation` selects B-bar (ignored
+/// (one per point of the element's stiffness rule). `mean_dilatation` selects B-bar (ignored
 /// in plane stress). An element with internal modes (the incompatible-mode
 /// Hex8) solves for them from their committed parameters `internal` (null:
 /// zero) and returns the condensed force and tangent (IncompatibleModes.hpp).
@@ -211,8 +195,7 @@ struct ElastoplasticElement {
 ///         internal modes.
 ElastoplasticElement elastoplastic_element(const FemModel& model, Index e, const Vector& ue,
                                            const std::vector<PlasticState>& committed,
-                                           bool mean_dilatation, const Vector* temperature,
-                                           Scalar temperature_scale, bool want_tangent,
+                                           bool mean_dilatation, bool want_tangent,
                                            Kinematics kinematics = Kinematics::SmallStrain,
                                            const Vector* internal = nullptr);
 
@@ -240,8 +223,7 @@ struct ElastoplasticStress {
 /// parameters, and the measures are those of the enhanced deformation.
 ElastoplasticStress elastoplastic_stress(const FemModel& model, Index e, const Vector& ue,
                                          const std::vector<PlasticState>& committed,
-                                         bool mean_dilatation, const Vector* temperature,
-                                         Scalar temperature_scale,
+                                         bool mean_dilatation,
                                          Kinematics kinematics = Kinematics::SmallStrain,
                                          const Vector* internal = nullptr);
 

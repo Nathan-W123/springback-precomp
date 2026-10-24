@@ -54,7 +54,6 @@ SCHEMA = {
                                "duplicate_tolerance")},
     "material": {
         "name": None, "youngs_modulus": None, "poisson_ratio": None, "density": None,
-        "thermal_expansion": None, "reference_temperature": None, "conductivity": None,
         "plasticity": {
             "yield_stress": None, "hardening_modulus": None, "saturation_stress": None,
             "saturation_rate": None, "kinematic_hardening_modulus": None,

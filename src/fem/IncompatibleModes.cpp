@@ -47,9 +47,6 @@ struct PointWork {
   GradientsA g = GradientsA::Zero();  ///< [G | G~], reference gradients [1/m]
   Matrix3 hu = Matrix3::Zero();       ///< U G^T, the compatible displacement gradient
   Scalar weight = 0.0;                ///< w det J [m^3]
-  Scalar delta_t = 0.0;               ///< temperature change per unit load factor [K]
-  Scalar change = 0.0;                ///< the return's temperature change at lambda [K]
-  Scalar rate = 0.0;                  ///< its derivative with respect to lambda [K]
   // At the current parameters.
   Matrix3 h = Matrix3::Zero();        ///< H = U G^T + A G~^T
   OperatorA mb = OperatorA::Zero();   ///< the strain variation: B (small) or B_NL
@@ -57,7 +54,6 @@ struct PointWork {
   LogarithmicStrain log;              ///< logarithmic kinematics
   Vector6 s = Vector6::Zero();        ///< the stress conjugate to mb: sigma or S
   Matrix6 material = Matrix6::Zero(); ///< the tangent between mb's: C, or P^T C P + T:L
-  Vector6 ts = Vector6::Zero();       ///< d s / d lambda at fixed strain (thermal)
   Vector6 own = Vector6::Zero();      ///< the law's own stress: sigma, S or T
   Scalar energy = 0.0;                ///< stored energy density [J/m^3]
   PlasticState state;
@@ -77,7 +73,6 @@ Workspace& workspace() {
 /// Sums of one pass over the points.
 struct Sums {
   VectorA r = VectorA::Zero();       ///< (f_u, r_alpha) [N]
-  VectorA t = VectorA::Zero();       ///< thermal load rate (q_u, q_alpha) [N]
   VectorI scale = VectorI::Zero();   ///< sum_q w |B~|^T |s|: the gross size of r_alpha [N]
   /// sum_q w |B~|^T 1 |C| |H| (1 + |H|): the force a relative strain error of
   /// 1 would cause - the round-off of the strain of H, times 1e-13, is the
@@ -130,7 +125,6 @@ struct Setting {
   const FemModel* model = nullptr;
   Index e = 0;
   Kinematics kinematics = Kinematics::SmallStrain;
-  bool thermal = false;       ///< some point has a temperature change
   bool symmetric = true;      ///< the material tangent is symmetric
   Eigen::Matrix<Scalar, 3, 8> u = Eigen::Matrix<Scalar, 3, 8>::Zero();
   Eigen::Matrix<Scalar, kU, 1> ue = Eigen::Matrix<Scalar, kU, 1>::Zero();
@@ -138,7 +132,7 @@ struct Setting {
 
 /// Fills the workspace with the alpha-independent data of every point.
 Workspace& set_up(Setting& set, const FemModel& model, Index e, const Vector& ue,
-                  Kinematics kinematics, const Vector* temperature, Scalar temperature_scale) {
+                  Kinematics kinematics) {
   const Element& element = model.element();
   if (element.type() != ElementType::Hex8 || element.num_internal_nodes() != kModes) {
     throw ModelError("the incompatible-mode kernel is written for the Hex8 with three modes");
@@ -169,17 +163,9 @@ Workspace& set_up(Setting& set, const FemModel& model, Index e, const Vector& ue
     throw MeshError(os.str());
   }
   const Matrix3 jinv0 = jac0.inverse();
-  const bool heated = temperature != nullptr && temperature->size() > 0 &&
-                      mat.thermal_expansion() != 0.0;
-  Eigen::Matrix<Scalar, 8, 1> te = Eigen::Matrix<Scalar, 8, 1>::Zero();
-  if (heated) {
-    const Index* nodes = mesh.element_nodes(e);
-    for (int a = 0; a < kNodes; ++a) te(a) = (*temperature)(nodes[a]);
-  }
   const std::vector<IntegrationPoint> rule = element.integration_rule(model.integration());
   Workspace& points = workspace();
   points.resize(rule.size());
-  set.thermal = false;
   for (std::size_t q = 0; q < rule.size(); ++q) {
     const NaturalPoint& xi = rule[q].point;
     PointWork& p = points[q];
@@ -198,14 +184,6 @@ Workspace& set_up(Setting& set, const FemModel& model, Index e, const Vector& ue
         hex8_incompatible_gradients(jinv0, det0, det, xi.xi, xi.eta, xi.zeta);
     p.hu = set.u * p.g.leftCols<kNodes>().transpose();
     p.weight = rule[q].weight * det;
-    p.delta_t = 0.0;
-    if (heated) {
-      p.delta_t = hex8_shape_functions(xi.xi, xi.eta, xi.zeta).dot(te) -
-                  mat.reference_temperature();
-    }
-    if (p.delta_t != 0.0) set.thermal = true;
-    elastoplastic_temperature_change(mat, kinematics, p.delta_t, temperature_scale, p.change,
-                                     p.rate);
     if (kinematics == Kinematics::SmallStrain) {
       green_lagrange_operator_11(Matrix3::Identity(), p.g, p.mb);
     }
@@ -248,38 +226,29 @@ void kinematics_at(const Setting& set, Workspace& points, const VectorI& alpha) 
 /// committed state.
 void respond(const Setting& set, Workspace& points, const std::vector<PlasticState>& committed) {
   const Material& mat = set.model->material_of(set.e);
-  const Scalar expansion = mat.thermal_expansion();
   for (std::size_t q = 0; q < points.size(); ++q) {
     PointWork& p = points[q];
-    const PlasticResponse r = plastic_return(mat, StressState::ThreeDimensional, p.strain,
-                                             committed[q], p.change, true);
+    const PlasticResponse r =
+        plastic_return(mat, StressState::ThreeDimensional, p.strain, committed[q], true);
     p.own = r.stress;
     p.energy = r.energy;
     p.state = r.state;
     p.yielding = r.yielding;
     p.strain_33 = r.strain_33;
-    Vector6 cm = Vector6::Zero();
-    if (set.thermal && p.rate != 0.0) {
-      Vector6 m = Vector6::Zero();
-      m.head<3>().setConstant(expansion * p.rate);
-      cm = r.tangent * m;
-    }
     if (set.kinematics == Kinematics::FiniteLogarithmic) {
       p.s = logarithmic_stress(p.log, r.stress);
       p.material = p.log.projection.transpose() * r.tangent * p.log.projection +
                    logarithmic_curvature(p.log, r.stress);
-      p.ts = -(p.log.projection.transpose() * cm);
     } else {
       p.s = r.stress;
       p.material = r.tangent;
-      p.ts = -cm;
     }
   }
 }
 
 /// Adds the sums of every point the local iteration needs: the force
-/// (f_u, r_alpha), its gross scale and round-off floor, the energy, the
-/// thermal rate and K_aa.
+/// (f_u, r_alpha), its gross scale and round-off floor, the energy and
+/// K_aa.
 void accumulate_local(const Setting& set, const Workspace& points, Sums& sums) {
   const bool geometric = set.kinematics != Kinematics::SmallStrain;
   for (const PointWork& p : points) {
@@ -291,7 +260,6 @@ void accumulate_local(const Setting& set, const Workspace& points, Sums& sums) {
     sums.floor.noalias() += (w * p.material.cwiseAbs().maxCoeff() * h * (1.0 + h)) *
                             ba.cwiseAbs().colwise().sum().transpose();
     sums.energy += w * p.energy;
-    if (set.thermal) sums.t.noalias() += w * (p.mb.transpose() * p.ts);
     sums.kaa.noalias() += w * (ba.transpose() * (p.material * ba));
     if (geometric) {
       // The alpha-alpha block of (G_aug^T S G_aug) (x) I.
@@ -341,7 +309,6 @@ void accumulate_coupling(const Setting& set, const Workspace& points, bool full,
 struct Condensed {
   Vector force;
   Matrix tangent;
-  Vector thermal_rate;
   Scalar energy = 0.0;
   Vector alpha;
   int iterations = 0;  ///< Newton directions taken
@@ -580,14 +547,10 @@ Condensed solve_and_condense(const Setting& set, Workspace& points,
   // The coupling blocks (and K_uu) at the converged parameters, from the
   // points of the last pass.
   accumulate_coupling(set, points, want_tangent, sums);
-  // K_aa^-1 applied to r_alpha (the last Newton correction), to K_au and to
-  // the thermal rate q_alpha.
+  // K_aa^-1 applied to r_alpha (the last Newton correction) and to K_au.
   const VectorI correction = lu.solve(sums.r.tail<kA>());
   out.force = sums.r.head<kU>() - sums.kua * correction;
   out.energy = sums.energy;
-  if (set.thermal) {
-    out.thermal_rate = sums.t.head<kU>() - sums.kua * lu.solve(sums.t.tail<kA>());
-  }
   if (want_tangent) {
     const MatrixIU coupling = lu.solve(set.symmetric ? MatrixIU(sums.kua.transpose()) : sums.kau);
     MatrixUU k = sums.kuu - sums.kua * coupling;
@@ -613,10 +576,9 @@ void refuse_mean_dilatation(bool mean_dilatation) {
 
 ElastoplasticElement incompatible_elastoplastic_element(
     const FemModel& model, Index e, const Vector& ue, const std::vector<PlasticState>& committed,
-    const Vector* internal, const Vector* temperature, Scalar temperature_scale,
-    bool want_tangent, Kinematics kinematics) {
+    const Vector* internal, bool want_tangent, Kinematics kinematics) {
   Setting set;
-  Workspace& points = set_up(set, model, e, ue, kinematics, temperature, temperature_scale);
+  Workspace& points = set_up(set, model, e, ue, kinematics);
   if (committed.size() != points.size()) {
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
@@ -625,7 +587,6 @@ ElastoplasticElement incompatible_elastoplastic_element(
   ElastoplasticElement out;
   out.internal_force = std::move(c.force);
   out.tangent = std::move(c.tangent);
-  out.thermal_force_rate = std::move(c.thermal_rate);
   out.energy = c.energy;
   out.internal = std::move(c.alpha);
   out.internal_iterations = c.iterations;
@@ -642,11 +603,9 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
                                                       const Vector& ue,
                                                       const std::vector<PlasticState>& committed,
                                                       const Vector* internal,
-                                                      const Vector* temperature,
-                                                      Scalar temperature_scale,
                                                       Kinematics kinematics) {
   Setting set;
-  Workspace& points = set_up(set, model, e, ue, kinematics, temperature, temperature_scale);
+  Workspace& points = set_up(set, model, e, ue, kinematics);
   if (committed.size() != points.size()) {
     throw SolverError("elastoplastic element: the stored internal variables do not match "
                       "the integration rule");
@@ -663,8 +622,8 @@ ElastoplasticStress incompatible_elastoplastic_stress(const FemModel& model, Ind
     const PointWork& p = points[q];
     // The committed state is the converged one at this displacement, so the
     // return reproduces it (an elastic check from it).
-    const PlasticResponse r = plastic_return(mat, StressState::ThreeDimensional, p.strain,
-                                             committed[q], p.change, false);
+    const PlasticResponse r =
+        plastic_return(mat, StressState::ThreeDimensional, p.strain, committed[q], false);
     Vector6 cauchy = r.stress;
     Vector6 piola_kirchhoff = r.stress;
     // The measures are those of the enhanced deformation, F = I + H.

@@ -45,18 +45,16 @@ Material plastic_steel(Scalar h = 0.0, Scalar hk = 0.0, Scalar q = 0.0,
 
 /// Uniaxial stress sigma_11 at the axial strain e11: the lateral strains
 /// found by Newton on the return so that sigma_22 = sigma_33 = 0.
-PlasticResponse uniaxial(const Material& m, Scalar e11, const PlasticState& committed,
-                         Scalar delta_t = 0.0) {
-  const Scalar th = m.thermal_expansion() * delta_t;
+PlasticResponse uniaxial(const Material& m, Scalar e11, const PlasticState& committed) {
   Vector6 strain = Vector6::Zero();
   strain(0) = e11;
   for (int i = 1; i < 3; ++i) {
-    strain(i) = committed.plastic_strain(i) + th -
-                m.poisson_ratio() * (e11 - committed.plastic_strain(0) - th);
+    strain(i) = committed.plastic_strain(i) -
+                m.poisson_ratio() * (e11 - committed.plastic_strain(0));
   }
   PlasticResponse r;
   for (int it = 0; it < 50; ++it) {
-    r = plastic_return(m, StressState::ThreeDimensional, strain, committed, delta_t);
+    r = plastic_return(m, StressState::ThreeDimensional, strain, committed);
     const Eigen::Vector2d residual(r.stress(1), r.stress(2));
     if (residual.cwiseAbs().maxCoeff() <=
         1.0e-13 * std::max(std::abs(r.stress(0)), m.plasticity().yield_stress)) {
@@ -96,8 +94,8 @@ Vector6 random_strain(Scalar amplitude, unsigned seed) {
 /// The consistent tangent against central differences of the stress, over
 /// the strain components the idealisation takes.
 Scalar tangent_error(const Material& m, StressState state, const Vector6& strain,
-                     const PlasticState& committed, Scalar delta_t = 0.0) {
-  const PlasticResponse r = plastic_return(m, state, strain, committed, delta_t);
+                     const PlasticState& committed) {
+  const PlasticResponse r = plastic_return(m, state, strain, committed);
   // (The plane-stress iteration leaves sigma_33 below 1e-12 of the stress,
   // which a step of 1e-8 keeps well below the tolerance.)
   const Scalar h = 1.0e-8;
@@ -109,8 +107,8 @@ Scalar tangent_error(const Material& m, StressState state, const Vector6& strain
     Vector6 um = strain;
     up(j) += h;
     um(j) -= h;
-    const Vector6 fd = (plastic_return(m, state, up, committed, delta_t).stress -
-                        plastic_return(m, state, um, committed, delta_t).stress) /
+    const Vector6 fd = (plastic_return(m, state, up, committed).stress -
+                        plastic_return(m, state, um, committed).stress) /
                        (2.0 * h);
     Vector6 column = r.tangent.col(j);
     worst = std::max(worst, (fd - column).cwiseAbs().maxCoeff());
@@ -335,12 +333,12 @@ TEST_CASE("the consistent tangent is the derivative of the return", "[plasticity
       first(4) = first(5) = second(4) = second(5) = 0.0;
       if (state == StressState::PlaneStrain) first(2) = second(2) = 0.0;
     }
-    const PlasticResponse r1 = plastic_return(m, state, first, PlasticState(), 20.0);
+    const PlasticResponse r1 = plastic_return(m, state, first, PlasticState());
     REQUIRE(r1.yielding);
-    const PlasticResponse r2 = plastic_return(m, state, second, r1.state, 35.0);
+    const PlasticResponse r2 = plastic_return(m, state, second, r1.state);
     INFO(to_string(state));
     REQUIRE(r2.yielding);
-    REQUIRE(tangent_error(m, state, second, r1.state, 35.0) <= 1.0e-6);
+    REQUIRE(tangent_error(m, state, second, r1.state) <= 1.0e-6);
     // The elastic branch too: a small step back inside the surface.
     const Vector6 back = second - 0.1 * (second - first);
     REQUIRE_FALSE(plastic_return(m, state, back, r2.state).yielding);
@@ -427,35 +425,6 @@ TEST_CASE("the loading flag gives the continuum tangent at zero increment",
   REQUIRE((unload.tangent - m.three_dimensional_matrix()).cwiseAbs().maxCoeff() <= 1.0e-3);
 }
 
-TEST_CASE("a temperature change enters as a free strain", "[plasticity][material]") {
-  Material m = plastic_steel();
-  m.set_thermal(1.2e-5, 20.0, 50.0);
-  // Free expansion is stress-free however large.
-  Vector6 free = Vector6::Zero();
-  free.head(3).setConstant(1.2e-5 * 400.0);
-  const PlasticResponse r = plastic_return(m, StressState::ThreeDimensional, free, PlasticState(), 400.0);
-  REQUIRE(r.stress.cwiseAbs().maxCoeff() <= 1.0e-6);
-  REQUIRE_FALSE(r.yielding);
-  // A bar held axially: sigma = -E alpha dT until it yields, then -sigma_y
-  // (no hardening).
-  const Scalar dt_elastic = 50.0;
-  REQUIRE(uniaxial(m, 0.0, PlasticState(), dt_elastic).stress(0) ==
-          Approx(-200.0e9 * 1.2e-5 * dt_elastic).epsilon(1e-12));
-  const PlasticResponse hot = uniaxial(m, 0.0, PlasticState(), 150.0);
-  REQUIRE(hot.yielding);
-  REQUIRE(hot.stress(0) == Approx(-250.0e6).epsilon(1e-12));
-  // Cooling back to the reference leaves a tensile residual stress,
-  // E alpha dT - sigma_y, below yield (E alpha dT < 2 sigma_y).
-  const PlasticResponse cold = uniaxial(m, 0.0, hot.state, 0.0);
-  REQUIRE_FALSE(cold.yielding);
-  REQUIRE(cold.stress(0) == Approx(200.0e9 * 1.2e-5 * 150.0 - 250.0e6).epsilon(1e-10));
-  // Heated further instead (E alpha dT > 2 sigma_y), it yields back to +sigma_y.
-  const PlasticResponse hotter = uniaxial(m, 0.0, PlasticState(), 300.0);
-  const PlasticResponse cooled = uniaxial(m, 0.0, hotter.state, 0.0);
-  REQUIRE(cooled.yielding);
-  REQUIRE(cooled.stress(0) == Approx(250.0e6).epsilon(1e-12));
-}
-
 namespace {
 
 /// A distorted Hex8 model (the cells of `type`) with a plastic material.
@@ -505,11 +474,11 @@ TEST_CASE("the elastoplastic element tangent is the derivative of its internal f
       // Load into the plastic range, commit, then load on differently.
       const Vector u1 = element_displacement(model, e, 6.0e-3, 7u);
       const ElastoplasticElement first =
-          elastoplastic_element(model, e, u1, virgin, bbar, nullptr, 0.0, false);
+          elastoplastic_element(model, e, u1, virgin, bbar, false);
       REQUIRE(first.yielding_points > 0);
       const Vector u2 = u1 + element_displacement(model, e, 3.0e-3, 9u);
       const ElastoplasticElement base =
-          elastoplastic_element(model, e, u2, first.states, bbar, nullptr, 0.0, true);
+          elastoplastic_element(model, e, u2, first.states, bbar, true);
       const Scalar h = 1.0e-8;
       Scalar worst = 0.0;
       for (Eigen::Index j = 0; j < u2.size(); ++j) {
@@ -518,9 +487,9 @@ TEST_CASE("the elastoplastic element tangent is the derivative of its internal f
         up(j) += h;
         um(j) -= h;
         const Vector fd =
-            (elastoplastic_element(model, e, up, first.states, bbar, nullptr, 0.0, false)
+            (elastoplastic_element(model, e, up, first.states, bbar, false)
                  .internal_force -
-             elastoplastic_element(model, e, um, first.states, bbar, nullptr, 0.0, false)
+             elastoplastic_element(model, e, um, first.states, bbar, false)
                  .internal_force) /
             (2.0 * h);
         worst = std::max(worst, (fd - base.tangent.col(j)).cwiseAbs().maxCoeff());
@@ -528,46 +497,6 @@ TEST_CASE("the elastoplastic element tangent is the derivative of its internal f
       INFO(to_string(c.type) << " " << to_string(c.state) << (bbar ? " B-bar" : ""));
       REQUIRE(base.yielding_points > 0);
       REQUIRE(worst <= 1.0e-6 * base.tangent.cwiseAbs().maxCoeff());
-    }
-  }
-}
-
-TEST_CASE("the element's thermal load rate is the derivative of its internal force",
-          "[plasticity][element]") {
-  Material m = plastic_steel(2.0e9);
-  m.set_thermal(1.2e-5, 20.0, 50.0);
-  for (const ElementType type : {ElementType::Hex8}) {
-    for (const StressState state : {StressState::ThreeDimensional}) {
-      FemModel model = one_element(type, state, m);
-      Vector temperature(model.mesh().num_nodes());
-      for (Index node = 0; node < model.mesh().num_nodes(); ++node) {
-        temperature(node) = 20.0 + 300.0 * model.mesh().node(node).x() + 100.0;
-      }
-      const std::vector<PlasticState> virgin(
-          static_cast<std::size_t>(elastoplastic_points(model)));
-      const Vector ue = element_displacement(model, 0, 2.0e-3, 3u);
-      const Scalar lambda = 0.8;
-      // With finite kinematics the change of the Green thermal strain,
-      // alpha dT (1 + alpha dT / 2), is the rate.
-      for (const Kinematics kinematics : {Kinematics::SmallStrain, Kinematics::Finite}) {
-        for (const bool bbar : {false, true}) {
-          const ElastoplasticElement base = elastoplastic_element(
-              model, 0, ue, virgin, bbar, &temperature, lambda, false, kinematics);
-          REQUIRE(base.yielding_points > 0);
-          const Scalar h = 1.0e-7;
-          const Vector fd = (elastoplastic_element(model, 0, ue, virgin, bbar, &temperature,
-                                                   lambda + h, false, kinematics)
-                                 .internal_force -
-                             elastoplastic_element(model, 0, ue, virgin, bbar, &temperature,
-                                                   lambda - h, false, kinematics)
-                                 .internal_force) /
-                            (2.0 * h);
-          INFO(to_string(type) << " " << to_string(state) << " " << to_string(kinematics)
-                               << (bbar ? " mean dilatation" : ""));
-          REQUIRE((fd - base.thermal_force_rate).cwiseAbs().maxCoeff() <=
-                  1.0e-6 * base.thermal_force_rate.cwiseAbs().maxCoeff());
-        }
-      }
     }
   }
 }
@@ -582,7 +511,7 @@ TEST_CASE("an elastic element is the linear element, and mean dilatation leaves 
     const std::vector<PlasticState> virgin(static_cast<std::size_t>(elastoplastic_points(model)));
     const Vector ue = element_displacement(model, 0, 1.0e-3, 5u);
     const ElastoplasticElement r =
-        elastoplastic_element(model, 0, ue, virgin, false, nullptr, 0.0, true);
+        elastoplastic_element(model, 0, ue, virgin, false, true);
     const Matrix k = model.element().stiffness(model.mesh().element_coordinates(0),
                                                model.constitutive(),
                                                model.dim() == 2 ? model.thickness() : 1.0,
@@ -602,10 +531,10 @@ TEST_CASE("an elastic element is the linear element, and mean dilatation leaves 
       }
     }
     const Vector f_std =
-        elastoplastic_element(model, 0, homogeneous, virgin, false, nullptr, 0.0, false)
+        elastoplastic_element(model, 0, homogeneous, virgin, false, false)
             .internal_force;
     const Vector f_bar =
-        elastoplastic_element(model, 0, homogeneous, virgin, true, nullptr, 0.0, false)
+        elastoplastic_element(model, 0, homogeneous, virgin, true, false)
             .internal_force;
     REQUIRE((f_std - f_bar).cwiseAbs().maxCoeff() <= 1.0e-10 * f_std.cwiseAbs().maxCoeff());
   }
@@ -640,11 +569,11 @@ TEST_CASE("the finite-kinematics elastoplastic tangent is the derivative of its 
           static_cast<std::size_t>(elastoplastic_points(model)));
       const Vector u1 = turn + element_displacement(model, 0, 6.0e-3, 7u);
       const ElastoplasticElement first = elastoplastic_element(
-          model, 0, u1, virgin, averaged, nullptr, 0.0, false, Kinematics::Finite);
+          model, 0, u1, virgin, averaged, false, Kinematics::Finite);
       REQUIRE(first.yielding_points > 0);
       const Vector u2 = u1 + element_displacement(model, 0, 3.0e-3, 9u);
       const ElastoplasticElement base = elastoplastic_element(
-          model, 0, u2, first.states, averaged, nullptr, 0.0, true, Kinematics::Finite);
+          model, 0, u2, first.states, averaged, true, Kinematics::Finite);
       const Scalar h = 1.0e-8;
       Scalar worst = 0.0;
       for (Eigen::Index j = 0; j < u2.size(); ++j) {
@@ -652,11 +581,9 @@ TEST_CASE("the finite-kinematics elastoplastic tangent is the derivative of its 
         Vector um = u2;
         up(j) += h;
         um(j) -= h;
-        const Vector fd = (elastoplastic_element(model, 0, up, first.states, averaged, nullptr,
-                                                 0.0, false, Kinematics::Finite)
+        const Vector fd = (elastoplastic_element(model, 0, up, first.states, averaged, false, Kinematics::Finite)
                                .internal_force -
-                           elastoplastic_element(model, 0, um, first.states, averaged, nullptr,
-                                                 0.0, false, Kinematics::Finite)
+                           elastoplastic_element(model, 0, um, first.states, averaged, false, Kinematics::Finite)
                                .internal_force) /
                           (2.0 * h);
         worst = std::max(worst, (fd - base.tangent.col(j)).cwiseAbs().maxCoeff());
@@ -690,10 +617,10 @@ TEST_CASE("finite-kinematics plasticity is objective and tends to the linear sti
     }
     for (const bool averaged : {false, true}) {
       const ElastoplasticElement r1 =
-          elastoplastic_element(model, 0, u, virgin, averaged, nullptr, 0.0, false,
+          elastoplastic_element(model, 0, u, virgin, averaged, false,
                                 Kinematics::Finite);
       const ElastoplasticElement r2 =
-          elastoplastic_element(model, 0, rotated, virgin, averaged, nullptr, 0.0, false,
+          elastoplastic_element(model, 0, rotated, virgin, averaged, false,
                                 Kinematics::Finite);
       INFO(to_string(type) << (averaged ? " averaged" : ""));
       REQUIRE(r1.yielding_points > 0);
@@ -715,7 +642,7 @@ TEST_CASE("finite-kinematics plasticity is objective and tends to the linear sti
     // At zero displacement, with the element's own operator, the tangent is
     // the linear stiffness.
     const ElastoplasticElement zero =
-        elastoplastic_element(model, 0, Vector::Zero(u.size()), virgin, false, nullptr, 0.0,
+        elastoplastic_element(model, 0, Vector::Zero(u.size()), virgin, false,
                               true, Kinematics::Finite);
     const Matrix k = model.element().stiffness(x0, model.constitutive(),
                                                dim == 2 ? model.thickness() : 1.0,

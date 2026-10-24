@@ -104,11 +104,11 @@ Law hill_law(Scalar rd_degrees, Scalar r0 = 1.9, Scalar r45 = 1.5, Scalar r90 = 
 /// are as given.
 PlasticResponse drive(const Material& m, StressState state, Vector6 strain,
                       const std::vector<int>& free, const Matrix& a,
-                      const PlasticState& committed, Scalar delta_t = 0.0) {
+                      const PlasticState& committed) {
   const int n = static_cast<int>(free.size());
   PlasticResponse r;
   for (int it = 0; it < 60; ++it) {
-    r = plastic_return(m, state, strain, committed, delta_t);
+    r = plastic_return(m, state, strain, committed);
     const Vector residual = a * r.stress;
     const Scalar scale = std::max(r.stress.cwiseAbs().maxCoeff(), m.plasticity().yield_stress);
     if (residual.cwiseAbs().maxCoeff() <= 1.0e-13 * scale) return r;
@@ -125,19 +125,18 @@ PlasticResponse drive(const Material& m, StressState state, Vector6 strain,
 /// strain components found so that their stresses vanish; in plane stress
 /// eps_22 and gamma_12 (sigma_33 = 0 by the return).
 PlasticResponse uniaxial(const Material& m, StressState state, Scalar e11,
-                         const PlasticState& committed, Scalar delta_t = 0.0) {
+                         const PlasticState& committed) {
   const std::vector<int> free = state == StressState::PlaneStress ? std::vector<int>{1, 3}
                                                                   : std::vector<int>{1, 2, 3, 4, 5};
   Matrix a = Matrix::Zero(static_cast<Eigen::Index>(free.size()), 6);
   for (std::size_t i = 0; i < free.size(); ++i) a(static_cast<Eigen::Index>(i), free[i]) = 1.0;
   Vector6 strain = committed.plastic_strain;
   strain(0) = e11;
-  const Scalar th = m.thermal_expansion() * delta_t;
   for (int i = 1; i < 3; ++i) {
-    strain(i) = committed.plastic_strain(i) + th -
-                m.poisson_ratio() * (e11 - committed.plastic_strain(0) - th);
+    strain(i) = committed.plastic_strain(i) -
+                m.poisson_ratio() * (e11 - committed.plastic_strain(0));
   }
-  return drive(m, state, strain, free, a, committed, delta_t);
+  return drive(m, state, strain, free, a, committed);
 }
 
 /// Equibiaxial plane stress sigma_11 = sigma_22 at eps_11 = e11.
@@ -178,8 +177,8 @@ Vector6 random_strain(Scalar amplitude, unsigned seed) {
 /// The consistent tangent against central differences of the stress, over
 /// the strain components the idealisation takes.
 Scalar tangent_error(const Material& m, StressState state, const Vector6& strain,
-                     const PlasticState& committed, Scalar delta_t = 0.0) {
-  const PlasticResponse r = plastic_return(m, state, strain, committed, delta_t);
+                     const PlasticState& committed) {
+  const PlasticResponse r = plastic_return(m, state, strain, committed);
   const Scalar h = 1.0e-8;
   Scalar worst = 0.0;
   for (int j = 0; j < 6; ++j) {
@@ -189,8 +188,8 @@ Scalar tangent_error(const Material& m, StressState state, const Vector6& strain
     Vector6 um = strain;
     up(j) += h;
     um(j) -= h;
-    const Vector6 fd = (plastic_return(m, state, up, committed, delta_t).stress -
-                        plastic_return(m, state, um, committed, delta_t).stress) /
+    const Vector6 fd = (plastic_return(m, state, up, committed).stress -
+                        plastic_return(m, state, um, committed).stress) /
                        (2.0 * h);
     worst = std::max(worst, (fd - r.tangent.col(j)).cwiseAbs().maxCoeff());
   }
@@ -526,7 +525,7 @@ TEST_CASE("the general return in the von Mises limit is the radial return",
   // Hill48 with r = 1 (Prager's modulus mapped to a backstress), and von
   // Mises with Prager's rule given as one backstress without recovery,
   // against the radial return, along the random non-proportional path of
-  // the J2 tangent test with every hardening mechanism and a temperature.
+  // the J2 tangent test with every hardening mechanism.
   Law radial;
   radial.h = 1.5e9;
   radial.hk = 4.0e9;
@@ -537,11 +536,9 @@ TEST_CASE("the general return in the von Mises limit is the radial return",
   Law chaboche = radial;
   chaboche.hk = 0.0;
   chaboche.back = {{4.0e9, 0.0}};
-  Material reference = make(radial);
-  reference.set_thermal(1.2e-5, 20.0, 50.0);
+  const Material reference = make(radial);
   for (const Law& law : {hill, chaboche}) {
-    Material general = make(law);
-    general.set_thermal(1.2e-5, 20.0, 50.0);
+    const Material general = make(law);
     REQUIRE(general.plasticity().general());
     REQUIRE_FALSE(reference.plasticity().general());
     for (const StressState state :
@@ -557,9 +554,9 @@ TEST_CASE("the general return in the von Mises limit is the radial return",
           strain(4) = strain(5) = 0.0;
           if (state == StressState::PlaneStrain) strain(2) = 0.0;
         }
-        const Scalar dt = 10.0 * step++;
-        const PlasticResponse ra = plastic_return(reference, state, strain, a, dt);
-        const PlasticResponse rb = plastic_return(general, state, strain, b, dt);
+        ++step;
+        const PlasticResponse ra = plastic_return(reference, state, strain, a);
+        const PlasticResponse rb = plastic_return(general, state, strain, b);
         INFO(to_string(state) << ", step " << step << (law.hill ? ", Hill48" : ", Chaboche"));
         REQUIRE(ra.yielding == rb.yielding);
         REQUIRE(ra.state.loading == rb.state.loading);
@@ -825,8 +822,7 @@ TEST_CASE("the general consistent tangent is the derivative of the return, non-s
                                    {"the same, exponential, in the sheet plane", both_plane, false},
                                    {"Hill48 + two linear backstresses", prager, true}};
   for (const Case& c : cases) {
-    Material m = make(c.law);
-    m.set_thermal(1.2e-5, 20.0, 50.0);
+    const Material m = make(c.law);
     REQUIRE(m.plasticity().symmetric_tangent() == c.symmetric);
     for (const StressState state :
          {StressState::ThreeDimensional, StressState::PlaneStrain, StressState::PlaneStress}) {
@@ -843,13 +839,13 @@ TEST_CASE("the general consistent tangent is the derivative of the return, non-s
         first(4) = first(5) = second(4) = second(5) = 0.0;
         if (state == StressState::PlaneStrain) first(2) = second(2) = 0.0;
       }
-      const PlasticResponse r1 = plastic_return(m, state, first, PlasticState(), 20.0);
+      const PlasticResponse r1 = plastic_return(m, state, first, PlasticState());
       REQUIRE(r1.yielding);
-      const PlasticResponse r2 = plastic_return(m, state, second, r1.state, 35.0);
+      const PlasticResponse r2 = plastic_return(m, state, second, r1.state);
       INFO(c.name << ", " << to_string(state));
       REQUIRE(r2.yielding);
       REQUIRE(r2.symmetric == c.symmetric);
-      REQUIRE(tangent_error(m, state, second, r1.state, 35.0) <= 1.0e-8);
+      REQUIRE(tangent_error(m, state, second, r1.state) <= 1.0e-8);
       const Scalar asymmetry = relative(r2.tangent, r2.tangent.transpose());
       if (c.symmetric) {
         REQUIRE(asymmetry <= 1.0e-12);
@@ -863,12 +859,12 @@ TEST_CASE("the general consistent tangent is the derivative of the return, non-s
       // The converged state is on its surface to 1e-13 sigma_y, so the
       // return from it at the same strain (stress recovery) is elastic and
       // reproduces it.
-      const PlasticResponse again = plastic_return(m, state, second, r2.state, 35.0);
+      const PlasticResponse again = plastic_return(m, state, second, r2.state);
       REQUIRE_FALSE(again.yielding);
       REQUIRE(relative(again.stress, r2.stress) <= 1.0e-12);
       REQUIRE(yield_function(m, r2) <= 1.0e-13 * m.plasticity().yield_stress);
       // Without the tangent, the same state.
-      const PlasticResponse lean = plastic_return(m, state, second, r1.state, 35.0, false);
+      const PlasticResponse lean = plastic_return(m, state, second, r1.state, false);
       REQUIRE(relative(lean.stress, r2.stress) == 0.0);
     }
     // A return that cannot proceed - here from a non-finite strain - throws
@@ -1321,11 +1317,10 @@ TEST_CASE("the element tangent of Hill48 with recovering backstresses is the non
         Vector u1 = element_displacement(model, 0, 6.0e-3, 7u);
         if (turn.size() > 0) u1 += turn;
         const ElastoplasticElement first =
-            elastoplastic_element(model, 0, u1, virgin, bbar, nullptr, 0.0, false, kinematics);
+            elastoplastic_element(model, 0, u1, virgin, bbar, false, kinematics);
         REQUIRE(first.yielding_points > 0);
         const Vector u2 = u1 + element_displacement(model, 0, 3.0e-3, 9u);
-        const ElastoplasticElement base = elastoplastic_element(model, 0, u2, first.states, bbar,
-                                                                nullptr, 0.0, true, kinematics);
+        const ElastoplasticElement base = elastoplastic_element(model, 0, u2, first.states, bbar, true, kinematics);
         const Scalar h = 1.0e-8;
         Scalar worst = 0.0;
         for (Eigen::Index j = 0; j < u2.size(); ++j) {
@@ -1333,11 +1328,9 @@ TEST_CASE("the element tangent of Hill48 with recovering backstresses is the non
           Vector um = u2;
           up(j) += h;
           um(j) -= h;
-          const Vector fd = (elastoplastic_element(model, 0, up, first.states, bbar, nullptr,
-                                                   0.0, false, kinematics)
+          const Vector fd = (elastoplastic_element(model, 0, up, first.states, bbar, false, kinematics)
                                  .internal_force -
-                             elastoplastic_element(model, 0, um, first.states, bbar, nullptr,
-                                                   0.0, false, kinematics)
+                             elastoplastic_element(model, 0, um, first.states, bbar, false, kinematics)
                                  .internal_force) /
                             (2.0 * h);
           worst = std::max(worst, (fd - base.tangent.col(j)).cwiseAbs().maxCoeff());
@@ -1357,7 +1350,7 @@ TEST_CASE("the element tangent of Hill48 with recovering backstresses is the non
   FemModel model = one_element(ElementType::Hex8, StressState::ThreeDimensional, make(linear));
   const std::vector<PlasticState> virgin(static_cast<std::size_t>(elastoplastic_points(model)));
   const ElastoplasticElement sym = elastoplastic_element(
-      model, 0, element_displacement(model, 0, 6.0e-3, 7u), virgin, true, nullptr, 0.0, true);
+      model, 0, element_displacement(model, 0, 6.0e-3, 7u), virgin, true, true);
   REQUIRE(sym.symmetric);
   REQUIRE(sym.yielding_points > 0);
   REQUIRE(relative(sym.tangent, sym.tangent.transpose()) <= 1.0e-14);
@@ -1384,11 +1377,9 @@ TEST_CASE("finite-kinematics Hill48 plasticity is objective: the material frame 
       rotated.segment(3 * a, 3) = rot * x - x0.col(a);
     }
     for (const bool averaged : {false, true}) {
-      const ElastoplasticElement r1 = elastoplastic_element(model, 0, u, virgin, averaged,
-                                                            nullptr, 0.0, false,
+      const ElastoplasticElement r1 = elastoplastic_element(model, 0, u, virgin, averaged, false,
                                                             Kinematics::Finite);
-      const ElastoplasticElement r2 = elastoplastic_element(model, 0, rotated, virgin, averaged,
-                                                            nullptr, 0.0, false,
+      const ElastoplasticElement r2 = elastoplastic_element(model, 0, rotated, virgin, averaged, false,
                                                             Kinematics::Finite);
       INFO(to_string(type) << (averaged ? " averaged" : ""));
       REQUIRE(r1.yielding_points > 0);
